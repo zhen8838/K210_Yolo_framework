@@ -1,0 +1,13 @@
+.pytest_cache
+.vscode
+*.pyc
+log
+data/*
+!data/voc_anchors.list
+test/*
+!test/test_func.py
+tmp
+*.pb
+*.tflite
+*.kmodel
+test
