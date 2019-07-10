@@ -4,6 +4,7 @@ from pathlib import Path
 from tools.utils import Helper, INFO, ERROR, NOTE, tf_xywh_to_all
 from models.yolonet import *
 from termcolor import colored
+from PIL import Image, ImageFont, ImageDraw
 import argparse
 import sys
 
@@ -15,29 +16,9 @@ keras.backend.set_session(sess)
 keras.backend.set_learning_phase(0)
 
 
-def tf_center_to_corner(box: tf.Tensor) -> tf.Tensor:
-    """convert x,y,w,h box to y,x,y,x box"""
-    x1 = (box[..., 0:1] - box[..., 2:3] / 2)
-    y1 = (box[..., 1:2] - box[..., 3:4] / 2)
-    x2 = (box[..., 0:1] + box[..., 2:3] / 2)
-    y2 = (box[..., 1:2] + box[..., 3:4] / 2)
-    box = tf.concat([y1, x1, y2, x2], -1)
-    return box
-
-
-def tf_corner_to_center(yxyx_box: tf.Tensor) -> tf.Tensor:
-    """convert y,x,y,x box to x,y,w,h box"""
-    x = (yxyx_box[..., 3:4] - yxyx_box[..., 1:2]) / 2 + yxyx_box[..., 1:2]
-    y = (yxyx_box[..., 2:3] - yxyx_box[..., 0:1]) / 2 + yxyx_box[..., 0:1]
-    w = yxyx_box[..., 3:4] - yxyx_box[..., 1:2]
-    h = yxyx_box[..., 2:3] - yxyx_box[..., 0:1]
-    box = tf.concat([x, y, w, h], axis=-1)
-    return box
-
-
 # obj_thresh = 0.7
 # iou_thresh = 0.3
-# ckpt_weights = 'log/20190709-192922/yolo_model.h5'
+# ckpt_weights = 'log/20190709-203142/yolo_model.h5'
 # image_size = [224, 320]
 # output_size = [7, 10, 14, 20]
 # model_def = 'yolo_mobilev2'
@@ -45,6 +26,49 @@ def tf_corner_to_center(yxyx_box: tf.Tensor) -> tf.Tensor:
 # depth_multiplier = 0.75
 # train_set = 'voc'
 # test_image = 'tmp/bb.jpg'
+
+
+def correct_box(box_xy: tf.Tensor, box_wh: tf.Tensor, input_shape: list, image_shape: list) -> tf.Tensor:
+    """rescae predict box to orginal image scale
+
+    Parameters
+    ----------
+    box_xy : tf.Tensor
+        box xy
+    box_wh : tf.Tensor
+        box wh
+    input_shape : list
+        input shape
+    image_shape : list
+        image shape
+
+    Returns
+    -------
+    tf.Tensor
+        new boxes
+    """
+    box_yx = box_xy[..., ::-1]
+    box_hw = box_wh[..., ::-1]
+    input_shape = tf.cast(input_shape, tf.float32)
+    image_shape = tf.cast(image_shape, tf.float32)
+    new_shape = tf.round(image_shape * tf.reduce_min(input_shape / image_shape))
+    offset = (input_shape - new_shape) / 2. / input_shape
+    scale = input_shape / new_shape
+    box_yx = (box_yx - offset) * scale
+    box_hw *= scale
+
+    box_mins = box_yx - (box_hw / 2.)
+    box_maxes = box_yx + (box_hw / 2.)
+    boxes = tf.concat([
+        box_mins[..., 0:1],  # y_min
+        box_mins[..., 1:2],  # x_min
+        box_maxes[..., 0:1],  # y_max
+        box_maxes[..., 1:2]  # x_max
+    ], axis=-1)
+
+    # Scale boxes back to original image shape.
+    boxes *= tf.concat([image_shape, image_shape], axis=-1)
+    return boxes
 
 
 def main(ckpt_weights, image_size, output_size, model_def, class_num, depth_multiplier, obj_thresh, iou_thresh, train_set, test_image):
@@ -56,8 +80,9 @@ def main(ckpt_weights, image_size, output_size, model_def, class_num, depth_mult
 
     yolo_model_warpper.load_weights(str(ckpt_weights))
     print(INFO, f' Load CKPT {str(ckpt_weights)}')
-
-    img, _ = h._process_img(h._read_img(str(test_image)), true_box=None, is_training=False, is_resize=True)
+    orig_img = h._read_img(str(test_image))
+    image_shape = orig_img.shape[0:2]
+    img, _ = h._process_img(orig_img, true_box=None, is_training=False, is_resize=True)
 
     """ load images """
     img = tf.expand_dims(img, 0)
@@ -79,10 +104,11 @@ def main(ckpt_weights, image_size, output_size, model_def, class_num, depth_mult
         """ reshape box  """
         # NOTE tf_xywh_to_all will auto use sigmoid function
         pred_xy_A, pred_wh_A = tf_xywh_to_all(pred_xy, pred_wh, l, h)
-        xywh_box = tf.reshape(tf.concat([pred_xy_A, pred_wh_A], -1), (-1, 4))
+        boxes = correct_box(pred_xy_A, pred_wh_A, image_size, image_shape)
+        boxes = tf.reshape(boxes, (-1, 4))
         box_scores = tf.reshape(box_scores, (-1, class_num))
         """ append box and scores to global list """
-        _yxyx_box.append(tf_center_to_corner(xywh_box))
+        _yxyx_box.append(boxes)
         _yxyx_box_scores.append(box_scores)
 
     yxyx_box = tf.concat(_yxyx_box, axis=0)
@@ -109,13 +135,45 @@ def main(ckpt_weights, image_size, output_size, model_def, class_num, depth_mult
     classes = tf.concat(_classes, axis=0)
     scores = tf.concat(_scores, axis=0)
 
-    box = tf.concat([tf.reshape(classes, (-1, 1)), tf_corner_to_center(boxes)], axis=-1)
+    """ draw box  """
+    font = ImageFont.truetype(font='asset/FiraMono-Medium.otf',
+                              size=tf.cast(tf.floor(3e-2 * image_shape[0] + 0.5), tf.int32).numpy())
+
+    thickness = (image_shape[0] + image_shape[1]) // 300
 
     """ show result """
-    if box.shape[0] > 0:
-        h.draw_box(img[0].numpy(), box.numpy())
+    if len(classes) > 0:
+        pil_img = Image.fromarray(orig_img)
+        for i, c in enumerate(classes):
+            box = boxes[i]
+            score = scores[i]
+            label = '{:2d} {:.2f}'.format(int(c.numpy()), score.numpy())
+            draw = ImageDraw.Draw(pil_img)
+            label_size = draw.textsize(label, font)
+
+            top, left, bottom, right = box
+            top = max(0, tf.cast(tf.floor(top + 0.5), tf.int32))
+            left = max(0, tf.cast(tf.floor(left + 0.5), tf.int32))
+            bottom = min(image_shape[0], tf.cast(tf.floor(bottom + 0.5), tf.int32))
+            right = min(image_shape[1], tf.cast(tf.floor(right + 0.5), tf.int32))
+
+            if top - image_shape[0] >= 0:
+                text_origin = tf.convert_to_tensor([left, top - label_size[1]])
+            else:
+                text_origin = tf.convert_to_tensor([left, top + 1])
+
+            for j in range(thickness):
+                draw.rectangle(
+                    [left + j, top + j, right - j, bottom - j],
+                    outline=h.colormap[c])
+            draw.rectangle(
+                [tuple(text_origin), tuple(text_origin + label_size)],
+                fill=h.colormap[c])
+            draw.text(text_origin, label, fill=(0, 0, 0), font=font)
+            del draw
+        pil_img.show()
     else:
-        print(NOTE, ' no boxes')
+        print(NOTE, ' no boxes detected')
 
 
 if __name__ == "__main__":
