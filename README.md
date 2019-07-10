@@ -144,11 +144,10 @@ Now you have `mobile_yolo.tflite`
 
 Please refer [nncase](https://github.com/kendryte/nncase)
 
-## Caution
+# Caution
 
 1.  Default parameter in `Makefile`
 2.  `OBJWEIGHT`,`NOOBJWEIGHT`,`WHWEIGHT` used to balance precision and recall
 3.  Default output two layers,if you want more output layers can modify `OUTSIZE`
-4.  This implementation of **wh_loss** is different from the original yolov3, which I think can accelerate the convergence of the model
 5.  If you want to use the **full yolo**, you need to modify the `IMGSIZE` and `OUTSIZE` in the Makefile to the original yolo parameters
 
