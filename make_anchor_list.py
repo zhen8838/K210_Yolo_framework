@@ -13,20 +13,30 @@ def tf_fake_iou(X: tf.Tensor, centroids: tf.Tensor) -> tf.Tensor:
     Parameters
     ----------
     X : tf.Tensor
-        dataset array, shape = [?,5,2]
+        dataset array, shape = [?,2]
     centroids : tf.Tensor
-        centroids,shape = [?,5,2]
+        centroids,shape = [?,2]
 
     Returns
     -------
     tf.Tensor
-        iou score, shape = [?,5]
+        iou score, shape = [?,1]
     """
+    a_maxes = X / 2.
+    a_mins = -a_maxes
+
+    b_maxes = centroids / 2.
+    b_mins = -b_maxes
+
+    iner_mins = tf.maximum(a_mins, b_mins)
+    iner_maxes = tf.minimum(a_maxes, b_maxes)
+    iner_wh = tf.maximum(iner_maxes - iner_mins, 0.)
+    iner_area = iner_wh[..., 0] * iner_wh[..., 1]
+
     s1 = X[..., 0] * X[..., 1]
     s2 = centroids[..., 0] * centroids[..., 1]
-    iner = tf.minimum(X[..., 0], centroids[..., 0]) * tf.minimum(X[..., 1], centroids[..., 1])
-    iou_score = 1 - iner / (s1 + s2 - iner)
-    return iou_score
+
+    return 1 - iner_area / (s1 + s2 - iner_area)
 
 
 def findClosestCentroids(X: tf.Tensor, centroids: tf.Tensor) -> tf.Tensor:
@@ -35,9 +45,9 @@ def findClosestCentroids(X: tf.Tensor, centroids: tf.Tensor) -> tf.Tensor:
     Parameters
     ----------
     X : tf.Tensor
-        dataset array, shape = [?,5,2]
+        dataset array, shape = [?,2]
     centroids : tf.Tensor
-        centroids array, shape = [?,5,2]
+        centroids array, shape = [?,2]
 
     Returns
     -------

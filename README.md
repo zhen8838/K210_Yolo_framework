@@ -122,7 +122,9 @@ make inference MODEL=yolo_mobilev1 DEPTHMUL=0.75 CKPT=asset/yolo_model.h5 IMG=da
 
 ![](asset/people_res.jpg)
 
-**NOTE:** The more options please see with `python3 ./keras_inference.py -h`
+**NOTE:** Since the anchor is randomly generated, your results will be **different from the above image**.You just need to load this model and continue training for a while. 
+
+The more options please see with `python3 ./keras_inference.py -h`
 
 
 ## Prune Model

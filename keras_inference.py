@@ -7,6 +7,7 @@ from termcolor import colored
 from PIL import Image, ImageFont, ImageDraw
 import argparse
 import sys
+import numpy as np
 
 tf.enable_eager_execution()
 config = tf.ConfigProto()
@@ -72,9 +73,7 @@ def correct_box(box_xy: tf.Tensor, box_wh: tf.Tensor, input_shape: list, image_s
 
 
 def main(ckpt_weights, image_size, output_size, model_def, class_num, depth_multiplier, obj_thresh, iou_thresh, train_set, test_image):
-    h = Helper(None, class_num, f'data/{train_set}_anchor.npy',
-               [[image_size[0], image_size[1]]], [[output_size[0], output_size[1]],
-                                                  [output_size[2], output_size[3]]])
+    h = Helper(None, class_num, f'data/{train_set}_anchor.npy', np.reshape(np.array(image_size), (-1, 2)), np.reshape(np.array(output_size), (-1, 2)))
     network = eval(model_def)  # type :yolo_mobilev2
     yolo_model, yolo_model_warpper = network([image_size[0], image_size[1], 3], len(h.anchors[0]), class_num, alpha=depth_multiplier)
 

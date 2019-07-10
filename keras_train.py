@@ -75,7 +75,7 @@ def main(args, train_set, class_num, pre_ckpt, model_def,
             lr=init_learning_rate,
             decay=learning_rate_decay_factor),
         loss=[create_loss_fn(h, obj_thresh, iou_thresh, obj_weight, noobj_weight, wh_weight, layer)
-              for layer in range(len(train_model.output))],
+              for layer in range(len(train_model.output) if isinstance(train_model.output, list) else 1)],
         metrics=[Yolo_Precision(obj_thresh, name='p'), Yolo_Recall(obj_thresh, name='r')])
 
     """ NOTE fix the dataset output shape """
