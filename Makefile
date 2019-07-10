@@ -6,12 +6,13 @@ CLSNUM=20
 BATCH=32
 DATASET=voc
 MAXEP=10
-MODEL=yolo_mobilev2
+MODEL=yolo_mobilev1
 DEPTHMUL=0.75
 MODELCMP=~/Documents/kendryte-model-compiler
 LRDECAYFACTOR=0
 OBJWEIGHT=1
 NOOBJWEIGHT=1
+WHWEIGHT=1
 IMG=data/people.jpg
 SPLITFACTOR=0.05
 OBJTHRESH=0.7
@@ -45,6 +46,7 @@ train:
 			--learning_rate_decay_factor ${LRDECAYFACTOR} \
 			--obj_weight ${OBJWEIGHT} \
 			--noobj_weight ${NOOBJWEIGHT} \
+			--wh_weight ${WHWEIGHT} \
 			--obj_thresh ${OBJTHRESH} \
 			--iou_thresh ${IOUTHRESH} \
 			--vaildation_split ${SPLITFACTOR} \

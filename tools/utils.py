@@ -701,7 +701,7 @@ def calc_ignore_mask(t_xy_A: tf.Tensor, t_wh_A: tf.Tensor, p_xy: tf.Tensor, p_wh
 
 
 def create_loss_fn(h: Helper, obj_thresh: float, iou_thresh: float, obj_weight: float,
-                   noobj_weight: float, layer: int):
+                   noobj_weight: float, wh_weight: float, layer: int):
     """ create the yolo loss function
 
     Parameters
@@ -716,7 +716,7 @@ def create_loss_fn(h: Helper, obj_thresh: float, iou_thresh: float, obj_weight: 
 
     noobj_weight : float
 
-    train_classifier : str
+    wh_weight : float
 
     layer : int
         the current layer index
@@ -766,12 +766,12 @@ def create_loss_fn(h: Helper, obj_thresh: float, iou_thresh: float, obj_weight: 
                 labels=grid_true_xy, logits=grid_pred_xy)) / h.batch_size
 
         wh_loss = tf.reduce_sum(
-            obj_mask * coord_weight * 0.5 * tf.square(tf.subtract(
+            obj_mask * coord_weight * wh_weight * tf.square(tf.subtract(
                 x=grid_true_wh, y=grid_pred_wh))) / h.batch_size
 
         obj_loss = obj_weight * tf.reduce_sum(
             obj_mask * tf.nn.sigmoid_cross_entropy_with_logits(
-                labels=true_confidence, logits=pred_confidence)) / h.batch_size
+                labels=true_confidence, logits=pred_confidence))   / h.batch_size
 
         noobj_loss = noobj_weight * tf.reduce_sum(
             (1 - obj_mask) * ignore_mask * tf.nn.sigmoid_cross_entropy_with_logits(

@@ -7,6 +7,7 @@ This is a clear, extensible yolo v3 framework
 -   [x] Real-time display recall and precision
 -   [x] Easy to use with other datasets
 -   [x] Support multiple model backbones and expand more
+-   [x] Support n number of output layers and m anchors
 -   [x] Support model weight pruning
 -   [x] Portable model to kendryte [K210](https://kendryte.com/) chip
 # Training on Voc
@@ -57,16 +58,16 @@ You **must** download the model weights you want to train because I load the pre
 
 Put the files into `K210_Yolo_framework/data` directory. 
 
-| `MODEL`       | `DEPTHMUL` | Url                                                                                |
-| ------------- | ---------- | ---------------------------------------------------------------------------------- |
-| yolo_mobilev1 | 0.5        | [google drive](https://drive.google.com/open?id=1SmuqIU1uCLRgaePve9HgCj-SvXJB7U-I) |
-| yolo_mobilev1 | 0.75       | [google drive](https://drive.google.com/open?id=1BlH6va_plAEUnWBER6vij_Q_Gp8TFFaP) |
-| yolo_mobilev1 | 1.0        | [google drive](https://drive.google.com/open?id=1vIuylSVshJ47aJV3gmoYyqxQ5Rz9FAkA) |
-| yolo_mobilev2 | 0.5        | [google drive](https://drive.google.com/open?id=1qjpexl4dZLMtd0dX3QtoIHxXtidj993N) |
-| yolo_mobilev2 | 0.75       | [google drive](https://drive.google.com/open?id=1qSM5iQDicscSg0MYfZfiIEFGkc3Xtlt1) |
-| yolo_mobilev2 | 1.0        | [google drive](https://drive.google.com/open?id=1Qms1BMVtT8DcXvBUFBTgTBtVxQc9r4BQ) |
-| tiny_yolo     |            | [google drive](https://drive.google.com/open?id=1M1ZUAFJ93WzDaHOtaa8MX015HdoE85LM) |
-| yolo          |            | [google drive](https://drive.google.com/open?id=17eGV6DCaFQhVoxOuTUiwi7-v22DAwbXf) |
+| `MODEL`       | `DEPTHMUL` | Url                                                                                | Url                                        |
+| ------------- | ---------- | ---------------------------------------------------------------------------------- | ------------------------------------------ |
+| yolo_mobilev1 | 0.5        | [google drive](https://drive.google.com/open?id=1SmuqIU1uCLRgaePve9HgCj-SvXJB7U-I) | [weiyun](https://share.weiyun.com/59nnvtW) |
+| yolo_mobilev1 | 0.75       | [google drive](https://drive.google.com/open?id=1BlH6va_plAEUnWBER6vij_Q_Gp8TFFaP) | [weiyun](https://share.weiyun.com/5FgNE0b) |
+| yolo_mobilev1 | 1.0        | [google drive](https://drive.google.com/open?id=1vIuylSVshJ47aJV3gmoYyqxQ5Rz9FAkA) | [weiyun](https://share.weiyun.com/516LqR7) |
+| yolo_mobilev2 | 0.5        | [google drive](https://drive.google.com/open?id=1qjpexl4dZLMtd0dX3QtoIHxXtidj993N) | [weiyun](https://share.weiyun.com/5BwaRTu) |
+| yolo_mobilev2 | 0.75       | [google drive](https://drive.google.com/open?id=1qSM5iQDicscSg0MYfZfiIEFGkc3Xtlt1) | [weiyun](https://share.weiyun.com/5RRMwob) |
+| yolo_mobilev2 | 1.0        | [google drive](https://drive.google.com/open?id=1Qms1BMVtT8DcXvBUFBTgTBtVxQc9r4BQ) | [weiyun](https://share.weiyun.com/5dUelqn) |
+| tiny_yolo     |            | [google drive](https://drive.google.com/open?id=1M1ZUAFJ93WzDaHOtaa8MX015HdoE85LM) | [weiyun](https://share.weiyun.com/5413QWx) |
+| yolo          |            | [google drive](https://drive.google.com/open?id=17eGV6DCaFQhVoxOuTUiwi7-v22DAwbXf) | [weiyun](https://share.weiyun.com/55g6zHl) |
 
 **NOTE:** The mobilenet is not original, I have **modified it** to fit k210
 
@@ -114,7 +115,7 @@ make inference MODEL=xxxx DEPTHMUL=xx CKPT=log/xxxxxx/yolo_model.h5 IMG=data/peo
 You can try with my model :
 
 ```sh
-make inference MODEL=yolo_mobilev2 DEPTHMUL=0.75 CKPT=asset/yolo_model.h5 IMG=data/people.jpg 
+make inference MODEL=yolo_mobilev1 DEPTHMUL=0.75 CKPT=asset/yolo_model.h5 IMG=data/people.jpg
 ```
 
 ![](asset/people_res.jpg)
@@ -143,13 +144,10 @@ Now you have `mobile_yolo.tflite`
 
 Please refer [nncase](https://github.com/kendryte/nncase)
 
-## Demo
-
-
 ## Caution
 
 1.  Default parameter in `Makefile`
-2.  `OBJWEIGHT` and `NOOBJWEIGHT` used to balance precision and recall
+2.  `OBJWEIGHT`,`NOOBJWEIGHT`,`WHWEIGHT` used to balance precision and recall
 3.  Default output two layers,if you want more output layers can modify `OUTSIZE`
 4.  This implementation of **wh_loss** is different from the original yolov3, which I think can accelerate the convergence of the model
 5.  If you want to use the **full yolo**, you need to modify the `IMGSIZE` and `OUTSIZE` in the Makefile to the original yolo parameters

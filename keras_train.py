@@ -30,7 +30,7 @@ def main(args, train_set, class_num, pre_ckpt, model_def,
          depth_multiplier, is_augmenter, image_size, output_size,
          batch_size, rand_seed, max_nrof_epochs, init_learning_rate,
          learning_rate_decay_factor, obj_weight, noobj_weight,
-         obj_thresh, iou_thresh, vaildation_split, log_dir,
+         wh_weight, obj_thresh, iou_thresh, vaildation_split, log_dir,
          is_prune, initial_sparsity, final_sparsity, end_epoch, frequency):
     # Build path
     log_dir = (Path(log_dir) / datetime.strftime(datetime.now(), '%Y%m%d-%H%M%S'))  # type: Path
@@ -42,8 +42,7 @@ def main(args, train_set, class_num, pre_ckpt, model_def,
 
     # Build utils
     h = Helper(f'data/{train_set}_img_ann.npy', class_num, f'data/{train_set}_anchor.npy',
-               [[image_size[0], image_size[1]]], [[output_size[0], output_size[1]],
-                                                  [output_size[2], output_size[3]]], vaildation_split)
+               np.reshape(np.array(image_size), (-1, 2)), np.reshape(np.array(output_size), (-1, 2)), vaildation_split)
     h.set_dataset(batch_size, rand_seed, is_training=(is_augmenter == 'True'))
 
     # Build network
@@ -75,7 +74,7 @@ def main(args, train_set, class_num, pre_ckpt, model_def,
         keras.optimizers.Adam(
             lr=init_learning_rate,
             decay=learning_rate_decay_factor),
-        loss=[create_loss_fn(h, obj_thresh, iou_thresh, obj_weight, noobj_weight, layer)
+        loss=[create_loss_fn(h, obj_thresh, iou_thresh, obj_weight, noobj_weight, wh_weight, layer)
               for layer in range(len(train_model.output))],
         metrics=[Yolo_Precision(obj_thresh, name='p'), Yolo_Recall(obj_thresh, name='r')])
 
@@ -129,6 +128,7 @@ if __name__ == "__main__":
     parser.add_argument('--learning_rate_decay_factor', type=float, help='learning rate decay factor', default=0)
     parser.add_argument('--obj_weight', type=float, help='obj loss weight', default=5.0)
     parser.add_argument('--noobj_weight', type=float, help='noobj loss weight', default=0.5)
+    parser.add_argument('--wh_weight', type=float, help='wh loss weight', default=0.5)
     parser.add_argument('--obj_thresh', type=float, help='obj mask thresh', default=0.7)
     parser.add_argument('--iou_thresh', type=float, help='iou mask thresh', default=0.3)
     parser.add_argument('--vaildation_split', type=float, help='vaildation split factor', default=0.1)
@@ -145,7 +145,7 @@ if __name__ == "__main__":
          args.model_def, args.depth_multiplier, args.augmenter,
          args.image_size, args.output_size, args.batch_size, args.rand_seed, args.max_nrof_epochs,
          args.init_learning_rate, args.learning_rate_decay_factor,
-         args.obj_weight, args.noobj_weight, args.obj_thresh, args.iou_thresh, args.vaildation_split,
+         args.obj_weight, args.noobj_weight, args.wh_weight, args.obj_thresh, args.iou_thresh, args.vaildation_split,
          args.log_dir,
          args.is_prune,
          args.prune_initial_sparsity,
