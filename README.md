@@ -1,10 +1,11 @@
 [toc]
 
-# K210 YOLO V3
+# K210 YOLO V3 framework
 
-This yolov3 implementation has good scalability and training time measurements.
+This is a clear, extensible yolo v3 framework
 
 -   [x] Real-time display recall and precision
+-   [x] Easy to use with other datasets
 -   [x] Support multiple model backbones and expand more
 -   [x] Support model weight pruning
 -   [x] Portable model to kendryte [K210](https://kendryte.com/) chip
@@ -54,7 +55,7 @@ if you want to use custom dataset, just write script and generate `data/{dataset
 
 You **must** download the model weights you want to train because I load the pre-train weights by default.
 
-Put the files into `K210-yolo-v3/data` directory. 
+Put the files into `K210_Yolo_framework/data` directory. 
 
 | `MODEL`       | `DEPTHMUL` | Url                                                                                |
 | ------------- | ---------- | ---------------------------------------------------------------------------------- |
@@ -104,20 +105,19 @@ When you use mobilenet, you need to specify the `DEPTHMUL` parameter. You don't 
 **NOTE:** The more options please see with `python3 ./keras_train.py -h`
 
 
-
-
-## Freeze
-
-```sh
-toco --output_file mobile_yolo.tflite --keras_model_file log/xxxxxx/yolo_model.h5
-```
-Now you have `mobile_yolo.tflite`
-
 ## Inference
 
 ```sh
 make inference MODEL=xxxx DEPTHMUL=xx CKPT=log/xxxxxx/yolo_model.h5 IMG=data/people.jpg
 ```
+
+You can try with my model :
+
+```sh
+make inference MODEL=yolo_mobilev2 DEPTHMUL=0.75 CKPT=asset/yolo_model.h5 IMG=data/people.jpg 
+```
+
+![](asset/people_res.jpg)
 
 **NOTE:** The more options please see with `python3 ./keras_inference.py -h`
 
@@ -129,6 +129,15 @@ make train MODEL=xxxx MAXEP=1 ILR=0.0003 DATASET=voc CLSNUM=20 BATCH=16 PRUNE=Tr
 ```
 
 When training finish, will save model as `log/xxxxxx/yolo_prune_model.h5`.
+
+
+## Freeze
+
+```sh
+toco --output_file mobile_yolo.tflite --keras_model_file log/xxxxxx/yolo_model.h5
+```
+Now you have `mobile_yolo.tflite`
+
 
 ## Convert Kmodel
 
