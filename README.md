@@ -43,14 +43,16 @@ python3 make_voc_list.py ~/dataset/train.txt data/voc_img_ann.npy
 
 Load the annotations generate anchors:
 ```sh
-make anchors DATASET=voc
+make anchors DATASET=voc ANCNUM=3
 ```
 When success you will see figure like this:
 ![](asset/kmeans.png)
 
 **NOTE:** the kmeans result is random. when you get error , just rerun it.
 
-if you want to use custom dataset, just write script and generate `data/{dataset_name}_img_ann.npy`, Then use `make anchors DATASET=dataset_name`. The more options please see with `python3 ./make_anchor_list.py -h`
+If you want to use custom dataset, just write script and generate `data/{dataset_name}_img_ann.npy`, Then use `make anchors DATASET=dataset_name`. The more options please see with `python3 ./make_anchor_list.py -h`
+
+If you want to change number of output layer, you should modify `OUTSIZE` in Makefile
 
 ## Download pre-trian model
 
@@ -149,5 +151,5 @@ Please refer [nncase](https://github.com/kendryte/nncase)
 1.  Default parameter in `Makefile`
 2.  `OBJWEIGHT`,`NOOBJWEIGHT`,`WHWEIGHT` used to balance precision and recall
 3.  Default output two layers,if you want more output layers can modify `OUTSIZE`
-5.  If you want to use the **full yolo**, you need to modify the `IMGSIZE` and `OUTSIZE` in the Makefile to the original yolo parameters
+4.  If you want to use the **full yolo**, you need to modify the `IMGSIZE` and `OUTSIZE` in the Makefile to the original yolo parameters
 

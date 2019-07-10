@@ -24,6 +24,7 @@ END_EPOCH=5
 FREQUENCY=100
 IMGSIZE=224 320
 OUTSIZE=7 10 14 20
+ANCNUM=3
 
 
 all:
@@ -80,7 +81,7 @@ anchors:
 			--is_random True \
 			--in_hw ${IMGSIZE} \
 			--out_hw ${OUTSIZE} \
-			--anchor_num 3
+			--anchor_num ${ANCNUM}
 
 build_kfpkg:
 	cd ~/workspace/kendryte-standalone-sdk-0.5.6/build && make && zip -r kpu_yolov3.kfpkg  flash-list.json kpu_yolov3.bin yolo.kmodel && cd -
