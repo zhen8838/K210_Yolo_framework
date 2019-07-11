@@ -14,7 +14,7 @@ This is a clear, extensible yolo v3 framework
 
 ## Set Environment
 
-See `requirements.txt`
+`Python 3.7.1`, Others in `requirements.txt`
 
 ## Prepare dataset
 
