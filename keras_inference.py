@@ -143,7 +143,7 @@ def main(ckpt_weights, image_size, output_size, model_def, class_num, depth_mult
     """ show result """
     if len(classes) > 0:
         pil_img = Image.fromarray(orig_img)
-        print(f'[top\tleft\tbottom\tright\tscore]')
+        print(f'[top\tleft\tbottom\tright\tscore\tclass]')
         for i, c in enumerate(classes):
             box = boxes[i]
             score = scores[i]
@@ -151,7 +151,7 @@ def main(ckpt_weights, image_size, output_size, model_def, class_num, depth_mult
             draw = ImageDraw.Draw(pil_img)
             label_size = draw.textsize(label, font)
             top, left, bottom, right = box
-            print(f'[{top:.2f}\t{left:.2f}\t{bottom:.2f}\t{right:.2f}\t{score:.2f}]')
+            print(f'[{top:.2f}\t{left:.2f}\t{bottom:.2f}\t{right:.2f}\t{score:.2f}\t{int(c):2d}]')
             top = max(0, tf.cast(tf.floor(top + 0.5), tf.int32))
             left = max(0, tf.cast(tf.floor(left + 0.5), tf.int32))
             bottom = min(image_shape[0], tf.cast(tf.floor(bottom + 0.5), tf.int32))
