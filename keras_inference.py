@@ -151,7 +151,7 @@ def main(ckpt_weights, image_size, output_size, model_def, class_num, depth_mult
             draw = ImageDraw.Draw(pil_img)
             label_size = draw.textsize(label, font)
             top, left, bottom, right = box
-            print(f'[{top:.2f}\t{left:.2f}\t{bottom:.2f}\t{right:.2f}\t{score:.2f}\t{int(c):2d}]')
+            print(f'[{top:.1f}\t{left:.1f}\t{bottom:.1f}\t{right:.1f}\t{score:.2f}\t{int(c):2d}]')
             top = max(0, tf.cast(tf.floor(top + 0.5), tf.int32))
             left = max(0, tf.cast(tf.floor(left + 0.5), tf.int32))
             bottom = min(image_shape[0], tf.cast(tf.floor(bottom + 0.5), tf.int32))
