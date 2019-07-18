@@ -119,8 +119,12 @@ You can try with my model :
 ```sh
 make inference MODEL=yolo_mobilev1 DEPTHMUL=0.75 CKPT=asset/yolo_model.h5 IMG=data/people.jpg
 ```
+![](asset/people_res.jpg) 
+```sh
+make inference MODEL=yolo_mobilev1 DEPTHMUL=0.75 CKPT=asset/yolo_model.h5 IMG=data/dog.jpg
+```
 
-![](asset/people_res.jpg)
+![](asset/dog_res.jpg)
 
 **NOTE:** Since the anchor is randomly generated, your results will be **different from the above image**.You just need to load this model and continue training for a while. 
 
@@ -147,6 +151,14 @@ Now you have `mobile_yolo.tflite`
 ## Convert Kmodel
 
 Please refer [nncase](https://github.com/kendryte/nncase)
+
+## Demo
+
+Use [Kflash.py](https://github.com/kendryte/kflash.py) download `yolo3_frame_test_public/kfpkg/kpu_yolov3.kfpkg` to KD233 board:
+
+![](asset/k210_res.jpg)
+
+**NOTE:** I just use [kendryte yolov2 demo code](https://github.com/kendryte/nncase/tree/master/examples/20classes_yolo/k210/kpu_20classes_example) to prove the validity of the model. If you need `standard yolov3 region layer code`, you can contact me
 
 # Caution
 

@@ -82,11 +82,9 @@ class Helper(object):
                               for i in range(len(self.anchors))]
 
         self.iaaseq = iaa.OneOf([
-            iaa.Fliplr(0.7),  # 50% 镜像
-            iaa.Crop(percent=(0, 0.1)),  # random crops
-            iaa.Affine(scale={"x": (0.9, 1.1), "y": (0.9, 1.1)},
-                       translate_percent={"x": (-0.05, 0.05), "y": (-0.05, 0.05)},
-                       rotate=(-7, 7))
+            iaa.Fliplr(0.5),  # 50% 镜像
+            iaa.Affine(rotate=(-10, 10)),  # 随机旋转
+            iaa.Affine(translate_percent={"x": (-0.1, 0.1), "y": (-0.1, 0.1)})  # 随机平移
         ])
         self.colormap = [
             (255, 82, 0), (0, 255, 245), (0, 61, 255), (0, 255, 112), (0, 255, 133),
@@ -756,7 +754,7 @@ def create_loss_fn(h: Helper, obj_thresh: float, iou_thresh: float, obj_weight: 
 
         grid_true_xy, grid_true_wh = tf_xywh_to_grid(all_true_xy, all_true_wh, layer, h)
         # NOTE When wh=0 , tf.log(0) = -inf, so use K.switch to avoid it
-        grid_true_wh = K.switch(obj_mask_bool, grid_true_wh, tf.zeros_like(grid_pred_wh))
+        grid_true_wh = K.switch(obj_mask_bool, grid_true_wh, tf.zeros_like(grid_true_wh))
 
         """ define loss """
         coord_weight = 2 - all_true_wh[..., 0:1] * all_true_wh[..., 1:2]
@@ -771,7 +769,7 @@ def create_loss_fn(h: Helper, obj_thresh: float, iou_thresh: float, obj_weight: 
 
         obj_loss = obj_weight * tf.reduce_sum(
             obj_mask * tf.nn.sigmoid_cross_entropy_with_logits(
-                labels=true_confidence, logits=pred_confidence))   / h.batch_size
+                labels=true_confidence, logits=pred_confidence)) / h.batch_size
 
         noobj_loss = noobj_weight * tf.reduce_sum(
             (1 - obj_mask) * ignore_mask * tf.nn.sigmoid_cross_entropy_with_logits(
