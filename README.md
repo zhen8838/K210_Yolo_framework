@@ -35,7 +35,7 @@ cat 2007_train.txt 2007_val.txt 2012_*.txt > train.txt
 now you have `train.txt`, then merge img path and annotation to one npy file:
 
 ```sh
-python3 make_voc_list.py ~/dataset/train.txt data/voc_img_ann.npy
+python3 make_voc_list.py xxxx/train.txt data/voc_img_ann.npy
 ```
 
 
