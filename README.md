@@ -173,6 +173,8 @@ kflash yolo3_frame_test_public_maixpy/kfpkg/kpu_yolov3.kfpkg -B goE -p /dev/ttyU
 
 **NOTE:** I just use [kendryte yolov2 demo code](https://github.com/kendryte/nncase/tree/master/examples/20classes_yolo/k210/kpu_20classes_example) to prove the validity of the model. 
 
+![](asset/video_res.gif)
+
 If you need `standard yolov3 region layer code`, you can buy with me.
 
 # Caution
