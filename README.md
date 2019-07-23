@@ -154,11 +154,26 @@ Please refer [nncase](https://github.com/kendryte/nncase)
 
 ## Demo
 
-Use [Kflash.py](https://github.com/kendryte/kflash.py) download `yolo3_frame_test_public/kfpkg/kpu_yolov3.kfpkg` to KD233 board:
+*   KD233
 
+Use [Kflash.py](https://github.com/kendryte/kflash.py) 
+```sh
+kflash yolo3_frame_test_public/kfpkg/kpu_yolov3.kfpkg -B kd233 -p /dev/ttyUSB0 -b 2000000 -t
+```
 ![](asset/k210_res.jpg)
 
-**NOTE:** I just use [kendryte yolov2 demo code](https://github.com/kendryte/nncase/tree/master/examples/20classes_yolo/k210/kpu_20classes_example) to prove the validity of the model. If you need `standard yolov3 region layer code`, you can contact me
+* MAIXPY GO
+
+Use [Kflash.py](https://github.com/kendryte/kflash.py) 
+```sh
+kflash yolo3_frame_test_public_maixpy/kfpkg/kpu_yolov3.kfpkg -B goE -p /dev/ttyUSB1 -b 2000000 -t
+```
+
+![](asset/maixpy_res.jpg)
+
+**NOTE:** I just use [kendryte yolov2 demo code](https://github.com/kendryte/nncase/tree/master/examples/20classes_yolo/k210/kpu_20classes_example) to prove the validity of the model. **If Maxipy lcd display error , just reboot.** (I don't know why the display was wrong. Maybe you should consult [sipeed](https://www.sipeed.com/).)
+
+If you need `standard yolov3 region layer code`, you can buy with me.
 
 # Caution
 

@@ -1,0 +1,15 @@
+{
+  "version": "0.1.0",
+  "files": [
+    {
+      "address": 0,
+      "bin": "yolo3_frame_test_public_maixpy.bin",
+      "sha256Prefix": true
+    },
+    {
+      "address": 0x00A00000,
+      "bin": "yolo.kmodel",
+      "sha256Prefix": false
+    }
+  ]
+}
