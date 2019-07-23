@@ -48,13 +48,11 @@ static void init_rst(void)
 void tft_hard_init(void)
 {
     init_dcx();
-    spi_init(SPI_CHANNEL, SPI_WORK_MODE_0, SPI_FF_OCTAL, 8, 0);
 #if BOARD_LICHEEDAN
     init_rst();
-    spi_set_clk_rate(SPI_CHANNEL, 20000000);
-#else
-    spi_set_clk_rate(SPI_CHANNEL, 25000000);
 #endif
+    spi_init(SPI_CHANNEL, SPI_WORK_MODE_0, SPI_FF_OCTAL, 8, 0);
+    spi_set_clk_rate(SPI_CHANNEL, 15000000);
 }
 
 void tft_write_command(uint8_t cmd)

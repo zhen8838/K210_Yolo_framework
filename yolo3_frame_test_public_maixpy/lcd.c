@@ -55,8 +55,7 @@ void lcd_init(void)
 
 void lcd_set_direction(lcd_dir_t dir)
 {
-#if BOARD_LICHEEDAN
-#else
+#if !BOARD_LICHEEDAN
     dir |= 0x08;
 #endif
     lcd_ctl.dir = dir;
