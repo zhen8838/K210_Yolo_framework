@@ -56,9 +56,10 @@ If you want to change number of output layer, you should modify `OUTSIZE` in Mak
 
 ## Download pre-trian model
 
-You **must** download the model weights you want to train because I load the pre-train weights by default.
+You **must** download the model weights you want to train because I load the pre-train weights by default. And put the files into `K210_Yolo_framework/data` directory. 
 
-Put the files into `K210_Yolo_framework/data` directory. 
+**My Demo use `yolo_mobilev1 0.75`**
+
 
 | `MODEL`       | `DEPTHMUL` | Url                                                                                | Url                                        |
 | ------------- | ---------- | ---------------------------------------------------------------------------------- | ------------------------------------------ |
