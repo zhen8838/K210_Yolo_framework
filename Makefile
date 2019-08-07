@@ -25,7 +25,8 @@ FREQUENCY=100
 IMGSIZE=224 320
 OUTSIZE=7 10 14 20
 ANCNUM=3
-
+LOW=0.0 0.0
+HIGH=1.0 1.0
 
 all:
 	@echo please use \"make train\" or other ...
@@ -81,7 +82,9 @@ anchors:
 			--is_random True \
 			--in_hw ${IMGSIZE} \
 			--out_hw ${OUTSIZE} \
-			--anchor_num ${ANCNUM}
+			--anchor_num ${ANCNUM} \
+			--low ${LOW} \
+			--high ${HIGH}
 
 build_kfpkg:
 	cd ~/workspace/kendryte-standalone-sdk-0.5.6/build && make && zip -r kpu_yolov3.kfpkg  flash-list.json kpu_yolov3.bin yolo.kmodel && cd -

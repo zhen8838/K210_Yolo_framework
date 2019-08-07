@@ -177,10 +177,12 @@ def runkMeans(X: np.ndarray, initial_centroids: np.ndarray, max_iters: int,
     return new_centrois, idx_
 
 
-def main(train_set: str, max_iters: int, in_hw: tuple, out_hw: tuple, anchor_num: int, is_random: bool, is_plot: bool):
+def main(train_set: str, max_iters: int, in_hw: tuple, out_hw: tuple,
+         anchor_num: int, is_random: bool, is_plot: bool, low: list, high: list):
     X = np.load(f'data/{train_set}_img_ann.npy', allow_pickle=True)
     in_wh = np.array(in_hw[::-1])
-
+    low = np.array(low)
+    high = np.array(high)
     # NOTE correct boxes
     for i in range(len(X)):
         # X[i, 1], X[i, 2]
@@ -200,7 +202,8 @@ def main(train_set: str, max_iters: int, in_hw: tuple, out_hw: tuple, anchor_num
     x = x[:, 3:]
     layers = len(out_hw) // 2
     if is_random == 'True':
-        initial_centroids = np.random.rand(layers * anchor_num, 2)
+        initial_centroids = np.hstack((np.random.uniform(low[0], high[0], (layers * anchor_num, 1)),
+                                       np.random.uniform(low[1], high[1], (layers * anchor_num, 1))))
     else:
         initial_centroids = np.vstack((np.linspace(0.05, 0.3, num=layers * anchor_num), np.linspace(0.05, 0.5, num=layers * anchor_num)))
         initial_centroids = initial_centroids.T
@@ -208,8 +211,6 @@ def main(train_set: str, max_iters: int, in_hw: tuple, out_hw: tuple, anchor_num
     # NOTE : sort by descending , bigger value for layer 0 .
     centroids = np.array(sorted(centroids, key=lambda x: (-x[0])))
     centroids = np.reshape(centroids, (layers, anchor_num, 2))
-    # centroids = np.array([np.array(sorted(centroids[i * anchor_num:i * anchor_num + anchor_num], key=lambda x: (x[0]))) for i in range(layers)])
-    # grid_wh = np.array([[1 / out_hw[i * 2 + 1], 1 / out_hw[i * 2]] for i in range(len(out_hw) // 2)])
     for l in range(layers):
         centroids[l] = centroids[l]  # grid_wh[l]  # NOTE centroids是相对于全局的0-1
     if np.any(np.isnan(centroids)):
@@ -228,6 +229,8 @@ def parse_arguments(argv):
     parser.add_argument('--is_plot', type=str, help='wether show the figure', choices=['True', 'False'], default='True')
     parser.add_argument('--in_hw', type=int, help='net work input image size', default=(224, 320), nargs='+')
     parser.add_argument('--out_hw', type=int, help='net work output image size', default=(7, 10, 14, 20), nargs='+')
+    parser.add_argument('--low', type=float, help='Lower bound of random anchor, (x,y)', default=(0.0, 0.0), nargs='+')
+    parser.add_argument('--high', type=float, help='Upper bound of random anchor, (x,y)', default=(1.0, 1.0), nargs='+')
     parser.add_argument('--anchor_num', type=int, help='single layer anchor nums', default=3)
 
     return parser.parse_args(argv)
@@ -235,4 +238,4 @@ def parse_arguments(argv):
 
 if __name__ == '__main__':
     args = parse_arguments(sys.argv[1:])
-    main(args.train_set, args.max_iters, args.in_hw, args.out_hw, args.anchor_num, args.is_random, args.is_plot)
+    main(args.train_set, args.max_iters, args.in_hw, args.out_hw, args.anchor_num, args.is_random, args.is_plot, args.low, args.high)

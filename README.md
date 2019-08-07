@@ -41,9 +41,9 @@ python3 make_voc_list.py xxxx/train.txt data/voc_img_ann.npy
 
 ## Make anchors
 
-Load the annotations generate anchors:
+Load the annotations generate anchors (`LOW` and `HIGH` depending on the distribution of dataset):
 ```sh
-make anchors DATASET=voc ANCNUM=3
+make anchors DATASET=voc ANCNUM=3 LOW='.0 .0' HIGH='1. 1.'
 ```
 When success you will see figure like this:
 ![](asset/kmeans.png)
