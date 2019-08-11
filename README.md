@@ -185,3 +185,21 @@ If you need `standard yolov3 region layer code`, you can buy with me.
 3.  Default output two layers,if you want more output layers can modify `OUTSIZE`
 4.  If you want to use the **full yolo**, you need to modify the `IMGSIZE` and `OUTSIZE` in the Makefile to the original yolo parameters
 
+# Yolo Face Alignment
+
+
+
+## Prepare dataset
+
+Download (CelebFaces)[http://mmlab.ie.cuhk.edu.hk/projects/CelebA.html] dataset.
+
+I found CelebFaces dataset bbox annotation mislabel in `101283.jpg`:
+
+Change `list_bbox_celeba.txt` `101283.jpg   320 828   0   0` to `101283.jpg   320 828 440 231`
+
+Then:
+```sh
+python3 make_celeb_list.py xxxxx/img_celeba xxxxx/list_bbox_celeba.txt xxxxx/list_landmarks_celeba.txt data/celeb_img_ann.npy
+```
+
+## Make anchors

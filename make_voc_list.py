@@ -18,9 +18,9 @@ def main(train_file: str, output_file: str):
 
     lines = np.array([
         np.array([
-            image_path_list[i],
-            np.loadtxt(ann_list[i], dtype=float, ndmin=2),
-            np.array(skimage.io.imread(image_path_list[i]).shape[0:2])]
+            image_path_list[i], # image path
+            np.loadtxt(ann_list[i], dtype=float, ndmin=2), # image ann [cls,x,y,w,h]
+            np.array(skimage.io.imread(image_path_list[i]).shape[0:2])] # image [h w]
         ) for i in range(len(ann_list))])
 
     np.save(output_file, lines)

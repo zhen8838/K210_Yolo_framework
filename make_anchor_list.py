@@ -199,7 +199,7 @@ def main(train_set: str, max_iters: int, in_hw: tuple, out_hw: tuple,
         X[i, 1][:, 3:5] = (X[i, 1][:, 3:5] * img_wh * scale) / in_wh
 
     x = np.vstack(X[:, 1])
-    x = x[:, 3:]
+    x = x[:, 3:5]
     layers = len(out_hw) // 2
     if is_random == 'True':
         initial_centroids = np.hstack((np.random.uniform(low[0], high[0], (layers * anchor_num, 1)),
