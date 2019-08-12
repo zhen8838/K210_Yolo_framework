@@ -87,7 +87,7 @@ class YOLOAlignHelper(Helper):
         if is_resize:
             """ resize image and keep ratio """
             img_wh = np.array(img.shape[1::-1])
-            in_wh = self.in_hw[0][::-1]
+            in_wh = self.in_hw[::-1]
 
             """ calculate the affine transform factor """
             scale = in_wh / img_wh  # NOTE affine tranform sacle is [w,h]
@@ -103,7 +103,7 @@ class YOLOAlignHelper(Helper):
 
             """ apply Affine Transform """
             aff = AffineTransform(scale=scale, translation=translation)
-            img = warp(img, aff.inverse, output_shape=self.in_hw[0], preserve_range=True).astype('uint8')
+            img = warp(img, aff.inverse, output_shape=self.in_hw, preserve_range=True).astype('uint8')
 
         if is_training:
             img, true_box = self.data_augmenter(img, true_box)
@@ -188,23 +188,36 @@ class YOLOAlignHelper(Helper):
         new_box = np.hstack((p, xywh_box, new_landmarks))
         return image_aug, new_box
 
+    def _compute_dataset_shape(self) -> tuple:
+        """ compute dataset shape to avoid keras check shape error
 
-def tf_grid_to_all(grid_pred_xy: tf.Tensor, grid_pred_wh: tf.Tensor, bbox_true_landmark: tf.Tensor,
+        Returns
+        -------
+        tuple
+            dataset shape lists
+        """
+        output_shapes = [tf.TensorShape([None] + list(self.out_hw[i]) + [len(self.anchors[i]), self.class_num + 5 + self.landmark_num * 2])
+                         for i in range(len(self.anchors))]
+        dataset_shapes = (tf.TensorShape([None] + list(self.in_hw) + [3]), tuple(output_shapes))
+        return dataset_shapes
+
+
+def tf_grid_to_all(pred_grid_xy: tf.Tensor, pred_grid_wh: tf.Tensor, pred_bbox_landmark: tf.Tensor,
                    layer: int, h: YOLOAlignHelper) -> [tf.Tensor, tf.Tensor]:
-    """ rescale the pred raw [grid_pred_xy,grid_pred_wh] to all image sclae [0~1],
-        recale bbox_true_landmark from bbox scale to all image sclae [0~1].
-
+    """ rescale the pred raw [pred_grid_xy,pred_grid_wh] to all image sclae [0~1],
+        recale pred_bbox_landmark from bbox scale to all image sclae [0~1].
+        NOTE : This function will auto active `pred value`, so Do Not use activation before this function
     Parameters
     ----------
-    grid_pred_xy : tf.Tensor
+    pred_grid_xy : tf.Tensor
 
         shape = [h, w, anchor num, 2]
 
-    grid_pred_wh : tf.Tensor
+    pred_grid_wh : tf.Tensor
 
         shape = [h, w, anchor num, 2]
 
-    bbox_true_landmark : tf.Tensor
+    pred_bbox_landmark : tf.Tensor
 
         shape = [h, w, anchor num, landmark num, 2]
 
@@ -217,30 +230,30 @@ def tf_grid_to_all(grid_pred_xy: tf.Tensor, grid_pred_wh: tf.Tensor, bbox_true_l
     -------
     tuple
 
-        after process, [all_pred_xy, all_pred_wh, all_pred_landmark]
+        after process, [all_xy, all_wh, all_landmark]
     """
     with tf.name_scope('xywh_to_all_%d' % layer):
-        all_pred_xy = (tf.sigmoid(grid_pred_xy[..., :]) + h.xy_offset[layer]) / h.out_hw[layer][::-1]
-        all_pred_wh = tf.exp(grid_pred_wh[..., :]) * h.anchors[layer]
-        all_pred_landmark = (bbox_true_landmark - .5) * tf.expand_dims(all_pred_wh, -2) + tf.expand_dims(all_pred_xy, -2)
-    return all_pred_xy, all_pred_wh, all_pred_landmark
+        all_xy = (tf.sigmoid(pred_grid_xy[..., :]) + h.xy_offset[layer]) / h.out_hw[layer][::-1]
+        all_wh = tf.exp(pred_grid_wh[..., :]) * h.anchors[layer]
+        all_landmark = (tf.sigmoid(pred_bbox_landmark) - .5) * tf.expand_dims(all_wh, -2) + tf.expand_dims(all_xy, -2)
+    return all_xy, all_wh, all_landmark
 
 
-def tf_all_to_grid(all_true_xy: tf.Tensor, all_true_wh: tf.Tensor, all_true_landmark: tf.Tensor,
+def tf_all_to_grid(all_xy: tf.Tensor, all_wh: tf.Tensor, all_landmark: tf.Tensor,
                    layer: int, h: YOLOAlignHelper) -> [tf.Tensor, tf.Tensor, tf.Tensor]:
     """convert true label xy wh to grid scale, landmark from all image scale to bbox scale
 
     Parameters
     ----------
-    all_true_xy : tf.Tensor
+    all_xy : tf.Tensor
 
         shape = [h, w, anchor num, 2]
 
-    all_true_wh : tf.Tensor
+    all_wh : tf.Tensor
 
         shape = [h, w, anchor num, 2]
 
-    all_true_landmark : tf.Tensor
+    all_landmark : tf.Tensor
 
         shape = [h, w, anchor num, landmark num, 2]
 
@@ -256,10 +269,10 @@ def tf_all_to_grid(all_true_xy: tf.Tensor, all_true_wh: tf.Tensor, all_true_land
         `bbox_true_landmark` shape = [h, w, anchor num, landmark num, 2]
     """
     with tf.name_scope('xywh_to_grid_%d' % layer):
-        grid_true_xy = (all_true_xy * h.out_hw[layer][::-1]) - h.xy_offset[layer]
-        grid_true_wh = tf.log(all_true_wh / h.anchors[layer])
-        bbox_true_landmark = (all_true_landmark - tf.expand_dims(grid_true_xy, -2)) / tf.expand_dims(grid_true_wh, -2) + .5
-    return grid_true_xy, grid_true_wh, bbox_true_landmark
+        grid_xy = (all_xy * h.out_hw[layer][::-1]) - h.xy_offset[layer]
+        grid_wh = tf.log(all_wh / h.anchors[layer])
+        bbox_landmark = (all_landmark - tf.expand_dims(all_xy, -2)) / tf.expand_dims(all_wh, -2) + .5
+    return grid_xy, grid_wh, bbox_landmark
 
 
 def tf_iou(pred_xy: tf.Tensor, pred_wh: tf.Tensor, vaild_xy: tf.Tensor, vaild_wh: tf.Tensor) -> tf.Tensor:
@@ -395,12 +408,15 @@ def create_yoloalign_loss(h: YOLOAlignHelper, obj_thresh: float, iou_thresh: flo
 
         all_true_xy = y_true[..., 0:2]
         all_true_wh = y_true[..., 2:4]
+        obj_mask_bool = y_true[..., 4] > obj_thresh
         true_confidence = y_true[..., 4:5]
         all_true_landmark = y_true[..., 5:5 + h.landmark_num * 2]
         true_cls = y_true[..., 5:]
 
+        bbox_pred_landmark = tf.reshape(bbox_pred_landmark, bbox_pred_landmark.shape.as_list()[:-1] + (h.landmark_num, 2))
+        all_true_landmark = tf.reshape(all_true_landmark, all_true_landmark.shape.as_list()[:-1] + (h.landmark_num, 2))
+
         obj_mask = true_confidence  # true_confidence[..., 0] > obj_thresh
-        obj_mask_bool = y_true[..., 4] > obj_thresh
 
         """ calc the ignore mask  """
 
