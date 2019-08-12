@@ -1,0 +1,39 @@
+mode: train
+model:
+  name: yolo
+  network: yolo_mobilev2
+  depth_multiplier: 0.75
+  input_hw:
+  - 224
+  - 320
+  output_hw:
+  - - 7
+    - 10
+  - - 14
+    - 20
+  class_num: 20
+  landmark_num: 5
+  obj_weight: 1
+  noobj_weight: 1
+  wh_weight: 1
+  obj_thresh: 0.7
+  iou_thresh: 0.5
+train:
+  dataset: voc
+  augmenter: false
+  batch_size: 16
+  pre_ckpt: null
+  rand_seed: 10101
+  epochs: 10
+  vail_split: 0.1
+  log_dir: log
+  optimizer: Adam
+  optimizer_kwarg:
+    lr: 0.001
+    decay: 0
+prune:
+  is_prune: false
+  init_sparsity: 0.5
+  final_sparsity: 0.9
+  end_epoch: 5
+  frequency: 100

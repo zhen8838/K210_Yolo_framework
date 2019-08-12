@@ -1,7 +1,8 @@
 import tensorflow.python as tf
 from tensorflow.python import keras
 from tensorflow.python.keras.callbacks import TensorBoard, LearningRateScheduler
-from tools.utils import Helper, create_loss_fn, INFO, ERROR, NOTE
+from tools.utils import Helper, create_yolo_loss, INFO, ERROR, NOTE
+from tools.alignutils import YOLOAlignHelper, create_yoloalign_loss
 from tools.custom import Yolo_Precision, Yolo_Recall
 from models.yolonet import *
 import os
@@ -12,7 +13,7 @@ import sys
 import argparse
 from termcolor import colored
 from tensorflow_model_optimization.python.core.api.sparsity import keras as sparsity
-from register import ArgDict, ArgMap, dict_to_obj, network_register, optimizer_register
+from register import dict2obj, network_register, optimizer_register
 from yaml import safe_dump, safe_load
 
 config = tf.ConfigProto()
@@ -20,13 +21,7 @@ config.gpu_options.allow_growth = True
 keras.backend.set_session(tf.Session(config=config))
 
 
-def write_arguments_to_file(args, filename):
-    with open(filename, 'w') as f:
-        for key, value in vars(args).items():
-            f.write('%s: %s\n' % (key, str(value)))
-
-
-def main(mode, model, train, prune):
+def main(config_file, new_cfg, mode, model, train, prune):
     """ Set Golbal Paramter """
     tf.set_random_seed(train.rand_seed)
     np.random.seed(train.rand_seed)
@@ -37,21 +32,24 @@ def main(mode, model, train, prune):
     if not log_dir.exists():
         log_dir.mkdir(parents=True)
 
+    with (log_dir / Path(config_file).name).open('w') as f:
+        safe_dump(new_cfg, f, sort_keys=False)  # save config file name
+
     """ Build Data Input PipeLine """
     if model.name == 'yolo':
         h = Helper(f'data/{train.dataset}_img_ann.npy', model.class_num, f'data/{train.dataset}_anchor.npy',
-                   np.reshape(np.array(model.input_size), (-1, 2)), np.reshape(np.array(model.output_size), (-1, 2)), train.vaildation_split)
-        h.set_dataset(train.batch_size, train.rand_seed, is_training=(train.is_augmenter == 'True'))
+                   model.input_hw, np.reshape(np.array(model.output_hw), (-1, 2)), train.vail_split)
+        h.set_dataset(train.batch_size, train.rand_seed, is_training=train.augmenter)
 
         train_ds = h.train_dataset
         validation_ds = h.test_dataset
-        vali_epoch_step = int(train_epoch_step * h.validation_split)
         train_epoch_step = h.train_epoch_step
+        vali_epoch_step = int(h.train_epoch_step * h.validation_split)
 
     """ Build Network """
     network = network_register[model.network]  # type :yolo_mobilev2
     if model.name == 'yolo':
-        saved_model, trainable_model = network([model.input_size[0], model.input_size[1], 3],
+        saved_model, trainable_model = network([model.input_hw[0], model.input_hw[1], 3],
                                                len(h.anchors[0]), model.class_num, alpha=model.depth_multiplier)
 
     """ Load Pre-Train Model """
@@ -76,9 +74,9 @@ def main(mode, model, train, prune):
         train_model = trainable_model
 
     """ Comile Model """
-    optimizer = optimizer_register[train.optimizer](**train.optimizer_parm)
+    optimizer = optimizer_register[train.optimizer](**train.optimizer_kwarg)
     if model.name == 'yolo':
-        losses = [create_loss_fn(h, model.obj_thresh, model.iou_thresh, model.obj_weight, model.noobj_weight, model.wh_weight, layer)
+        losses = [create_yolo_loss(h, model.obj_thresh, model.iou_thresh, model.obj_weight, model.noobj_weight, model.wh_weight, layer)
                   for layer in range(len(train_model.output) if isinstance(train_model.output, list) else 1)]
         metrics = [Yolo_Precision(model.obj_thresh, name='p'), Yolo_Recall(model.obj_thresh, name='r')]
 
@@ -120,6 +118,5 @@ if __name__ == "__main__":
     with open(args.config_file, 'r') as f:
         new_cfg = safe_load(f)
 
-    ArgDict.update(new_cfg)
-    ArgMap = dict_to_obj(ArgDict)
-    main(ArgMap.mode, ArgMap.model, ArgMap.train, ArgMap.prune)
+    ArgMap = dict2obj(new_cfg)
+    main(args.config_file, new_cfg, ArgMap.mode, ArgMap.model, ArgMap.train, ArgMap.prune)

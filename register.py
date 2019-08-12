@@ -1,14 +1,24 @@
 from models.yolonet import yolo_mobilev1, yolo_mobilev2, tiny_yolo, yolo
 from tensorflow.python.keras.optimizers import Adam, SGD, RMSprop
+from yaml import safe_dump
 
 
-class dict_to_obj(object):
-    def __init__(self, d):
-        for a, b in d.items():
-            if isinstance(b, (list, tuple)):
-                setattr(self, a, [dict_to_obj(x) if isinstance(x, dict) else x for x in b])
+class dict2obj(object):
+    def __init__(self, dicts):
+        """ convert dict to object , NOTE the `**kwargs` will not be convert 
+
+        Parameters
+        ----------
+        object : [type]
+
+        dicts : dict
+            dict
+        """
+        for name, value in dicts.items():
+            if isinstance(value, (list, tuple)):
+                setattr(self, name, [dict2obj(x) if isinstance(x, dict) else x for x in value])
             else:
-                setattr(self, a, dict_to_obj(b) if isinstance(b, dict) else b)
+                setattr(self, name, dict2obj(value) if (isinstance(value, dict) and 'kwarg' not in name) else value)
 
 
 ArgDict = {
@@ -23,9 +33,9 @@ ArgDict = {
         'depth_multiplier': 0.75,
 
         # net work input image size
-        'input_size': [[320, 224]],
+        'input_hw': [224, 320],
         # net work output image size
-        'output_size': [[7, 10], [14, 20]],
+        'output_hw': [[7, 10], [14, 20]],
         # trian class num
         'class_num': 20,
 
@@ -49,10 +59,10 @@ ArgDict = {
         'vail_split': 0.1,  # vaildation_split
         'log_dir': 'log',
         # optimizers
-        'optimizer': 'adam',
-        'optimizer_parm':
+        'optimizer': 'Adam',
+        'optimizer_kwarg':
         {
-            'lr': 0.0001,  # init_learning_rate
+            'lr': 0.001,  # init_learning_rate
             'decay': 0  # learning_rate_decay_factor
         },
 
@@ -80,7 +90,3 @@ optimizer_register = {
     'SGD': SGD,
     'RMSprop': RMSprop,
 }
-
-ArgMap = dict_to_obj(ArgDict)
-
-type(ArgMap)

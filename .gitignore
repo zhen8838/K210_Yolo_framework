@@ -11,3 +11,4 @@ tmp
 *.tflite
 *.kmodel
 test
+config

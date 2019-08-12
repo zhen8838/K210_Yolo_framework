@@ -197,7 +197,7 @@ def corner_to_center(xyxy_box: np.ndarray, from_all_scale=True, in_hw=None) -> n
 class Helper(object):
     def __init__(self, image_ann: str, class_num: int, anchors: str, in_hw: tuple, out_hw: tuple, validation_split=0.1):
         self.in_hw = np.array(in_hw)
-        assert self.in_hw.ndim == 2
+        assert self.in_hw.ndim == 1
         self.out_hw = np.array(out_hw)
         assert self.out_hw.ndim == 2
         self.validation_split = validation_split  # type:float
@@ -428,7 +428,7 @@ class Helper(object):
         if is_resize:
             """ resize image and keep ratio """
             img_wh = np.array(img.shape[1::-1])
-            in_wh = self.in_hw[0][::-1]
+            in_wh = self.in_hw[::-1]
 
             """ calculate the affine transform factor """
             scale = in_wh / img_wh  # NOTE affine tranform sacle is [w,h]
@@ -448,7 +448,7 @@ class Helper(object):
 
             """ apply Affine Transform """
             aff = AffineTransform(scale=scale, translation=translation)
-            img = warp(img, aff.inverse, output_shape=self.in_hw[0], preserve_range=True).astype('uint8')
+            img = warp(img, aff.inverse, output_shape=self.in_hw, preserve_range=True).astype('uint8')
 
         if is_training:
             img, true_box = self.data_augmenter(img, true_box)
@@ -467,7 +467,7 @@ class Helper(object):
         """
         output_shapes = [tf.TensorShape([None] + list(self.out_hw[i]) + [len(self.anchors[i]), self.class_num + 5])
                          for i in range(len(self.anchors))]
-        dataset_shapes = (tf.TensorShape([None] + list(self.in_hw[0]) + [3]), tuple(output_shapes))
+        dataset_shapes = (tf.TensorShape([None] + list(self.in_hw) + [3]), tuple(output_shapes))
         return dataset_shapes
 
     def _build_datapipe(self, image_ann_list: np.ndarray, batch_size: int, rand_seed: int, is_training: bool, is_resize: bool) -> tf.data.Dataset:
@@ -480,6 +480,7 @@ class Helper(object):
 
         @tf.function
         def _parser_wrapper(i: tf.Tensor):
+            # TODO 使用ragged tensorflow来提高速度
             img_path, true_box = numpy_function(lambda idx: (image_ann_list[idx][0], image_ann_list[idx][1].astype('float32')),
                                                 [i], [tf.dtypes.string, tf.float32])
             raw_img = tf.image.decode_jpeg(tf.read_file(img_path), channels=3)
@@ -720,8 +721,8 @@ def calc_ignore_mask(t_xy_A: tf.Tensor, t_wh_A: tf.Tensor, p_xy: tf.Tensor,
     return map_fn(lmba, tf.range(helper.batch_size), dtype=tf.float32)
 
 
-def create_loss_fn(h: Helper, obj_thresh: float, iou_thresh: float, obj_weight: float,
-                   noobj_weight: float, wh_weight: float, layer: int):
+def create_yolo_loss(h: Helper, obj_thresh: float, iou_thresh: float, obj_weight: float,
+                     noobj_weight: float, wh_weight: float, layer: int):
     """ create the yolo loss function
 
     Parameters

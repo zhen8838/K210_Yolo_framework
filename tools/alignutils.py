@@ -353,8 +353,8 @@ def calc_ignore_mask(t_xy_A: tf.Tensor, t_wh_A: tf.Tensor, t_landmark_A: tf.Tens
     return tf.concat(masks, axis=0)
 
 
-def create_loss_fn(h: YOLOAlignHelper, obj_thresh: float, iou_thresh: float, obj_weight: float,
-                   noobj_weight: float, wh_weight: float, layer: int):
+def create_yoloalign_loss(h: YOLOAlignHelper, obj_thresh: float, iou_thresh: float, obj_weight: float,
+                          noobj_weight: float, wh_weight: float, layer: int):
     """ create the yolo loss function
 
     Parameters
