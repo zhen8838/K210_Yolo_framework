@@ -356,14 +356,14 @@ def calc_ignore_mask(t_xy_A: tf.Tensor, t_wh_A: tf.Tensor, t_landmark_A: tf.Tens
         pred_xy, pred_wh, pred_landmark = tf_grid_to_all(p_xy, p_wh, p_landmark, layer, helper)
 
         masks = []
-        for bc in range(len(helper.batch_size)):
+        for bc in range(helper.batch_size):
             vaild_xy = tf.boolean_mask(t_xy_A[bc], obj_mask[bc])
             vaild_wh = tf.boolean_mask(t_wh_A[bc], obj_mask[bc])
             iou_score = tf_iou(pred_xy[bc], pred_wh[bc], vaild_xy, vaild_wh)
             best_iou = tf.reduce_max(iou_score, axis=-1, keepdims=True)
             masks.append(tf.cast(best_iou < iou_thresh, tf.float32))
 
-    return tf.concat(masks, axis=0)
+    return tf.parallel_stack(masks)
 
 
 def create_yoloalign_loss(h: YOLOAlignHelper, obj_thresh: float, iou_thresh: float, obj_weight: float,
@@ -396,10 +396,10 @@ def create_yoloalign_loss(h: YOLOAlignHelper, obj_thresh: float, iou_thresh: flo
 
             return : loss
     """
-    shapes = [[-1] + list(h.out_hw[i]) + [len(h.anchors[i]), h.class_num + 5]for i in range(len(h.anchors))]
+    landmark_shape = tf.TensorShape([h.batch_size, h.out_hw[layer][0], h.out_hw[layer][1], h.anchor_number, h.landmark_num, 2])
 
     def loss_fn(y_true: tf.Tensor, y_pred: tf.Tensor):
-        """ split the label """
+        """ Split Label """
         grid_pred_xy = y_pred[..., 0:2]
         grid_pred_wh = y_pred[..., 2:4]
         pred_confidence = y_pred[..., 4:5]
@@ -413,12 +413,12 @@ def create_yoloalign_loss(h: YOLOAlignHelper, obj_thresh: float, iou_thresh: flo
         all_true_landmark = y_true[..., 5:5 + h.landmark_num * 2]
         true_cls = y_true[..., 5:]
 
-        bbox_pred_landmark = tf.reshape(bbox_pred_landmark, bbox_pred_landmark.shape.as_list()[:-1] + (h.landmark_num, 2))
-        all_true_landmark = tf.reshape(all_true_landmark, all_true_landmark.shape.as_list()[:-1] + (h.landmark_num, 2))
+        all_true_landmark = tf.reshape(all_true_landmark, landmark_shape)
+        bbox_pred_landmark = tf.reshape(bbox_pred_landmark, landmark_shape)
 
         obj_mask = true_confidence  # true_confidence[..., 0] > obj_thresh
 
-        """ calc the ignore mask  """
+        """ Calc the ignore mask  """
 
         ignore_mask = calc_ignore_mask(all_true_xy, all_true_wh, all_true_landmark,
                                        grid_pred_xy, grid_pred_wh, bbox_pred_landmark,
@@ -443,7 +443,9 @@ def create_yoloalign_loss(h: YOLOAlignHelper, obj_thresh: float, iou_thresh: flo
                 x=grid_true_wh, y=grid_pred_wh)))
 
         landmark_loss = tf.reduce_sum(
-            obj_mask * tf.nn.sigmoid_cross_entropy_with_logits(
+            # FIXME 这里无法broadcast，修复
+            # NOTE obj_mask shape is [?,7,10,5,1] can't broadcast with [?,7,10,5,5,2]
+            y_true[..., 4] * tf.nn.sigmoid_cross_entropy_with_logits(
                 labels=bbox_true_landmark, logits=bbox_pred_landmark))
 
         obj_loss = obj_weight * tf.reduce_sum(

@@ -104,6 +104,139 @@ def yolo_mobilev2(input_shape: list, anchor_num: int, class_num: int, **kwargs) 
     return yolo_model, yolo_model_warpper
 
 
+def yolov2algin_mobilev1(input_shape: list, anchor_num: int, class_num: int, landmark_num: int, **kwargs) -> [keras.Model, keras.Model]:
+    inputs = keras.Input(input_shape)
+    base_model = MobileNet(input_tensor=inputs, input_shape=input_shape, include_top=False, weights=None, alpha=kwargs['alpha'])  # type: keras.Model
+
+    if kwargs['alpha'] == .5:
+        base_model.load_weights('data/mobilenet_v1_base_5.h5')
+    elif kwargs['alpha'] == .75:
+        base_model.load_weights('data/mobilenet_v1_base_7.h5')
+    elif kwargs['alpha'] == 1.:
+        base_model.load_weights('data/mobilenet_v1_base_10.h5')
+
+    x = base_model.output
+
+    if kwargs['alpha'] == .5:
+        y = compose(
+            DarknetConv2D_BN_Leaky(128, (3, 3)),
+            DarknetConv2D_BN_Leaky(128, (3, 3)))(x)
+    elif kwargs['alpha'] == .75:
+        y = compose(
+            DarknetConv2D_BN_Leaky(192, (3, 3)),
+            DarknetConv2D_BN_Leaky(128, (3, 3)))(x)
+    elif kwargs['alpha'] == 1.:
+        y = compose(
+            DarknetConv2D_BN_Leaky(128, (3, 3)),
+            DarknetConv2D_BN_Leaky(128, (3, 3)))(x)
+
+    y = DarknetConv2D(anchor_num * (class_num + 5), (1, 1))(y)
+
+    y_reshape = Reshape((7, 10, anchor_num, 5 + landmark_num * 2 + class_num), name='l1')(y)
+
+    yolo_model = keras.Model(inputs, [y])
+    yolo_model_warpper = keras.Model(inputs, [y_reshape])
+
+    return yolo_model, yolo_model_warpper
+
+
+def yoloalgin_mobilev1(input_shape: list, anchor_num: int, class_num: int, landmark_num: int, **kwargs) -> [keras.Model, keras.Model]:
+    inputs = keras.Input(input_shape)
+    base_model = MobileNet(input_tensor=inputs, input_shape=input_shape, include_top=False, weights=None, alpha=kwargs['alpha'])  # type: keras.Model
+
+    if kwargs['alpha'] == .5:
+        base_model.load_weights('data/mobilenet_v1_base_5.h5')
+    elif kwargs['alpha'] == .75:
+        base_model.load_weights('data/mobilenet_v1_base_7.h5')
+    elif kwargs['alpha'] == 1.:
+        base_model.load_weights('data/mobilenet_v1_base_10.h5')
+
+    x1 = base_model.get_layer('conv_pw_11_relu').output
+
+    x2 = base_model.output
+
+    y1 = compose(
+        DarknetConv2D_BN_Leaky(128 if kwargs['alpha'] > 0.8 else 192, (3, 3)),
+        DarknetConv2D(anchor_num * (class_num + 5), (1, 1)))(x2)
+
+    x2 = compose(
+        DarknetConv2D_BN_Leaky(128, (1, 1)),
+        keras.layers.UpSampling2D(2))(x2)
+
+    y2 = compose(
+        keras.layers.Concatenate(),
+        DarknetConv2D_BN_Leaky(128, (3, 3)),
+        DarknetConv2D(anchor_num * (class_num + 5), (1, 1)))([x2, x1])
+
+    y1_reshape = Reshape((7, 10, anchor_num, 5 + landmark_num * 2 + class_num), name='l1')(y1)
+    y2_reshape = Reshape((14, 20, anchor_num, 5 + landmark_num * 2 + class_num), name='l2')(y2)
+
+    yolo_model = keras.Model(inputs, [y1, y2])
+    yolo_model_warpper = keras.Model(inputs, [y1_reshape, y2_reshape])
+
+    return yolo_model, yolo_model_warpper
+
+
+def yoloalgin_mobilev2(input_shape: list, anchor_num: int, class_num: int, landmark_num: int, **kwargs) -> [keras.Model, keras.Model]:
+    """ build keras mobilenet v2 yolo model, will return two keras model (yolo_model,yolo_model_warpper)
+        use yolo_model_warpper training can avoid mismatch error, final use yolo_model to save.
+
+    Parameters
+    ----------
+    input_shape : list
+
+    anchor_num : int
+
+    class_num : int
+
+    landmark_num : int
+
+
+    Returns
+    -------
+    [keras.Model, keras.Model]
+        yolo_model,yolo_model_warpper
+    """
+    input_tensor = keras.Input(input_shape)
+    base_model = MobileNetV2(
+        include_top=False,
+        weights=None,
+        input_tensor=input_tensor,
+        alpha=kwargs['alpha'],
+        input_shape=input_shape,
+        pooling=None)  # type: keras.Model
+
+    if kwargs['alpha'] == .5:
+        base_model.load_weights('data/mobilenet_v2_base_5.h5')
+    elif kwargs['alpha'] == .75:
+        base_model.load_weights('data/mobilenet_v2_base_7.h5')
+    elif kwargs['alpha'] == 1.:
+        base_model.load_weights('data/mobilenet_v2_base_10.h5')
+
+    x1 = base_model.get_layer('block_13_expand_relu').output
+    x2 = base_model.output
+
+    y1 = compose(
+        DarknetConv2D_BN_Leaky(128 if kwargs['alpha'] > 0.7 else 192, (3, 3)),
+        DarknetConv2D(anchor_num * (class_num + 5), (1, 1)))(x2)
+
+    x2 = compose(
+        DarknetConv2D_BN_Leaky(128, (1, 1)),
+        UpSampling2D(2))(x2)
+    y2 = compose(
+        Concatenate(),
+        DarknetConv2D_BN_Leaky(128 if kwargs['alpha'] > 0.7 else 192, (3, 3)),
+        DarknetConv2D(anchor_num * (class_num + 5), (1, 1)))([x2, x1])
+
+    y1_reshape = Reshape((7, 10, anchor_num, 5 + landmark_num * 2 + class_num), name='l1')(y1)
+    y2_reshape = Reshape((14, 20, anchor_num, 5 + landmark_num * 2 + class_num), name='l2')(y2)
+
+    yolo_model = keras.Model(inputs=input_tensor, outputs=[y1, y2])
+    yolo_model_warpper = keras.Model(inputs=input_tensor, outputs=[y1_reshape, y2_reshape])
+
+    return yolo_model, yolo_model_warpper
+
+
 def tiny_yolo(input_shape, anchor_num, class_num, **kwargs) -> [keras.Model, keras.Model]:
     inputs = keras.Input(input_shape)
     '''Create Tiny YOLO_v3 model CNN body in keras.'''

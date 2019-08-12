@@ -1,4 +1,5 @@
-from models.yolonet import yolo_mobilev1, yolo_mobilev2, tiny_yolo, yolo
+from models.yolonet import yolo_mobilev1, yolo_mobilev2, tiny_yolo, yolo,\
+    yoloalgin_mobilev1, yoloalgin_mobilev2, yolov2algin_mobilev1
 from tensorflow.python.keras.optimizers import Adam, SGD, RMSprop
 from yaml import safe_dump
 
@@ -83,6 +84,9 @@ network_register = {
     'yolo_mobilev2': yolo_mobilev2,
     'tiny_yolo': tiny_yolo,
     'yolo': yolo,
+    'yoloalgin_mobilev1': yoloalgin_mobilev1,
+    'yoloalgin_mobilev2': yoloalgin_mobilev2,
+    'yolov2algin_mobilev1': yolov2algin_mobilev1,
 }
 
 optimizer_register = {

@@ -40,17 +40,27 @@ def main(config_file, new_cfg, mode, model, train, prune):
         h = Helper(f'data/{train.dataset}_img_ann.npy', model.class_num, f'data/{train.dataset}_anchor.npy',
                    model.input_hw, np.reshape(np.array(model.output_hw), (-1, 2)), train.vail_split)
         h.set_dataset(train.batch_size, train.rand_seed, is_training=train.augmenter)
+    elif model.name == 'yoloalgin':
+        h = YOLOAlignHelper(f'data/{train.dataset}_img_ann.npy', model.class_num, f'data/{train.dataset}_anchor.npy',
+                            model.landmark_num, model.input_hw, np.reshape(np.array(model.output_hw), (-1, 2)),
+                            train.vail_split)
+        h.set_dataset(train.batch_size, train.rand_seed, is_training=train.augmenter)
 
-        train_ds = h.train_dataset
-        validation_ds = h.test_dataset
-        train_epoch_step = h.train_epoch_step
-        vali_epoch_step = int(h.train_epoch_step * h.validation_split)
+    train_ds = h.train_dataset
+    validation_ds = h.test_dataset
+    train_epoch_step = h.train_epoch_step
+    vali_epoch_step = int(h.train_epoch_step * h.validation_split)
 
     """ Build Network """
     network = network_register[model.network]  # type :yolo_mobilev2
     if model.name == 'yolo':
         saved_model, trainable_model = network([model.input_hw[0], model.input_hw[1], 3],
-                                               len(h.anchors[0]), model.class_num, alpha=model.depth_multiplier)
+                                               len(h.anchors[0]), model.class_num,
+                                               alpha=model.depth_multiplier)
+    elif model.name == 'yoloalgin':
+        saved_model, trainable_model = network([model.input_hw[0], model.input_hw[1], 3],
+                                               len(h.anchors[0]), model.class_num, model.landmark_num,
+                                               alpha=model.depth_multiplier)
 
     """ Load Pre-Train Model """
     if train.pre_ckpt != None and train.pre_ckpt != 'None' and train.pre_ckpt != '':
@@ -77,6 +87,10 @@ def main(config_file, new_cfg, mode, model, train, prune):
     optimizer = optimizer_register[train.optimizer](**train.optimizer_kwarg)
     if model.name == 'yolo':
         losses = [create_yolo_loss(h, model.obj_thresh, model.iou_thresh, model.obj_weight, model.noobj_weight, model.wh_weight, layer)
+                  for layer in range(len(train_model.output) if isinstance(train_model.output, list) else 1)]
+        metrics = [Yolo_Precision(model.obj_thresh, name='p'), Yolo_Recall(model.obj_thresh, name='r')]
+    elif model.name == 'yoloalgin':
+        losses = [create_yoloalign_loss(h, model.obj_thresh, model.iou_thresh, model.obj_weight, model.noobj_weight, model.wh_weight, layer)
                   for layer in range(len(train_model.output) if isinstance(train_model.output, list) else 1)]
         metrics = [Yolo_Precision(model.obj_thresh, name='p'), Yolo_Recall(model.obj_thresh, name='r')]
 
