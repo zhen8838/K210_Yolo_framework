@@ -443,9 +443,8 @@ def create_yoloalign_loss(h: YOLOAlignHelper, obj_thresh: float, iou_thresh: flo
                 x=grid_true_wh, y=grid_pred_wh)))
 
         landmark_loss = tf.reduce_sum(
-            # FIXME 这里无法broadcast，修复
             # NOTE obj_mask shape is [?,7,10,5,1] can't broadcast with [?,7,10,5,5,2]
-            y_true[..., 4] * tf.nn.sigmoid_cross_entropy_with_logits(
+            obj_mask[..., tf.newaxis] * tf.nn.sigmoid_cross_entropy_with_logits(
                 labels=bbox_true_landmark, logits=bbox_pred_landmark))
 
         obj_loss = obj_weight * tf.reduce_sum(

@@ -130,7 +130,7 @@ def yolov2algin_mobilev1(input_shape: list, anchor_num: int, class_num: int, lan
             DarknetConv2D_BN_Leaky(128, (3, 3)),
             DarknetConv2D_BN_Leaky(128, (3, 3)))(x)
 
-    y = DarknetConv2D(anchor_num * (class_num + 5), (1, 1))(y)
+    y = DarknetConv2D(anchor_num * (5 + landmark_num * 2 + class_num), (1, 1))(y)
 
     y_reshape = Reshape((7, 10, anchor_num, 5 + landmark_num * 2 + class_num), name='l1')(y)
 
@@ -157,7 +157,7 @@ def yoloalgin_mobilev1(input_shape: list, anchor_num: int, class_num: int, landm
 
     y1 = compose(
         DarknetConv2D_BN_Leaky(128 if kwargs['alpha'] > 0.8 else 192, (3, 3)),
-        DarknetConv2D(anchor_num * (class_num + 5), (1, 1)))(x2)
+        DarknetConv2D(anchor_num * (5 + landmark_num * 2 + class_num), (1, 1)))(x2)
 
     x2 = compose(
         DarknetConv2D_BN_Leaky(128, (1, 1)),
@@ -166,7 +166,7 @@ def yoloalgin_mobilev1(input_shape: list, anchor_num: int, class_num: int, landm
     y2 = compose(
         keras.layers.Concatenate(),
         DarknetConv2D_BN_Leaky(128, (3, 3)),
-        DarknetConv2D(anchor_num * (class_num + 5), (1, 1)))([x2, x1])
+        DarknetConv2D(anchor_num * (5 + landmark_num * 2 + class_num), (1, 1)))([x2, x1])
 
     y1_reshape = Reshape((7, 10, anchor_num, 5 + landmark_num * 2 + class_num), name='l1')(y1)
     y2_reshape = Reshape((14, 20, anchor_num, 5 + landmark_num * 2 + class_num), name='l2')(y2)
@@ -218,7 +218,7 @@ def yoloalgin_mobilev2(input_shape: list, anchor_num: int, class_num: int, landm
 
     y1 = compose(
         DarknetConv2D_BN_Leaky(128 if kwargs['alpha'] > 0.7 else 192, (3, 3)),
-        DarknetConv2D(anchor_num * (class_num + 5), (1, 1)))(x2)
+        DarknetConv2D(anchor_num * (5 + landmark_num * 2 + class_num), (1, 1)))(x2)
 
     x2 = compose(
         DarknetConv2D_BN_Leaky(128, (1, 1)),
@@ -226,7 +226,7 @@ def yoloalgin_mobilev2(input_shape: list, anchor_num: int, class_num: int, landm
     y2 = compose(
         Concatenate(),
         DarknetConv2D_BN_Leaky(128 if kwargs['alpha'] > 0.7 else 192, (3, 3)),
-        DarknetConv2D(anchor_num * (class_num + 5), (1, 1)))([x2, x1])
+        DarknetConv2D(anchor_num * (5 + landmark_num * 2 + class_num), (1, 1)))([x2, x1])
 
     y1_reshape = Reshape((7, 10, anchor_num, 5 + landmark_num * 2 + class_num), name='l1')(y1)
     y2_reshape = Reshape((14, 20, anchor_num, 5 + landmark_num * 2 + class_num), name='l2')(y2)
