@@ -46,6 +46,7 @@ ArgDict = {
         'obj_weight': 1,
         'noobj_weight': 1,
         'wh_weight': 1,
+        'landmark_weight': 3,
         'obj_thresh': 0.7,
         'iou_thresh': 0.5,
     },

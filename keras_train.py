@@ -90,7 +90,8 @@ def main(config_file, new_cfg, mode, model, train, prune):
                   for layer in range(len(train_model.output) if isinstance(train_model.output, list) else 1)]
         metrics = [Yolo_Precision(model.obj_thresh, name='p'), Yolo_Recall(model.obj_thresh, name='r')]
     elif model.name == 'yoloalgin':
-        losses = [create_yoloalign_loss(h, model.obj_thresh, model.iou_thresh, model.obj_weight, model.noobj_weight, model.wh_weight, layer)
+        losses = [create_yoloalign_loss(h, model.obj_thresh, model.iou_thresh, model.obj_weight, model.noobj_weight, model.wh_weight,
+                                        model.landmark_weight, layer)
                   for layer in range(len(train_model.output) if isinstance(train_model.output, list) else 1)]
         metrics = [Yolo_Precision(model.obj_thresh, name='p'), Yolo_Recall(model.obj_thresh, name='r')]
 

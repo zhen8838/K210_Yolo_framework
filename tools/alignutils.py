@@ -368,7 +368,7 @@ def calc_ignore_mask(t_xy_A: tf.Tensor, t_wh_A: tf.Tensor, t_landmark_A: tf.Tens
 
 
 def create_yoloalign_loss(h: YOLOAlignHelper, obj_thresh: float, iou_thresh: float, obj_weight: float,
-                          noobj_weight: float, wh_weight: float, layer: int):
+                          noobj_weight: float, wh_weight: float, landmark_weight: float, layer: int):
     """ create the yolo loss function
 
     Parameters
@@ -384,6 +384,8 @@ def create_yoloalign_loss(h: YOLOAlignHelper, obj_thresh: float, iou_thresh: flo
     noobj_weight : float
 
     wh_weight : float
+    
+    landmark_weight : float
 
     layer : int
         the current layer index
@@ -445,7 +447,7 @@ def create_yoloalign_loss(h: YOLOAlignHelper, obj_thresh: float, iou_thresh: flo
 
         landmark_loss = tf.reduce_sum(
             # NOTE obj_mask shape is [?,7,10,5,1] can't broadcast with [?,7,10,5,5,2]
-            obj_mask[..., tf.newaxis] * tf.nn.sigmoid_cross_entropy_with_logits(
+            landmark_weight * obj_mask[..., tf.newaxis] * tf.nn.sigmoid_cross_entropy_with_logits(
                 labels=bbox_true_landmark, logits=bbox_pred_landmark))
 
         obj_loss = obj_weight * tf.reduce_sum(

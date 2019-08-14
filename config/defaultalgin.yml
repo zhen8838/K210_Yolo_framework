@@ -1,8 +1,8 @@
 mode: train
 model:
-  name: yolo
-  network: yolo_mobilev2
-  depth_multiplier: 0.75
+  name: yoloalgin
+  network: yoloalgin_mobilev1
+  depth_multiplier: 0.5
   input_hw:
   - 224
   - 320
@@ -11,7 +11,7 @@ model:
     - 10
   - - 14
     - 20
-  class_num: 20
+  class_num: 1
   landmark_num: 5
   obj_weight: 1
   noobj_weight: 1
@@ -20,9 +20,9 @@ model:
   obj_thresh: 0.7
   iou_thresh: 0.5
 train:
-  dataset: voc
+  dataset: celeba
   augmenter: false
-  batch_size: 16
+  batch_size: 32
   pre_ckpt: null
   rand_seed: 10101
   epochs: 10

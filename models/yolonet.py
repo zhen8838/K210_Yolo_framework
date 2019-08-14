@@ -156,7 +156,7 @@ def yoloalgin_mobilev1(input_shape: list, anchor_num: int, class_num: int, landm
     x2 = base_model.output
 
     y1 = compose(
-        DarknetConv2D_BN_Leaky(128 if kwargs['alpha'] > 0.8 else 192, (3, 3)),
+        DarknetConv2D_BN_Leaky(128, (3, 3)),
         DarknetConv2D(anchor_num * (5 + landmark_num * 2 + class_num), (1, 1)))(x2)
 
     x2 = compose(
