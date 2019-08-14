@@ -20,7 +20,7 @@ keras.backend.set_session(sess)
 keras.backend.set_learning_phase(0)
 
 
-def correct_box(box_xy: tf.Tensor, box_wh: tf.Tensor, input_shape: list, image_hw: list) -> tf.Tensor:
+def correct_box(box_xy: tf.Tensor, box_wh: tf.Tensor, input_hw: list, image_hw: list) -> tf.Tensor:
     """rescae predict box to orginal image scale
 
     Parameters
@@ -29,7 +29,7 @@ def correct_box(box_xy: tf.Tensor, box_wh: tf.Tensor, input_shape: list, image_h
         box xy
     box_wh : tf.Tensor
         box wh
-    input_shape : list
+    input_hw : list
         input shape
     image_hw : list
         image shape
@@ -41,11 +41,11 @@ def correct_box(box_xy: tf.Tensor, box_wh: tf.Tensor, input_shape: list, image_h
     """
     box_yx = box_xy[..., ::-1]
     box_hw = box_wh[..., ::-1]
-    input_shape = tf.cast(input_shape, tf.float32)
+    input_hw = tf.cast(input_hw, tf.float32)
     image_hw = tf.cast(image_hw, tf.float32)
-    new_shape = tf.round(image_hw * tf.reduce_min(input_shape / image_hw))
-    offset = (input_shape - new_shape) / 2. / input_shape
-    scale = input_shape / new_shape
+    new_shape = tf.round(image_hw * tf.reduce_min(input_hw / image_hw))
+    offset = (input_hw - new_shape) / 2. / input_hw
+    scale = input_hw / new_shape
     box_yx = (box_yx - offset) * scale
     box_hw *= scale
 
@@ -63,7 +63,7 @@ def correct_box(box_xy: tf.Tensor, box_wh: tf.Tensor, input_shape: list, image_h
     return boxes
 
 
-def correct_algin_box(box_xy: tf.Tensor, box_wh: tf.Tensor, landmark: tf.Tensor, input_shape: list, image_hw: list) -> tf.Tensor:
+def correct_algin_box(box_xy: tf.Tensor, box_wh: tf.Tensor, landmark: tf.Tensor, input_hw: list, image_hw: list) -> tf.Tensor:
     """rescae predict box to orginal image scale
 
     Parameters
@@ -72,7 +72,9 @@ def correct_algin_box(box_xy: tf.Tensor, box_wh: tf.Tensor, landmark: tf.Tensor,
         box xy
     box_wh : tf.Tensor
         box wh
-    input_shape : list
+    landmark : tf.Tensor
+        landmark 
+    input_hw : list
         input shape
     image_hw : list
         image shape
@@ -84,12 +86,14 @@ def correct_algin_box(box_xy: tf.Tensor, box_wh: tf.Tensor, landmark: tf.Tensor,
     """
     box_yx = box_xy[..., ::-1]
     box_hw = box_wh[..., ::-1]
-    input_shape = tf.cast(input_shape, tf.float32)
+    input_hw = tf.cast(input_hw, tf.float32)
     image_hw = tf.cast(image_hw, tf.float32)
-    new_shape = tf.round(image_hw * tf.reduce_min(input_shape / image_hw))
-    offset = (input_shape - new_shape) / 2. / input_shape
-    scale = input_shape / new_shape
+    new_shape = tf.round(image_hw * tf.reduce_min(input_hw / image_hw))
+    offset = (input_hw - new_shape) / 2. / input_hw
+    scale = input_hw / new_shape
     box_yx = (box_yx - offset) * scale
+    # NOTE landmark is [x,y] -> new landmarkes is [x,y]
+    new_landmark = ((landmark[..., ::-1] - offset) * scale)[..., ::-1]
     box_hw *= scale
 
     box_mins = box_yx - (box_hw / 2.)
@@ -103,7 +107,8 @@ def correct_algin_box(box_xy: tf.Tensor, box_wh: tf.Tensor, landmark: tf.Tensor,
 
     # Scale boxes back to original image shape.
     boxes *= tf.concat([image_hw, image_hw], axis=-1)
-    return boxes
+    new_landmark *= image_hw[::-1]
+    return boxes, new_landmark
 
 
 def parser_yolo_output(orig_img: np.ndarray, y_pred: list, input_hw: tuple,
@@ -204,6 +209,7 @@ def parser_yoloalgin_output(orig_img: np.ndarray, y_pred: list, input_hw: tuple,
     """ box list """
     _yxyx_box = []
     _yxyx_box_scores = []
+    _xy_landmarks = []
     """ preprocess label """
     for l, pred_label in enumerate(y_pred):
         """ split the label """
@@ -211,7 +217,7 @@ def parser_yoloalgin_output(orig_img: np.ndarray, y_pred: list, input_hw: tuple,
         pred_wh = pred_label[..., 2:4]
         pred_confidence = pred_label[..., 4:5]
         pred_landmark = tf.reshape(pred_label[..., 5:5 + landmark_num * 2],
-                                   pred_label.shape.as_list()[:-1] + [landmark_num, 2])
+                                   pred_label.shape[:-1] + (landmark_num, 2))
         # TODO 把解析函数搞定
         pred_cls = pred_label[..., 5 + landmark_num * 2:]
         # box_scores = obj_score * class_score
@@ -220,15 +226,18 @@ def parser_yoloalgin_output(orig_img: np.ndarray, y_pred: list, input_hw: tuple,
         """ reshape box  """
         # NOTE tf_xywh_to_all will auto use sigmoid function
         pred_xy_A, pred_wh_A, pred_landmark_A = tf_grid_to_all(pred_xy, pred_wh, pred_landmark, l, h)
-        boxes = correct_box(pred_xy_A, pred_wh_A, pred_landmark_A, input_hw, image_hw)
+        boxes, landmarkes = correct_algin_box(pred_xy_A, pred_wh_A, pred_landmark_A, input_hw, image_hw)
         boxes = tf.reshape(boxes, (-1, 4))
         box_scores = tf.reshape(box_scores, (-1, class_num))
+        landmarkes = tf.reshape(landmarkes, (-1, landmark_num, 2))
         """ append box and scores to global list """
         _yxyx_box.append(boxes)
         _yxyx_box_scores.append(box_scores)
+        _xy_landmarks.append(landmarkes)
 
     yxyx_box = tf.concat(_yxyx_box, axis=0)
     yxyx_box_scores = tf.concat(_yxyx_box_scores, axis=0)
+    xy_landmarks = tf.concat(_xy_landmarks, axis=0)
 
     mask = yxyx_box_scores >= obj_thresh
 
@@ -236,21 +245,25 @@ def parser_yoloalgin_output(orig_img: np.ndarray, y_pred: list, input_hw: tuple,
     _boxes = []
     _scores = []
     _classes = []
+    _landmarkes = []
     for c in range(class_num):
         class_boxes = tf.boolean_mask(yxyx_box, mask[:, c])
         class_box_scores = tf.boolean_mask(yxyx_box_scores[:, c], mask[:, c])
+        class_landmarks = tf.boolean_mask(xy_landmarks, mask[:, c])
         select = tf.image.non_max_suppression(
             class_boxes, scores=class_box_scores, max_output_size=30, iou_threshold=iou_thresh)
         class_boxes = tf.gather(class_boxes, select)
         class_box_scores = tf.gather(class_box_scores, select)
+        class_landmarks = tf.gather(class_landmarks, select)
         _boxes.append(class_boxes)
         _scores.append(class_box_scores)
         _classes.append(tf.ones_like(class_box_scores) * c)
+        _landmarkes.append(class_landmarks)
 
     boxes = tf.concat(_boxes, axis=0)
     classes = tf.concat(_classes, axis=0)
     scores = tf.concat(_scores, axis=0)
-
+    landmarkes = tf.concat(_landmarkes, axis=0)
     """ draw box  """
     font = ImageFont.truetype(font='asset/FiraMono-Medium.otf',
                               size=tf.cast(tf.floor(3e-2 * image_hw[0] + 0.5), tf.int32).numpy())
@@ -260,7 +273,7 @@ def parser_yoloalgin_output(orig_img: np.ndarray, y_pred: list, input_hw: tuple,
     """ show result """
     if len(classes) > 0:
         pil_img = Image.fromarray(orig_img)
-        print(f'[top\tleft\tbottom\tright\tscore\tclass]')
+        print('[' + 'top\tleft\tbottom\tright\tscore\tclass\t' + '\t'.join([f'p{i//2}_{i-i//2}' for i in range(landmark_num * 2)]) + ']')
         for i, c in enumerate(classes):
             box = boxes[i]
             score = scores[i]
@@ -268,7 +281,7 @@ def parser_yoloalgin_output(orig_img: np.ndarray, y_pred: list, input_hw: tuple,
             draw = ImageDraw.Draw(pil_img)
             label_size = draw.textsize(label, font)
             top, left, bottom, right = box
-            print(f'[{top:.1f}\t{left:.1f}\t{bottom:.1f}\t{right:.1f}\t{score:.2f}\t{int(c):2d}]')
+            strings = f'[{top:.1f}\t{left:.1f}\t{bottom:.1f}\t{right:.1f}\t{score:.2f}\t{int(c):2d}'
             top = max(0, tf.cast(tf.floor(top + 0.5), tf.int32))
             left = max(0, tf.cast(tf.floor(left + 0.5), tf.int32))
             bottom = min(image_hw[0], tf.cast(tf.floor(bottom + 0.5), tf.int32))
@@ -283,10 +296,17 @@ def parser_yoloalgin_output(orig_img: np.ndarray, y_pred: list, input_hw: tuple,
                 draw.rectangle(
                     [left + j, top + j, right - j, bottom - j],
                     outline=h.colormap[c])
-            draw.rectangle(
-                [tuple(text_origin), tuple(text_origin + label_size)],
-                fill=h.colormap[c])
+            draw.rectangle([tuple(text_origin), tuple(text_origin + label_size)],
+                           fill=h.colormap[c])
             draw.text(text_origin, label, fill=(0, 0, 0), font=font)
+            r = 3
+            for points in landmarkes:
+                for point in points:
+                    strings += f'\t{point[0]:.1f}\t{point[1]:.1f}'
+                    draw.ellipse((point[0] - r, point[1] - r, point[0] + r, point[1] + r),
+                                 fill=h.colormap[c])
+
+            print(strings + ']')
             del draw
         pil_img.show()
     else:
@@ -297,12 +317,10 @@ def main(ckpt_path: Path, model, train, test_image: Path):
     if model.name == 'yolo':
         h = Helper(None, model.class_num, f'data/{train.dataset}_anchor.npy',
                    model.input_hw, np.reshape(np.array(model.output_hw), (-1, 2)), train.vail_split)
-        h.set_dataset(train.batch_size, train.rand_seed, is_training=train.augmenter)
     elif model.name == 'yoloalgin':
         h = YOLOAlignHelper(None, model.class_num, f'data/{train.dataset}_anchor.npy',
                             model.landmark_num, model.input_hw, np.reshape(np.array(model.output_hw), (-1, 2)),
                             train.vail_split)
-        h.set_dataset(train.batch_size, train.rand_seed, is_training=train.augmenter)
 
     network = network_register[model.network]  # type :yolo_mobilev2
     if model.name == 'yolo':
@@ -325,6 +343,10 @@ def main(ckpt_path: Path, model, train, test_image: Path):
     y_pred = trainable_model.predict(img)
 
     """ parser output """
+    if model.name == 'yolo':
+        parser_yolo_output(orig_img, y_pred, model.input_hw, image_hw, model.class_num, model.obj_thresh, model.iou_thresh, h)
+    elif model.name == 'yoloalgin':
+        parser_yoloalgin_output(orig_img, y_pred, model.input_hw, image_hw, model.class_num, model.landmark_num, model.obj_thresh, model.iou_thresh, h)
 
 
 if __name__ == "__main__":

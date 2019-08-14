@@ -96,10 +96,11 @@ class YOLOAlignHelper(Helper):
             translation = ((in_wh - img_wh * scale) / 2).astype(int)
 
             """ calculate the box transform matrix """
-            true_box[:, 1:3] = (true_box[:, 1:3] * img_wh * scale + translation) / in_wh
-            true_box[:, 3:5] = (true_box[:, 3:5] * img_wh * scale) / in_wh
-            true_box[:, 5:5 + self.landmark_num * 2] = ((true_box[:, 5:5 + self.landmark_num * 2].reshape(
-                (-1, self.landmark_num, 2)) * img_wh * scale + translation) / in_wh).reshape((-1, self.landmark_num * 2))
+            if isinstance(true_box, np.ndarray):
+                true_box[:, 1:3] = (true_box[:, 1:3] * img_wh * scale + translation) / in_wh
+                true_box[:, 3:5] = (true_box[:, 3:5] * img_wh * scale) / in_wh
+                true_box[:, 5:5 + self.landmark_num * 2] = ((true_box[:, 5:5 + self.landmark_num * 2].reshape(
+                    (-1, self.landmark_num, 2)) * img_wh * scale + translation) / in_wh).reshape((-1, self.landmark_num * 2))
 
             """ apply Affine Transform """
             aff = AffineTransform(scale=scale, translation=translation)
