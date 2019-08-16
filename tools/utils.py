@@ -478,7 +478,6 @@ class Helper(object):
             labels = self.box_to_label(true_box)
             return (img.astype('float32'), *labels)
 
-        @tf.function
         def _parser_wrapper(i: tf.Tensor):
             # TODO 使用ragged tensorflow来提高速度
             img_path, true_box = numpy_function(lambda idx: (image_ann_list[idx][0], image_ann_list[idx][1].astype('float32')),
@@ -753,7 +752,6 @@ def create_yolo_loss(h: Helper, obj_thresh: float, iou_thresh: float, obj_weight
     """
     shapes = [[-1] + list(h.out_hw[i]) + [len(h.anchors[i]), h.class_num + 5]for i in range(len(h.anchors))]
 
-    # @tf.function
     def loss_fn(y_true: tf.Tensor, y_pred: tf.Tensor):
         """ split the label """
         grid_pred_xy = y_pred[..., 0:2]

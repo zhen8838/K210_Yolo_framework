@@ -28,6 +28,8 @@ train:
   epochs: 10
   vail_split: 0.1
   log_dir: log
+  debug: false
+  verbose: 1
   optimizer: Adam
   optimizer_kwarg:
     lr: 0.001

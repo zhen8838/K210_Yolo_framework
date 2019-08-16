@@ -15,13 +15,20 @@ from termcolor import colored
 from tensorflow_model_optimization.python.core.api.sparsity import keras as sparsity
 from register import dict2obj, network_register, optimizer_register
 from yaml import safe_dump, safe_load
-
-config = tf.ConfigProto()
-config.gpu_options.allow_growth = True
-keras.backend.set_session(tf.Session(config=config))
+from tensorflow.python import debug as tfdebug
 
 
 def main(config_file, new_cfg, mode, model, train, prune):
+    """ config tensorflow backend """
+    tf.reset_default_graph()
+    tfcfg = tf.ConfigProto()
+    tfcfg.gpu_options.allow_growth = True
+    sess = tf.Session(config=tfcfg)
+    if train.debug == True:
+        sess = tfdebug.LocalCLIDebugWrapperSession(sess)
+
+    keras.backend.set_session(sess)
+
     """ Set Golbal Paramter """
     tf.set_random_seed(train.rand_seed)
     np.random.seed(train.rand_seed)
@@ -103,12 +110,16 @@ def main(config_file, new_cfg, mode, model, train, prune):
             sparsity.UpdatePruningStep(),
             sparsity.PruningSummaries(log_dir=str(log_dir), profile_batch=0)]
     else:
-        cbs = [TensorBoard(str(log_dir), update_freq='batch', profile_batch=3)]
+        cbs = []
+
+    cbs.append(TensorBoard(str(log_dir), update_freq='batch', profile_batch=3))
+    file_writer = tf.summary.FileWriter(str(log_dir), sess.graph)  # NOTE avoid can't write graph, I don't now why..
 
     """ Start Training """
     try:
         train_model.fit(train_ds, epochs=train.epochs, steps_per_epoch=train_epoch_step, callbacks=cbs,
-                        validation_data=validation_ds, validation_steps=vali_epoch_step)
+                        validation_data=validation_ds, validation_steps=vali_epoch_step,
+                        verbose=train.verbose)
     except KeyboardInterrupt as e:
         pass
 

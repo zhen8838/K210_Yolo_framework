@@ -47,11 +47,11 @@ python3 ./make_anchor_list.py \
     voc \
     --max_iters 10 \
     --is_random True \
-    --in_hw '224 320' \
-    --out_hw '7 10 14 20' \
+    --in_hw 224 320 \
+    --out_hw 7 10 14 20 \
     --anchor_num 3 \
-    --low '.0 .0' \
-    --high '1. 1.
+    --low .0 .0 \
+    --high 1. 1.
 ```
 When success you will see figure like this:
 ![](asset/kmeans.png)
@@ -143,13 +143,11 @@ Please refer [nncase](https://github.com/kendryte/nncase)
 
 Download (CelebFaces)[http://mmlab.ie.cuhk.edu.hk/projects/CelebA.html] dataset.
 
-I found CelebFaces dataset bbox annotation mislabel in `101283.jpg`:
-
-Modify `list_bbox_celeba.txt` `101283.jpg   320 828   0   0` to `101283.jpg   320 828 440 231`
+I found CelebFaces dataset bbox annotation mislabel, So I corrected it and put the modified file in [weyun](https://share.weiyun.com/5FFNDXr)
 
 Then:
 ```sh
-python3 make_celeb_list.py xxxxx/img_celeba xxxxx/list_bbox_celeba.txt xxxxx/list_landmarks_celeba.txt data/celeb_img_ann.npy
+python3 make_celeba_list.py xxxxx/img_celeba xxxxx/list_bbox_celeba.txt xxxxx/list_landmarks_celeba.txt data/celeba_img_ann.npy
 ```
 
 ## Make anchors
@@ -159,9 +157,9 @@ python3 ./make_anchor_list.py \
     celeba \
     --max_iters 10 \
     --is_random True \
-    --in_hw '224 320' \
-    --out_hw '7 10 14 20' \
+    --in_hw 224 320 \
+    --out_hw 7 10 14 20 \
     --anchor_num 3 \
-    --low '.0 .0' \
-    --high '1. 1.
+    --low .0 .0 \
+    --high 1. 1.
 ```

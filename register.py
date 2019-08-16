@@ -60,6 +60,8 @@ ArgDict = {
         'epochs': 10,
         'vail_split': 0.1,  # vaildation_split
         'log_dir': 'log',
+        'debug': False,
+        'verbose': 1,
         # optimizers
         'optimizer': 'Adam',
         'optimizer_kwarg':
@@ -67,7 +69,6 @@ ArgDict = {
             'lr': 0.001,  # init_learning_rate
             'decay': 0  # learning_rate_decay_factor
         },
-
     },
 
     'prune': {

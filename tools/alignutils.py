@@ -364,7 +364,7 @@ def calc_ignore_mask(t_xy_A: tf.Tensor, t_wh_A: tf.Tensor, t_landmark_A: tf.Tens
             best_iou = tf.reduce_max(iou_score, axis=-1, keepdims=True)
             masks.append(tf.cast(best_iou < iou_thresh, tf.float32))
 
-    return tf.parallel_stack(masks)
+    return tf.stack(masks)
 
 
 def create_yoloalign_loss(h: YOLOAlignHelper, obj_thresh: float, iou_thresh: float, obj_weight: float,
@@ -384,7 +384,7 @@ def create_yoloalign_loss(h: YOLOAlignHelper, obj_thresh: float, iou_thresh: flo
     noobj_weight : float
 
     wh_weight : float
-    
+
     landmark_weight : float
 
     layer : int
@@ -431,8 +431,8 @@ def create_yoloalign_loss(h: YOLOAlignHelper, obj_thresh: float, iou_thresh: flo
             all_true_xy, all_true_wh, all_true_landmark, layer, h)
 
         # NOTE When wh=0 , tf.log(0) = -inf, so use K.switch to avoid it
-        grid_true_wh = switch(obj_mask_bool, grid_true_wh, tf.zeros_like(grid_true_wh))
-        bbox_true_landmark = switch(obj_mask_bool, bbox_true_landmark, tf.zeros_like(bbox_true_landmark))
+        grid_true_wh = tf.where(tf.tile(obj_mask_bool[..., tf.newaxis], [1, 1, 1, 1, 2]), grid_true_wh, tf.zeros_like(grid_true_wh))
+        bbox_true_landmark = switch(tf.tile(obj_mask_bool[..., tf.newaxis, tf.newaxis], [1, 1, 1, 1, h.landmark_num, 2]), bbox_true_landmark, tf.zeros_like(bbox_true_landmark))
 
         """ define loss """
         coord_weight = 2 - all_true_wh[..., 0:1] * all_true_wh[..., 1:2]
@@ -462,6 +462,18 @@ def create_yoloalign_loss(h: YOLOAlignHelper, obj_thresh: float, iou_thresh: flo
             obj_mask * tf.nn.sigmoid_cross_entropy_with_logits(
                 labels=true_cls, logits=pred_cls))
 
+        # total_loss = (obj_loss + noobj_loss +
+        #               cls_loss + xy_loss +
+        #               wh_loss) / h.batch_size
+
+        # masked_true_landmark = tf.boolean_mask(bbox_true_landmark, obj_mask_bool)  # type: tf.Tensor
+        # masked_true_landmark_neg_num = tf.reduce_sum(tf.cast(masked_true_landmark > 0, tf.float32))
+        # masked_pred_landmark = tf.boolean_mask(bbox_pred_landmark, obj_mask_bool)  # type: tf.Tensor
+        # masked_pred_landmark_neg_num = tf.reduce_sum(tf.cast(masked_pred_landmark > 0, tf.float32))
+        # if layer == 1:
+        #     landmark_loss = tf.Print(
+        #         landmark_loss,
+        #         [tf.size(masked_true_landmark), masked_true_landmark_neg_num, tf.size(masked_pred_landmark), masked_pred_landmark_neg_num, landmark_loss], message=f'landmark 1:', summarize=50)
         total_loss = (obj_loss + noobj_loss +
                       cls_loss + xy_loss +
                       wh_loss + landmark_loss) / h.batch_size
