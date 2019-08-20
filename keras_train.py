@@ -3,7 +3,7 @@ from tensorflow.python import keras
 from tensorflow.python.keras.callbacks import TensorBoard, LearningRateScheduler
 from tools.utils import Helper, create_yolo_loss, INFO, ERROR, NOTE
 from tools.alignutils import YOLOAlignHelper, create_yoloalign_loss
-from tools.custom import Yolo_Precision, Yolo_Recall
+from tools.custom import Yolo_Precision, Yolo_Recall, Lookahead
 from models.yolonet import *
 import os
 from pathlib import Path
@@ -24,6 +24,7 @@ def main(config_file, new_cfg, mode, model, train, prune):
     tfcfg = tf.ConfigProto()
     tfcfg.gpu_options.allow_growth = True
     sess = tf.Session(config=tfcfg)
+
     if train.debug == True:
         sess = tfdebug.LocalCLIDebugWrapperSession(sess)
 
@@ -69,14 +70,6 @@ def main(config_file, new_cfg, mode, model, train, prune):
                                                len(h.anchors[0]), model.class_num, model.landmark_num,
                                                alpha=model.depth_multiplier)
 
-    """ Load Pre-Train Model """
-    if train.pre_ckpt != None and train.pre_ckpt != 'None' and train.pre_ckpt != '':
-        if 'h5' in train.pre_ckpt:
-            trainable_model.load_weights(str(train.pre_ckpt))
-            print(INFO, f' Load CKPT {str(train.pre_ckpt)}')
-        else:
-            print(ERROR, ' Pre CKPT path is unvalid')
-
     """  Config Prune Model Paramter """
     if prune.is_prune == 'True':
         pruning_params = {
@@ -102,7 +95,20 @@ def main(config_file, new_cfg, mode, model, train, prune):
                   for layer in range(len(train_model.output) if isinstance(train_model.output, list) else 1)]
         metrics = [Yolo_Precision(model.obj_thresh, name='p'), Yolo_Recall(model.obj_thresh, name='r')]
 
+    sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
     train_model.compile(optimizer, loss=losses, metrics=metrics)
+
+    """ Load Pre-Train Model Weights """
+    if train.pre_ckpt != None and train.pre_ckpt != 'None' and train.pre_ckpt != '':
+        if 'h5' in train.pre_ckpt:
+            trainable_model.load_weights(str(train.pre_ckpt))
+            print(INFO, f' Load CKPT {str(train.pre_ckpt)}')
+        else:
+            print(ERROR, ' Pre CKPT path is unvalid')
+
+    if train.Lookahead == True:
+        lookahead = Lookahead(**train.Lookahead_kwarg)  # init Lookahead
+        lookahead.inject(train_model)  # inject to model
 
     """ Callbacks """
     if prune.is_prune == True:

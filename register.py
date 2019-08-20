@@ -1,6 +1,7 @@
 from models.yolonet import yolo_mobilev1, yolo_mobilev2, tiny_yolo, yolo,\
     yoloalgin_mobilev1, yoloalgin_mobilev2, yolov2algin_mobilev1
 from tensorflow.python.keras.optimizers import Adam, SGD, RMSprop
+from tools.custom import RAdam
 from yaml import safe_dump
 
 
@@ -63,12 +64,19 @@ ArgDict = {
         'debug': False,
         'verbose': 1,
         # optimizers
-        'optimizer': 'Adam',
-        'optimizer_kwarg':
-        {
+        'optimizer': 'RAdam',
+        'optimizer_kwarg': {
             'lr': 0.001,  # init_learning_rate
-            'decay': 0  # learning_rate_decay_factor
+            'beta_1': 0.9,
+            'beta_2': 0.999,
+            'epsilon': None,
+            'decay': 0.  # learning_rate_decay_factor
         },
+        'Lookahead': True,
+        'Lookahead_kwarg': {
+            'k': 5,
+            'alpha': 0.5,
+        }
     },
 
     'prune': {
@@ -95,4 +103,10 @@ optimizer_register = {
     'Adam': Adam,
     'SGD': SGD,
     'RMSprop': RMSprop,
+    'RAdam': RAdam
 }
+
+
+if __name__ == "__main__":
+    with open('config/default.yml', 'w') as f:
+        safe_dump(ArgDict, f, sort_keys=False)

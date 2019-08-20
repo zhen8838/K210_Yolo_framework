@@ -163,3 +163,9 @@ python3 ./make_anchor_list.py \
     --low .0 .0 \
     --high 1. 1.
 ```
+
+## Train
+
+```sh
+python3 ./keras_train.py --config_file config/defaultalgin.yml
+```

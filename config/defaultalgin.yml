@@ -16,7 +16,7 @@ model:
   obj_weight: 1
   noobj_weight: 1
   wh_weight: 1
-  landmark_weight: 3
+  landmark_weight: 2
   obj_thresh: 0.7
   iou_thresh: 0.5
 train:
@@ -29,10 +29,18 @@ train:
   vail_split: 0.1
   log_dir: log
   debug: false
-  optimizer: Adam
+  verbose: 1
+  optimizer: RAdam
   optimizer_kwarg:
     lr: 0.001
-    decay: 0
+    beta_1: 0.9
+    beta_2: 0.999
+    epsilon: null
+    decay: 0.0
+  Lookahead: true
+  Lookahead_kwarg:
+    k: 5
+    alpha: 0.5
 prune:
   is_prune: false
   init_sparsity: 0.5
