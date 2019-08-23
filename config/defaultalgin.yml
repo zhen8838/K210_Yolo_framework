@@ -2,7 +2,7 @@ mode: train
 model:
   name: yoloalgin
   network: yoloalgin_mobilev1
-  depth_multiplier: 0.5
+  depth_multiplier: 0.75
   input_hw:
   - 224
   - 320
@@ -21,7 +21,7 @@ model:
   iou_thresh: 0.5
 train:
   dataset: celeba
-  augmenter: false
+  augmenter: true
   batch_size: 32
   pre_ckpt: null
   rand_seed: 10101
@@ -32,7 +32,7 @@ train:
   verbose: 1
   optimizer: RAdam
   optimizer_kwarg:
-    lr: 0.001
+    lr: 0.0005
     beta_1: 0.9
     beta_2: 0.999
     epsilon: null

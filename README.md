@@ -169,3 +169,14 @@ python3 ./make_anchor_list.py \
 ```sh
 python3 ./keras_train.py --config_file config/defaultalgin.yml
 ```
+
+
+# Face Landmark 98 Points
+
+## Prepare dataset
+
+Download [WFLW](https://wywu.github.io/projects/LAB/WFLW.html) dataset, unzip Then:
+
+```sh
+python3 ./make_wflw_list.py ~/Documents/PFLD/data/WFLW_annotations ~/Documents/PFLD/data/WFLW_images ~/workspace/wflw_images
+```
