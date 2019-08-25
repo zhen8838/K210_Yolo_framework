@@ -1,6 +1,8 @@
 from tensorflow.python import keras
 from tensorflow.python.ops import init_ops
-from tensorflow.python.ops import math_ops
+from tensorflow.python.ops.math_ops import reduce_mean, reduce_sum,\
+    sigmoid, sqrt, square, logical_and, cast, logical_not, div_no_nan, add
+from tensorflow.python.ops.gen_array_ops import reshape
 from tensorflow.python.keras.utils.generic_utils import to_list
 from tensorflow.python.keras.utils import metrics_utils
 from tensorflow.python.keras.metrics import Metric
@@ -29,19 +31,19 @@ class Yolo_Precision(Metric):
     def update_state(self, y_true, y_pred, sample_weight=None):
         true_confidence = y_true[..., 4:5]
         pred_confidence = y_pred[..., 4:5]
-        pred_confidence_sigmoid = math_ops.sigmoid(pred_confidence)
+        pred_confidence_sigmoid = sigmoid(pred_confidence)
 
-        values = math_ops.logical_and(true_confidence > self.thresholds, pred_confidence > self.thresholds)
-        values = math_ops.cast(values, self.dtype)
-        self.true_positives.assign_add(math_ops.reduce_sum(values))
+        values = logical_and(true_confidence > self.thresholds, pred_confidence > self.thresholds)
+        values = cast(values, self.dtype)
+        self.true_positives.assign_add(reduce_sum(values))
 
-        values = math_ops.logical_and(math_ops.logical_not(true_confidence > self.thresholds),
-                                      pred_confidence > self.thresholds)
-        values = math_ops.cast(values, self.dtype)
-        self.false_positives.assign_add(math_ops.reduce_sum(values))
+        values = logical_and(logical_not(true_confidence > self.thresholds),
+                             pred_confidence > self.thresholds)
+        values = cast(values, self.dtype)
+        self.false_positives.assign_add(reduce_sum(values))
 
     def result(self):
-        return math_ops.div_no_nan(self.true_positives, (math_ops.add(self.true_positives, self.false_positives)))
+        return div_no_nan(self.true_positives, (add(self.true_positives, self.false_positives)))
 
 
 class Yolo_Recall(Metric):
@@ -61,19 +63,19 @@ class Yolo_Recall(Metric):
     def update_state(self, y_true, y_pred, sample_weight=None):
         true_confidence = y_true[..., 4:5]
         pred_confidence = y_pred[..., 4:5]
-        pred_confidence_sigmoid = math_ops.sigmoid(pred_confidence)
+        pred_confidence_sigmoid = sigmoid(pred_confidence)
 
-        values = math_ops.logical_and(true_confidence > self.thresholds, pred_confidence > self.thresholds)
-        values = math_ops.cast(values, self.dtype)
-        self.true_positives.assign_add(math_ops.reduce_sum(values))  # type: ResourceVariable
+        values = logical_and(true_confidence > self.thresholds, pred_confidence > self.thresholds)
+        values = cast(values, self.dtype)
+        self.true_positives.assign_add(reduce_sum(values))  # type: ResourceVariable
 
-        values = math_ops.logical_and(true_confidence > self.thresholds,
-                                      math_ops.logical_not(pred_confidence > self.thresholds))
-        values = math_ops.cast(values, self.dtype)
-        self.false_negatives.assign_add(math_ops.reduce_sum(values))  # type: ResourceVariable
+        values = logical_and(true_confidence > self.thresholds,
+                             logical_not(pred_confidence > self.thresholds))
+        values = cast(values, self.dtype)
+        self.false_negatives.assign_add(reduce_sum(values))  # type: ResourceVariable
 
     def result(self):
-        return math_ops.div_no_nan(self.true_positives, (math_ops.add(self.true_positives, self.false_negatives)))
+        return div_no_nan(self.true_positives, (add(self.true_positives, self.false_negatives)))
 
 # NOTE From https://github.com/bojone/keras_radam
 
@@ -198,7 +200,7 @@ class Lookahead(object):
                         params=fast_params,
                         loss=model.total_loss)
                     slow_params = [K.variable(p) for p in fast_params]
-                
+
                 fast_updates = (model.updates +
                                 training_updates +
                                 model.get_updates_for(None) +
@@ -225,3 +227,70 @@ class Lookahead(object):
                     return R
 
                 model.train_function = F
+
+
+class PFLDMetric(Metric):
+    def __init__(self, calc_fr: bool, landmark_num: int, batch_size: int, name=None, dtype=None):
+        """ PFLD metric ， calculate landmark error and failure rate
+
+        Parameters
+        ----------
+        Metric : [type]
+
+        calc_fr : bool
+            wether calculate failure rate， NOTE if `False` just return failure rate
+        landmark_num : int
+
+        batch_size : int
+
+        name :  optional
+            by default None
+        dtype : optional
+            by default None
+        """
+        super().__init__(name=name, dtype=dtype)
+        self.calc_fr = calc_fr
+        if self.calc_fr == False:
+            self.landmark_num = landmark_num
+            self.batch_size = batch_size
+            # NOTE if calculate landmark error , this variable will be use, When calculate failure rate , just return failure rate .
+            self.landmark_error = self.add_weight(
+                'LE', initializer=init_ops.zeros_initializer)  # type: ResourceVariable
+
+            self.failure_num = self.add_weight(
+                'FR', initializer=init_ops.zeros_initializer)  # type: ResourceVariable
+
+            self.total = self.add_weight(
+                'total', initializer=init_ops.zeros_initializer)  # type: ResourceVariable
+
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        if self.calc_fr == False:
+            true_landmarks = y_true[:, :self.landmark_num * 2]
+            pred_landmarks = y_pred[:, :self.landmark_num * 2]
+            
+            pred_landmarks = sigmoid(pred_landmarks)
+            
+            # calc landmark error
+            error_all_points = reduce_sum(sqrt(reduce_sum(square(
+                reshape(pred_landmarks, (self.batch_size, self.landmark_num, 2)) -
+                reshape(true_landmarks, (self.batch_size, self.landmark_num, 2))), [2])), 1)
+
+            # use interocular distance calc landmark error
+            interocular_distance = sqrt(
+                reduce_sum(
+                    square((true_landmarks[:, 120:122] -
+                            true_landmarks[:, 144:146])), 1))
+            error_norm = error_all_points / (interocular_distance * self.landmark_num)
+
+            self.landmark_error.assign_add(reduce_sum(error_norm))
+
+            # error norm > 0.1 ===> failure_number + 1
+            self.failure_num.assign_add(reduce_sum(cast(error_norm > 0.1, self.dtype)))
+
+            self.total.assign_add(self.batch_size)
+
+    def result(self):
+        if self.calc_fr == False:
+            return div_no_nan(self.landmark_error, self.total)
+        else:
+            return div_no_nan(self.failure_num, self.total)

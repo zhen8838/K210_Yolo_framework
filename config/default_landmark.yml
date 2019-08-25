@@ -1,33 +1,27 @@
 mode: train
 model:
-  name: yolo
-  helper: Helper
+  name: pfld
+  helper: LandmarkHelper
   helper_kwarg:
-    image_ann: data/voc_img_ann.npy
-    class_num: 20
-    anchors: data/voc_anchor.npy
+    image_ann: data/wflw_img_ann.npy
     in_hw:
-      - 224
-      - 320
-    out_hw:
-      - - 7
-        - 10
-      - - 14
-        - 20
+      - 112
+      - 112
+    landmark_num: 98
+    attribute_num: 6
     validation_split: 0.1
-  network: yolo_mobilev2
+  network: pfld
   network_kwarg:
-    alpha: 0.75
-  loss: yolo_loss
+    landmark_num: 98
+    alpha: 1.
+    weight_decay: 0.00005
+  loss: landmark_loss
   loss_kwarg:
-    obj_thresh: 0.7
-    iou_thresh: 0.5
-    obj_weight: 1
-    noobj_weight: 1
-    wh_weight: 1
+    landmark_weight: 1.
+    eular_weight: 1.
 train:
   augmenter: false
-  batch_size: 16
+  batch_size: 32
   pre_ckpt: null
   rand_seed: 10101
   epochs: 10

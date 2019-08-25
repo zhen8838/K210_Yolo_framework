@@ -1,10 +1,11 @@
 import tensorflow.python as tf
 from tensorflow.python import keras
 from tensorflow.python.keras.callbacks import TensorBoard, LearningRateScheduler
-from tools.utils import Helper, create_yolo_loss, INFO, ERROR, NOTE
-from tools.alignutils import YOLOAlignHelper, create_yoloalign_loss
-from tools.custom import Yolo_Precision, Yolo_Recall, Lookahead
-from models.yolonet import *
+from tools.utils import Helper, yolo_loss, INFO, ERROR, NOTE
+from tools.alignutils import YOLOAlignHelper, yoloalign_loss
+from tools.landmarkutils import LandmarkHelper, landmark_loss
+from tools.custom import Yolo_Precision, Yolo_Recall, Lookahead, PFLDMetric
+from models.yolonet import yolo_mobilev2, pfld
 import os
 from pathlib import Path
 from datetime import datetime
@@ -13,7 +14,7 @@ import sys
 import argparse
 from termcolor import colored
 from tensorflow_model_optimization.python.core.api.sparsity import keras as sparsity
-from register import dict2obj, network_register, optimizer_register
+from register import dict2obj, network_register, optimizer_register, helper_register, loss_register
 from yaml import safe_dump, safe_load
 from tensorflow.python import debug as tfdebug
 
@@ -33,9 +34,8 @@ def main(config_file, new_cfg, mode, model, train, prune):
     """ Set Golbal Paramter """
     tf.set_random_seed(train.rand_seed)
     np.random.seed(train.rand_seed)
-
+    initial_epoch = 0
     log_dir = (Path(train.log_dir) / datetime.strftime(datetime.now(), r'%Y%m%d-%H%M%S'))  # type: Path
-    ckpt = log_dir / 'saved_model.h5'
 
     if not log_dir.exists():
         log_dir.mkdir(parents=True)
@@ -44,31 +44,27 @@ def main(config_file, new_cfg, mode, model, train, prune):
         safe_dump(new_cfg, f, sort_keys=False)  # save config file name
 
     """ Build Data Input PipeLine """
-    if model.name == 'yolo':
-        h = Helper(f'data/{train.dataset}_img_ann.npy', model.class_num, f'data/{train.dataset}_anchor.npy',
-                   model.input_hw, np.reshape(np.array(model.output_hw), (-1, 2)), train.vail_split)
-        h.set_dataset(train.batch_size, train.rand_seed, is_training=train.augmenter)
-    elif model.name == 'yoloalgin':
-        h = YOLOAlignHelper(f'data/{train.dataset}_img_ann.npy', model.class_num, f'data/{train.dataset}_anchor.npy',
-                            model.landmark_num, model.input_hw, np.reshape(np.array(model.output_hw), (-1, 2)),
-                            train.vail_split)
-        h.set_dataset(train.batch_size, train.rand_seed, is_training=train.augmenter)
+
+    h = helper_register[model.helper](**model.helper_kwarg)  # type: Helper
+    h.set_dataset(train.batch_size, train.rand_seed, is_training=train.augmenter)
 
     train_ds = h.train_dataset
     validation_ds = h.test_dataset
     train_epoch_step = h.train_epoch_step
-    vali_epoch_step = int(h.train_epoch_step * h.validation_split)
+    vali_epoch_step = h.test_epoch_step * train.vali_step_factor
 
     """ Build Network """
-    network = network_register[model.network]  # type :yolo_mobilev2
-    if model.name == 'yolo':
-        saved_model, trainable_model = network([model.input_hw[0], model.input_hw[1], 3],
-                                               len(h.anchors[0]), model.class_num,
-                                               alpha=model.depth_multiplier)
-    elif model.name == 'yoloalgin':
-        saved_model, trainable_model = network([model.input_hw[0], model.input_hw[1], 3],
-                                               len(h.anchors[0]), model.class_num, model.landmark_num,
-                                               alpha=model.depth_multiplier)
+
+    if 'yolo' in model.name:
+        network = network_register[model.network]  # type:yolo_mobilev2
+        saved_model, trainable_model = network(model.helper_kwarg['in_hw'] + [3],
+                                               len(h.anchors[0]), model.helper_kwarg['class_num'],
+                                               **model.network_kwarg)
+    elif model.name == 'pfld':
+        network = network_register[model.network]  # type:pfld
+        pflp_infer_model, auxiliary_model, trainable_model = network(
+            model.helper_kwarg['in_hw'] + [3], **model.network_kwarg)
+        saved_model = trainable_model
 
     """  Config Prune Model Paramter """
     if prune.is_prune == 'True':
@@ -85,15 +81,20 @@ def main(config_file, new_cfg, mode, model, train, prune):
 
     """ Comile Model """
     optimizer = optimizer_register[train.optimizer](**train.optimizer_kwarg)
-    if model.name == 'yolo':
-        losses = [create_yolo_loss(h, model.obj_thresh, model.iou_thresh, model.obj_weight, model.noobj_weight, model.wh_weight, layer)
+    if 'yolo' in model.name:
+        create_loss = loss_register[model.loss]  # type:yolo_loss
+        losses = [create_loss(h=h, layer=layer, **model.loss_kwarg)
                   for layer in range(len(train_model.output) if isinstance(train_model.output, list) else 1)]
-        metrics = [Yolo_Precision(model.obj_thresh, name='p'), Yolo_Recall(model.obj_thresh, name='r')]
-    elif model.name == 'yoloalgin':
-        losses = [create_yoloalign_loss(h, model.obj_thresh, model.iou_thresh, model.obj_weight, model.noobj_weight, model.wh_weight,
-                                        model.landmark_weight, layer)
-                  for layer in range(len(train_model.output) if isinstance(train_model.output, list) else 1)]
-        metrics = [Yolo_Precision(model.obj_thresh, name='p'), Yolo_Recall(model.obj_thresh, name='r')]
+        metrics = [Yolo_Precision(model.loss_kwarg['obj_thresh'], name='p'),
+                   Yolo_Recall(model.loss_kwarg['obj_thresh'], name='r')]
+    elif model.name == 'pfld':
+        create_loss = loss_register[model.loss]  # type:landmark_loss
+        losses = [landmark_loss(h=h, **model.loss_kwarg)]
+        # NOTE share the variable avoid more repeated calculation
+        le = PFLDMetric(False, model.helper_kwarg['landmark_num'], train.batch_size, name='LE', dtype=tf.float32)
+        fr = PFLDMetric(True, model.helper_kwarg['landmark_num'], train.batch_size, name='FR', dtype=tf.float32)
+        fr.failure_num, fr.total = le.failure_num, le.total
+        metrics = [le, fr]
 
     sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
     train_model.compile(optimizer, loss=losses, metrics=metrics)
@@ -101,6 +102,7 @@ def main(config_file, new_cfg, mode, model, train, prune):
     """ Load Pre-Train Model Weights """
     if train.pre_ckpt != None and train.pre_ckpt != 'None' and train.pre_ckpt != '':
         if 'h5' in train.pre_ckpt:
+            initial_epoch = int(Path(train.pre_ckpt).stem.split('_')[-1])
             trainable_model.load_weights(str(train.pre_ckpt))
             print(INFO, f' Load CKPT {str(train.pre_ckpt)}')
         else:
@@ -125,14 +127,18 @@ def main(config_file, new_cfg, mode, model, train, prune):
     try:
         train_model.fit(train_ds, epochs=train.epochs, steps_per_epoch=train_epoch_step, callbacks=cbs,
                         validation_data=validation_ds, validation_steps=vali_epoch_step,
-                        verbose=train.verbose)
+                        verbose=train.verbose,
+                        initial_epoch=initial_epoch)
     except KeyboardInterrupt as e:
         pass
 
     """ Finish Training """
+    model_name = f'saved_model_{initial_epoch+int(train_model.optimizer.iterations.eval(sess) / train_epoch_step)}.h5'
+    ckpt = log_dir / model_name
+
     if prune.is_prune == True:
         final_model = sparsity.strip_pruning(train_model)
-        prune_ckpt = log_dir / 'yolo_prune_model.h5'
+        prune_ckpt = log_dir / 'prune' + model_name
         keras.models.save_model(saved_model, str(prune_ckpt), include_optimizer=False)
         print()
         print(INFO, f' Save Pruned Model as {str(prune_ckpt)}')

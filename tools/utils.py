@@ -206,9 +206,17 @@ class Helper(object):
             self.test_list = None
         else:
             img_ann_list = np.load(image_ann, allow_pickle=True)
-            num = int(len(img_ann_list) * self.validation_split)
-            self.train_list = img_ann_list[num:]  # type:np.ndarray
-            self.test_list = img_ann_list[:num]  # type:np.ndarray
+
+            if isinstance(img_ann_list[()], dict):
+                # NOTE can use dict set trian and test dataset
+                self.train_list = img_ann_list[()]['train_data']  # type:np.ndarray
+                self.test_list = img_ann_list[()]['test_data']  # type:np.ndarray
+            elif isinstance(img_ann_list[()], np.ndarray):
+                num = int(len(img_ann_list) * self.validation_split)
+                self.train_list = img_ann_list[num:]  # type:np.ndarray
+                self.test_list = img_ann_list[:num]  # type:np.ndarray
+            else:
+                raise ValueError(f'{image_ann} data format error!')
             self.train_total_data = len(self.train_list)  # type:int
             self.test_total_data = len(self.test_list)  # type:int
         self.grid_wh = (1 / self.out_hw)[:, [1, 0]]  # hw 转 wh 需要交换两列
@@ -720,7 +728,7 @@ def calc_ignore_mask(t_xy_A: tf.Tensor, t_wh_A: tf.Tensor, p_xy: tf.Tensor,
     return map_fn(lmba, tf.range(helper.batch_size), dtype=tf.float32)
 
 
-def create_yolo_loss(h: Helper, obj_thresh: float, iou_thresh: float, obj_weight: float,
+def yolo_loss(h: Helper, obj_thresh: float, iou_thresh: float, obj_weight: float,
                      noobj_weight: float, wh_weight: float, layer: int):
     """ create the yolo loss function
 

@@ -1,11 +1,12 @@
 mode: train
 model:
   name: yolo
-  helper: Helper
+  helper: YOLOAlignHelper
   helper_kwarg:
-    image_ann: data/voc_img_ann.npy
-    class_num: 20
-    anchors: data/voc_anchor.npy
+    image_ann: data/celeba_img_ann.npy
+    class_num: 1
+    anchors: data/celeba_anchor.npy
+    landmark_num: 5
     in_hw:
       - 224
       - 320
@@ -15,16 +16,18 @@ model:
       - - 14
         - 20
     validation_split: 0.1
-  network: yolo_mobilev2
+  network: yoloalgin_mobilev1
   network_kwarg:
+    landmark_num: 5
     alpha: 0.75
-  loss: yolo_loss
+  loss: yoloalign_loss
   loss_kwarg:
     obj_thresh: 0.7
     iou_thresh: 0.5
     obj_weight: 1
     noobj_weight: 1
     wh_weight: 1
+    landmark_weight: 2
 train:
   augmenter: false
   batch_size: 16

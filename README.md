@@ -97,7 +97,7 @@ Refer to `default.yml` in the `config` directory.
     **You can use `Ctrl+C` to stop training** , it will auto save weights and model in log dir.
 
 
-2.  set `config/default.yml` parameter `pre_ckpt` like `log/xxxxx/saved_model.h5` :    
+2.  set `config/default.yml` parameter `pre_ckpt` like `log/xxxxx/saved_model_xx.h5` :    
 
     ```sh
     python3 ./keras_train.py --config_file config/default.yml
@@ -121,13 +121,13 @@ Refer to `default.yml` in the `config` directory.
 ## Inference
 
 ```sh
-python3 ./keras_inference.py log/xxxxx/saved_model.h5 xxxxx.jpg
+python3 ./keras_inference.py log/xxxxx/saved_model_xx.h5 xxxxx.jpg
 ```
 
 ## Freeze
 
 ```sh
-toco --output_file mobile_yolo.tflite --keras_model_file log/xxxxxx/saved_model.h5
+toco --output_file mobile_yolo.tflite --keras_model_file log/xxxxxx/saved_model_xx.h5
 ```
 Now you have `mobile_yolo.tflite`
 
@@ -167,7 +167,7 @@ python3 ./make_anchor_list.py \
 ## Train
 
 ```sh
-python3 ./keras_train.py --config_file config/defaultalgin.yml
+python3 ./keras_train.py --config_file config/default_yoloalgin.yml
 ```
 
 
@@ -178,5 +178,19 @@ python3 ./keras_train.py --config_file config/defaultalgin.yml
 Download [WFLW](https://wywu.github.io/projects/LAB/WFLW.html) dataset, unzip Then:
 
 ```sh
-python3 ./make_wflw_list.py ~/Documents/PFLD/data/WFLW_annotations ~/Documents/PFLD/data/WFLW_images ~/workspace/wflw_images
+python3 ./make_wflw_list.py xxxxx/WFLW_annotations xxxxx/WFLW_images xxxxx/wflw_images
+```
+
+## Train
+
+1.  start train
+
+```sh
+python3 ./keras_train.py --config_file config/default_landmark.yml
+```
+
+2.  modify `default_landmark.yml` `pre_ckpt` to `log/xxxxx/saved_model_xx.h5`
+
+```sh
+python3 ./keras_train.py --config_file config/default_landmark.yml
 ```

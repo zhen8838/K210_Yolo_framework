@@ -1,7 +1,10 @@
 from models.yolonet import yolo_mobilev1, yolo_mobilev2, tiny_yolo, yolo,\
-    yoloalgin_mobilev1, yoloalgin_mobilev2, yolov2algin_mobilev1
+    yoloalgin_mobilev1, yoloalgin_mobilev2, yolov2algin_mobilev1, pfld
 from tensorflow.python.keras.optimizers import Adam, SGD, RMSprop
 from tools.custom import RAdam
+from tools.utils import Helper, yolo_loss
+from tools.alignutils import YOLOAlignHelper, yoloalign_loss
+from tools.landmarkutils import LandmarkHelper, landmark_loss
 from yaml import safe_dump
 
 
@@ -30,40 +33,42 @@ ArgDict = {
     'model': {
         'name': 'yolo',
 
+        'helper': 'Helper',
+        'helper_kwarg': {
+            'image_ann': 'data/voc_img_ann.npy',
+            'class_num': 20,
+            'anchors': 'data/voc_anchor.npy',
+            'in_hw': [224, 320],
+            'out_hw': [[7, 10], [14, 20]],
+            'validation_split': 0.1,  # vaildation_split
+        },
+
         'network': 'yolo_mobilev2',
+        'network_kwarg': {
+            'alpha': 0.75  # depth_multiplier
+        },
 
-        'depth_multiplier': 0.75,
 
-        # net work input image size
-        'input_hw': [224, 320],
-        # net work output image size
-        'output_hw': [[7, 10], [14, 20]],
-        # trian class num
-        'class_num': 20,
-
-        'landmark_num': 5,  # for yolo alignment
-
-        # NOTE loss weight control
-        'obj_weight': 1,
-        'noobj_weight': 1,
-        'wh_weight': 1,
-        'landmark_weight': 3,
-        'obj_thresh': 0.7,
-        'iou_thresh': 0.5,
+        'loss': 'yolo_loss',
+        'loss_kwarg': {
+            'obj_thresh': 0.7,
+            'iou_thresh': 0.5,
+            'obj_weight': 1,
+            'noobj_weight': 1,
+            'wh_weight': 1,
+        }
     },
 
     'train': {
-        'dataset': 'voc',
         'augmenter': False,
         'batch_size': 16,
         'pre_ckpt': None,
         'rand_seed': 10101,
         'epochs': 10,
-        'vail_split': 0.1,  # vaildation_split
         'log_dir': 'log',
         'debug': False,
         'verbose': 1,
-        # optimizers
+        'vali_step_factor': 0.5,
         'optimizer': 'RAdam',
         'optimizer_kwarg': {
             'lr': 0.001,  # init_learning_rate
@@ -89,6 +94,13 @@ ArgDict = {
 }
 
 
+helper_register = {
+    'Helper': Helper,
+    'YOLOAlignHelper': YOLOAlignHelper,
+    'LandmarkHelper': LandmarkHelper
+}
+
+
 network_register = {
     'yolo_mobilev1': yolo_mobilev1,
     'yolo_mobilev2': yolo_mobilev2,
@@ -97,6 +109,13 @@ network_register = {
     'yoloalgin_mobilev1': yoloalgin_mobilev1,
     'yoloalgin_mobilev2': yoloalgin_mobilev2,
     'yolov2algin_mobilev1': yolov2algin_mobilev1,
+    'pfld': pfld
+}
+
+loss_register = {
+    'yolo_loss': yolo_loss,
+    'yoloalign_loss': yoloalign_loss,
+    'landmark_loss': landmark_loss
 }
 
 optimizer_register = {
