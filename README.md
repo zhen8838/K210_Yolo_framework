@@ -158,10 +158,10 @@ python3 ./make_anchor_list.py \
     --max_iters 10 \
     --is_random True \
     --in_hw 224 320 \
-    --out_hw 7 10 14 20 \
-    --anchor_num 3 \
-    --low .0 .0 \
-    --high 1. 1.
+    --out_hw 7 10 \
+    --anchor_num 5 \
+    --low .4 .4 \
+    --high .5 .5
 ```
 
 ## Train

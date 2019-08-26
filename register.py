@@ -81,7 +81,17 @@ ArgDict = {
         'Lookahead_kwarg': {
             'k': 5,
             'alpha': 0.5,
-        }
+        },
+        'earlystop': True,
+        'earlystop_kwarg': {
+            'monitor': 'val_loss',
+            'min_delta': 0,
+            'patience': 4,
+            'verbose': 0,
+            'mode': 'auto',
+            'baseline': None,
+            'restore_best_weights': False,
+        },
     },
 
     'prune': {

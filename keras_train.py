@@ -1,6 +1,6 @@
 import tensorflow.python as tf
 from tensorflow.python import keras
-from tensorflow.python.keras.callbacks import TensorBoard, LearningRateScheduler
+from tensorflow.python.keras.callbacks import TensorBoard, LearningRateScheduler, EarlyStopping
 from tools.utils import Helper, yolo_loss, INFO, ERROR, NOTE
 from tools.alignutils import YOLOAlignHelper, yoloalign_loss
 from tools.landmarkutils import LandmarkHelper, landmark_loss
@@ -113,14 +113,15 @@ def main(config_file, new_cfg, mode, model, train, prune):
         lookahead.inject(train_model)  # inject to model
 
     """ Callbacks """
+    cbs = []
     if prune.is_prune == True:
-        cbs = [
-            sparsity.UpdatePruningStep(),
-            sparsity.PruningSummaries(log_dir=str(log_dir), profile_batch=0)]
-    else:
-        cbs = []
+        cbs += [sparsity.UpdatePruningStep(),
+                sparsity.PruningSummaries(log_dir=str(log_dir), profile_batch=0)]
 
     cbs.append(TensorBoard(str(log_dir), update_freq='batch', profile_batch=3))
+    if train.earlystop == True:
+        cbs.append(EarlyStopping(**train.earlystop_kwarg))
+
     file_writer = tf.summary.FileWriter(str(log_dir), sess.graph)  # NOTE avoid can't write graph, I don't now why..
 
     """ Start Training """

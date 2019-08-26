@@ -7,13 +7,13 @@ model:
     class_num: 20
     anchors: data/voc_anchor.npy
     in_hw:
-      - 224
-      - 320
+    - 224
+    - 320
     out_hw:
-      - - 7
-        - 10
-      - - 14
-        - 20
+    - - 7
+      - 10
+    - - 14
+      - 20
     validation_split: 0.1
   network: yolo_mobilev2
   network_kwarg:
@@ -46,6 +46,15 @@ train:
   Lookahead_kwarg:
     k: 5
     alpha: 0.5
+  earlystop: true
+  earlystop_kwarg:
+    monitor: val_loss
+    min_delta: 0
+    patience: 4
+    verbose: 0
+    mode: auto
+    baseline: null
+    restore_best_weights: false
 prune:
   is_prune: false
   init_sparsity: 0.5

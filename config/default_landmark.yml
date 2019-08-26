@@ -40,6 +40,15 @@ train:
   Lookahead_kwarg:
     k: 5
     alpha: 0.5
+  earlystop: true
+  earlystop_kwarg:
+    monitor: val_loss
+    min_delta: 0
+    patience: 4
+    verbose: 0
+    mode: auto
+    baseline: null
+    restore_best_weights: false
 prune:
   is_prune: false
   init_sparsity: 0.5

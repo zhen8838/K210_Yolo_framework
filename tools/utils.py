@@ -379,7 +379,8 @@ class Helper(object):
         Returns
         -------
         tuple
-            [image src,box] after data augmenter
+            [image src,box] after data augmenter 
+            image src dtype is uint8
         """
         seq_det = self.iaaseq.to_deterministic()
         p = true_box[:, 0:1]
@@ -394,7 +395,48 @@ class Helper(object):
         xyxy_box = bbs_aug.to_xyxy_array()
         new_box = corner_to_center(xyxy_box, in_hw=img.shape[0:2])
         new_box = np.hstack((p[0:new_box.shape[0], :], new_box))
+
         return image_aug, new_box
+
+    def resize_img(self, img: np.ndarray, true_box: np.ndarray) -> [np.ndarray, np.ndarray]:
+        """
+        resize image and keep ratio
+
+        Parameters
+        ----------
+        img : np.ndarray
+
+        true_box : np.ndarray
+
+
+        Returns
+        -------
+        [np.ndarray, np.ndarray]
+            img, true_box [uint8,float64]
+        """
+        img_wh = np.array(img.shape[1::-1])
+        in_wh = self.in_hw[::-1]
+
+        """ calculate the affine transform factor """
+        scale = in_wh / img_wh  # NOTE affine tranform sacle is [w,h]
+        scale[:] = np.min(scale)
+        # NOTE translation is [w offset,h offset]
+        translation = ((in_wh - img_wh * scale) / 2).astype(int)
+
+        """ calculate the box transform matrix """
+        if isinstance(true_box, np.ndarray):
+            true_box[:, 1:3] = (true_box[:, 1:3] * img_wh * scale + translation) / in_wh
+            true_box[:, 3:5] = (true_box[:, 3:5] * img_wh * scale) / in_wh
+        elif isinstance(true_box, tf.Tensor):
+            # NOTE use concat replace item assign
+            true_box = tf.concat((true_box[:, 0:1],
+                                  (true_box[:, 1:3] * img_wh * scale + translation) / in_wh,
+                                  (true_box[:, 3:5] * img_wh * scale) / in_wh), axis=1)
+
+        """ apply Affine Transform """
+        aff = AffineTransform(scale=scale, translation=translation)
+        img = warp(img, aff.inverse, output_shape=self.in_hw, preserve_range=True).astype('uint8')
+        return img, true_box
 
     def read_img(self, img_path: str) -> np.ndarray:
         """ read image
@@ -434,35 +476,9 @@ class Helper(object):
             image src , true box
         """
         if is_resize:
-            """ resize image and keep ratio """
-            img_wh = np.array(img.shape[1::-1])
-            in_wh = self.in_hw[::-1]
-
-            """ calculate the affine transform factor """
-            scale = in_wh / img_wh  # NOTE affine tranform sacle is [w,h]
-            scale[:] = np.min(scale)
-            # NOTE translation is [w offset,h offset]
-            translation = ((in_wh - img_wh * scale) / 2).astype(int)
-
-            """ calculate the box transform matrix """
-            if isinstance(true_box, np.ndarray):
-                true_box[:, 1:3] = (true_box[:, 1:3] * img_wh * scale + translation) / in_wh
-                true_box[:, 3:5] = (true_box[:, 3:5] * img_wh * scale) / in_wh
-            elif isinstance(true_box, tf.Tensor):
-                # NOTE use concat replace item assign
-                true_box = tf.concat((true_box[:, 0:1],
-                                      (true_box[:, 1:3] * img_wh * scale + translation) / in_wh,
-                                      (true_box[:, 3:5] * img_wh * scale) / in_wh), axis=1)
-
-            """ apply Affine Transform """
-            aff = AffineTransform(scale=scale, translation=translation)
-            img = warp(img, aff.inverse, output_shape=self.in_hw, preserve_range=True).astype('uint8')
-
+            img, true_box = self.resize_img(img, true_box)
         if is_training:
             img, true_box = self.data_augmenter(img, true_box)
-
-        # normlize image
-        img = img / 255.
         return img, true_box
 
     def _compute_dataset_shape(self) -> tuple:
@@ -478,20 +494,25 @@ class Helper(object):
         dataset_shapes = (tf.TensorShape([None] + list(self.in_hw) + [3]), tuple(output_shapes))
         return dataset_shapes
 
-    def _build_datapipe(self, image_ann_list: np.ndarray, batch_size: int, rand_seed: int, is_training: bool, is_resize: bool) -> tf.data.Dataset:
+    def _build_datapipe(self, image_ann_list: np.ndarray, batch_size: int, rand_seed: int, is_training: bool) -> tf.data.Dataset:
         print(INFO, 'data augment is ', str(is_training))
-
-        def _dataset_parser(img: np.ndarray, true_box: np.ndarray):
-            img, true_box = self.process_img(img, true_box, is_training, is_resize)
-            labels = self.box_to_label(true_box)
-            return (img.astype('float32'), *labels)
 
         def _parser_wrapper(i: tf.Tensor):
             # TODO 使用ragged tensorflow来提高速度
-            img_path, true_box = numpy_function(lambda idx: (image_ann_list[idx][0], image_ann_list[idx][1].astype('float32')),
-                                                [i], [tf.dtypes.string, tf.float32])
+            img_path, true_box = numpy_function(lambda idx: (image_ann_list[idx][0], image_ann_list[idx][1]),
+                                                [i], [tf.dtypes.string, tf.float64])
+            # load image
             raw_img = tf.image.decode_jpeg(tf.read_file(img_path), channels=3)
-            img, *labels = numpy_function(_dataset_parser, [raw_img, true_box], [tf.float32] * (len(self.anchors) + 1))
+            # resize image
+            raw_img, true_box = numpy_function(self.resize_img, [raw_img, true_box], [tf.uint8, tf.float64])
+            # image augmenter
+            if is_training:
+                raw_img, true_box = numpy_function(self.data_augmenter, [raw_img, true_box], [tf.uint8, tf.float64])
+            # make labels
+            labels = numpy_function(self.box_to_label, [true_box], [tf.float32] * len(self.anchors))
+            # normlize image
+            img = tf.cast(raw_img, tf.float32) / 255. - 0.5
+
             # NOTE use wrapper function and dynamic list construct (x,(y_1,y_2,...))
             return img, tuple(labels)
 
@@ -505,9 +526,9 @@ class Helper(object):
 
         return dataset
 
-    def set_dataset(self, batch_size, rand_seed, is_training=True, is_resize=True):
-        self.train_dataset = self._build_datapipe(self.train_list, batch_size, rand_seed, is_training, is_resize)
-        self.test_dataset = self._build_datapipe(self.test_list, batch_size, rand_seed, False, is_resize)
+    def set_dataset(self, batch_size, rand_seed, is_training=True):
+        self.train_dataset = self._build_datapipe(self.train_list, batch_size, rand_seed, is_training)
+        self.test_dataset = self._build_datapipe(self.test_list, batch_size, rand_seed, False)
 
         self.batch_size = batch_size
         self.train_epoch_step = self.train_total_data // self.batch_size
@@ -545,7 +566,7 @@ class Helper(object):
                     cv2.putText(img, f'{classes}', org, cv2.FONT_HERSHEY_COMPLEX_SMALL, 0.5, self.colormap[classes], thickness=1)
 
         if is_show:
-            imshow((img * 255).astype('uint8'))
+            imshow((img).astype('uint8'))
             show()
 
 
@@ -729,7 +750,7 @@ def calc_ignore_mask(t_xy_A: tf.Tensor, t_wh_A: tf.Tensor, p_xy: tf.Tensor,
 
 
 def yolo_loss(h: Helper, obj_thresh: float, iou_thresh: float, obj_weight: float,
-                     noobj_weight: float, wh_weight: float, layer: int):
+              noobj_weight: float, wh_weight: float, layer: int):
     """ create the yolo loss function
 
     Parameters

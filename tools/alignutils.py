@@ -64,53 +64,41 @@ class YOLOAlignHelper(Helper):
                               new_boxs[:, 5:5 + self.landmark_num * 2]])  # type:np.ndarray
         return new_boxs
 
-    def process_img(self, img: np.ndarray, true_box: np.ndarray,
-                    is_training: bool, is_resize: bool) -> [np.ndarray, np.ndarray]:
-        """ process image and true box , if is training then use data augmenter
+    def resize_img(self, img: np.ndarray, true_box: np.ndarray) -> [np.ndarray, np.ndarray]:
+        """
+        resize image and keep ratio
 
         Parameters
         ----------
         img : np.ndarray
-            image srs
+
         true_box : np.ndarray
-            box , [n*[cls,x,y,w,h,landmark num * 2]]
-        is_training : bool
-            wether to use data augmenter
-        is_resize : bool
-            wether to resize the image
+
 
         Returns
         -------
-        tuple
-            image src , true box
+        [np.ndarray, np.ndarray]
+            img, true_box [uint8,float64]
         """
-        if is_resize:
-            """ resize image and keep ratio """
-            img_wh = np.array(img.shape[1::-1])
-            in_wh = self.in_hw[::-1]
+        img_wh = np.array(img.shape[1::-1])
+        in_wh = self.in_hw[::-1]
 
-            """ calculate the affine transform factor """
-            scale = in_wh / img_wh  # NOTE affine tranform sacle is [w,h]
-            scale[:] = np.min(scale)
-            # NOTE translation is [w offset,h offset]
-            translation = ((in_wh - img_wh * scale) / 2).astype(int)
+        """ calculate the affine transform factor """
+        scale = in_wh / img_wh  # NOTE affine tranform sacle is [w,h]
+        scale[:] = np.min(scale)
+        # NOTE translation is [w offset,h offset]
+        translation = ((in_wh - img_wh * scale) / 2).astype(int)
 
-            """ calculate the box transform matrix """
-            if isinstance(true_box, np.ndarray):
-                true_box[:, 1:3] = (true_box[:, 1:3] * img_wh * scale + translation) / in_wh
-                true_box[:, 3:5] = (true_box[:, 3:5] * img_wh * scale) / in_wh
-                true_box[:, 5:5 + self.landmark_num * 2] = ((true_box[:, 5:5 + self.landmark_num * 2].reshape(
-                    (-1, self.landmark_num, 2)) * img_wh * scale + translation) / in_wh).reshape((-1, self.landmark_num * 2))
+        """ calculate the box transform matrix """
+        if isinstance(true_box, np.ndarray):
+            true_box[:, 1:3] = (true_box[:, 1:3] * img_wh * scale + translation) / in_wh
+            true_box[:, 3:5] = (true_box[:, 3:5] * img_wh * scale) / in_wh
+            true_box[:, 5:5 + self.landmark_num * 2] = ((true_box[:, 5:5 + self.landmark_num * 2].reshape(
+                (-1, self.landmark_num, 2)) * img_wh * scale + translation) / in_wh).reshape((-1, self.landmark_num * 2))
 
-            """ apply Affine Transform """
-            aff = AffineTransform(scale=scale, translation=translation)
-            img = warp(img, aff.inverse, output_shape=self.in_hw, preserve_range=True).astype('uint8')
-
-        if is_training:
-            img, true_box = self.data_augmenter(img, true_box)
-
-        # normlize image
-        img = img / 255.
+        """ apply Affine Transform """
+        aff = AffineTransform(scale=scale, translation=translation)
+        img = warp(img, aff.inverse, output_shape=self.in_hw, preserve_range=True).astype('uint8')
         return img, true_box
 
     def draw_image(self, img: np.ndarray, true_box: np.ndarray, is_show=True, scores=None):
@@ -153,7 +141,7 @@ class YOLOAlignHelper(Helper):
                     img[rr, cc] = self.colormap[classes]
 
         if is_show:
-            imshow((img * 255).astype('uint8'))
+            imshow((img).astype('uint8'))
             show()
 
     def data_augmenter(self, img: np.ndarray, true_box: np.ndarray) -> tuple:
@@ -170,6 +158,7 @@ class YOLOAlignHelper(Helper):
         -------
         tuple
             [image src,box] after data augmenter
+            image src dtype is uint8
         """
         seq_det = self.iaaseq.to_deterministic()  # type: ia.meta.Augmenter
         p = true_box[:, 0:1]
@@ -187,6 +176,7 @@ class YOLOAlignHelper(Helper):
         xywh_box = corner_to_center(xyxy_box, in_hw=img.shape[0:2])
         new_landmarks = (kps_aug.to_xy_array() / img.shape[1::-1]).reshape((len(true_box), self.landmark_num * 2))
         new_box = np.hstack((p, xywh_box, new_landmarks))
+
         return image_aug, new_box
 
     def _compute_dataset_shape(self) -> tuple:
@@ -368,7 +358,7 @@ def calc_ignore_mask(t_xy_A: tf.Tensor, t_wh_A: tf.Tensor, t_landmark_A: tf.Tens
 
 
 def yoloalign_loss(h: YOLOAlignHelper, obj_thresh: float, iou_thresh: float, obj_weight: float,
-                          noobj_weight: float, wh_weight: float, landmark_weight: float, layer: int):
+                   noobj_weight: float, wh_weight: float, landmark_weight: float, layer: int):
     """ create the yolo loss function
 
     Parameters
