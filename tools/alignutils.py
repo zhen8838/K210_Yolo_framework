@@ -10,7 +10,10 @@ import imgaug.augmenters as ia
 from tensorflow import numpy_function
 import tensorflow.python as tf
 from tensorflow.python.keras.losses import Loss
+import tensorflow.python.keras.backend as K
 from tensorflow.python.keras.utils import losses_utils
+from tensorflow.python.keras.engine.base_layer_utils import make_variable
+from tensorflow.python.ops.init_ops import zeros_initializer
 from tensorflow import map_fn
 from tensorflow.python.keras.backend import switch
 
@@ -396,7 +399,7 @@ class YOLOAlign_Loss(Loss):
         self.landmark_weight = landmark_weight
         self.layer = layer
         self.landmark_shape = tf.TensorShape([self.h.batch_size, self.h.out_hw[layer][0], self.h.out_hw[layer][1], self.h.anchor_number, self.h.landmark_num, 2])
-        
+        self.landmark_error = make_variable('landmark_error', shape=(), initializer=zeros_initializer, trainable=False)
 
     def call(self, y_true, y_pred):
         """ Split Label """
@@ -442,11 +445,6 @@ class YOLOAlign_Loss(Loss):
             obj_mask * coord_weight * self.wh_weight * tf.square(tf.subtract(
                 x=grid_true_wh, y=grid_pred_wh)))
 
-        landmark_loss = tf.reduce_sum(
-            # NOTE obj_mask shape is [?,7,10,5,1] can't broadcast with [?,7,10,5,5,2]
-            self.landmark_weight * obj_mask[..., tf.newaxis] * tf.square(tf.subtract(
-                x=bbox_true_landmark, y=tf.sigmoid(bbox_pred_landmark))))
-
         obj_loss = self.obj_weight * tf.reduce_sum(
             obj_mask * tf.nn.sigmoid_cross_entropy_with_logits(
                 labels=true_confidence, logits=pred_confidence))
@@ -459,6 +457,11 @@ class YOLOAlign_Loss(Loss):
             obj_mask * tf.nn.sigmoid_cross_entropy_with_logits(
                 labels=true_cls, logits=pred_cls))
 
-        total_loss = obj_loss + noobj_loss + cls_loss + xy_loss + wh_loss + landmark_loss
+        landmark_loss = tf.reduce_sum(
+            # NOTE obj_mask shape is [?,7,10,5,1] can't broadcast with [?,7,10,5,5,2]
+            self.landmark_weight * obj_mask[..., tf.newaxis] * tf.square(tf.subtract(
+                x=bbox_true_landmark, y=tf.sigmoid(bbox_pred_landmark))))
+
+        total_loss = obj_loss + noobj_loss + cls_loss + xy_loss + wh_loss + landmark_loss + 0 * self.landmark_error.assign(landmark_loss)
 
         return total_loss

@@ -4,7 +4,7 @@ from tensorflow.python.keras.callbacks import TensorBoard, LearningRateScheduler
 from tools.utils import Helper, YOLO_Loss, INFO, ERROR, NOTE
 from tools.alignutils import YOLOAlignHelper, YOLOAlign_Loss
 from tools.landmarkutils import LandmarkHelper, LandMark_Loss
-from tools.custom import Yolo_P_R, Lookahead, PFLDMetric
+from tools.custom import Yolo_P_R, Lookahead, PFLDMetric, YOLO_LE
 from models.yolonet import yolo_mobilev2, pfld
 import os
 from pathlib import Path
@@ -90,8 +90,12 @@ def main(config_file, new_cfg, mode, model, train, prune):
         for i in range(len(losses)):
             precision = Yolo_P_R(0, model.loss_kwarg['obj_thresh'], name='p', dtype=tf.float32)
             recall = Yolo_P_R(1, model.loss_kwarg['obj_thresh'], name='r', dtype=tf.float32)
-            recall.tp, recall.fn = precision.tp, precision.fn # share the variable avoid more repeated calculation
+            recall.tp, recall.fn = precision.tp, precision.fn  # share the variable avoid more repeated calculation
             metrics.append([precision, recall])
+
+        if model.name == 'yoloalign':
+            for i, m in enumerate(metrics):
+                m.append(YOLO_LE(losses[i].landmark_error))
 
     elif model.name == 'pfld':
         loss_obj = loss_register[model.loss]  # type:LandMark_Loss

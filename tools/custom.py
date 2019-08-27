@@ -5,7 +5,7 @@ from tensorflow.python.ops.math_ops import reduce_mean, reduce_sum,\
 from tensorflow.python.ops.gen_array_ops import reshape
 from tensorflow.python.keras.utils.generic_utils import to_list
 from tensorflow.python.keras.utils import metrics_utils
-from tensorflow.python.keras.metrics import Metric
+from tensorflow.python.keras.metrics import Metric, MeanMetricWrapper
 from tensorflow.python.keras import backend as K
 from tensorflow.python.ops import state_ops
 from tensorflow.python.keras.optimizers import Optimizer
@@ -44,7 +44,6 @@ class Yolo_P_R(Metric):
         self.thresholds = thresholds
 
         if self.out_metric == YOLO_PRECISION:
-
 
             self.tp = self.add_weight(
                 'tp', initializer=init_ops.zeros_initializer)  # type: ResourceVariable
@@ -93,6 +92,23 @@ class Yolo_P_R(Metric):
     def get_config(self):
         return {'out_metric': self.out_metric, 'thresholds': self.thresholds, 'name': self.name, 'dtype': self.dtype}
 
+
+class YOLO_LE(MeanMetricWrapper):
+    def __init__(self, landmark_error: ResourceVariable, name='LE', dtype=None):
+        """ yolo landmark error metric
+
+        Parameters
+        ----------
+        MeanMetricWrapper : [type]
+
+        landmark_error : ResourceVariable
+            a variable from yoloalign loss
+        name : str, optional
+            by default 'LE'
+        dtype : [type], optional
+            by default None
+        """
+        super(YOLO_LE, self).__init__(lambda y_true, y_pred, v: v, name, dtype=dtype, v=landmark_error.read_value())
 
 # NOTE From https://github.com/bojone/keras_radam
 
