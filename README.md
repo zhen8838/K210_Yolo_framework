@@ -112,7 +112,7 @@ When you use mobilenet, you need to specify the `DEPTHMUL` parameter. You don't 
 ## Inference
 
 ```sh
-make inference MODEL=xxxx DEPTHMUL=xx CKPT=log/xxxxxx/yolo_model.h5 IMG=data/people.jpg
+make inference MODEL=xxxx DEPTHMUL=xx CLSNUM=xx CKPT=log/xxxxxx/yolo_model.h5 IMG=data/people.jpg
 ```
 
 You can try with my model :
