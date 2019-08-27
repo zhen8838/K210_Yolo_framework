@@ -2,9 +2,9 @@ from models.yolonet import yolo_mobilev1, yolo_mobilev2, tiny_yolo, yolo,\
     yoloalgin_mobilev1, yoloalgin_mobilev2, yolov2algin_mobilev1, pfld
 from tensorflow.python.keras.optimizers import Adam, SGD, RMSprop
 from tools.custom import RAdam
-from tools.utils import Helper, yolo_loss
-from tools.alignutils import YOLOAlignHelper, yoloalign_loss
-from tools.landmarkutils import LandmarkHelper, landmark_loss
+from tools.utils import Helper, YOLO_Loss
+from tools.alignutils import YOLOAlignHelper, YOLOAlign_Loss
+from tools.landmarkutils import LandmarkHelper, LandMark_Loss
 from yaml import safe_dump
 
 
@@ -49,7 +49,7 @@ ArgDict = {
         },
 
 
-        'loss': 'yolo_loss',
+        'loss': 'YOLO_Loss',
         'loss_kwarg': {
             'obj_thresh': 0.7,
             'iou_thresh': 0.5,
@@ -123,9 +123,9 @@ network_register = {
 }
 
 loss_register = {
-    'yolo_loss': yolo_loss,
-    'yoloalign_loss': yoloalign_loss,
-    'landmark_loss': landmark_loss
+    'YOLO_Loss': YOLO_Loss,
+    'YOLOAlign_Loss': YOLOAlign_Loss,
+    'LandMark_Loss': LandMark_Loss
 }
 
 optimizer_register = {

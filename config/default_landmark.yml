@@ -15,7 +15,7 @@ model:
     landmark_num: 98
     alpha: 1.
     weight_decay: 0.00005
-  loss: landmark_loss
+  loss: LandMark_Loss
   loss_kwarg:
     landmark_weight: 1.
     eular_weight: 1.

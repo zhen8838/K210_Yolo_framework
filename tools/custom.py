@@ -13,69 +13,86 @@ import numpy as np
 from tensorflow.python.ops.resource_variable_ops import ResourceVariable
 
 
-class Yolo_Precision(Metric):
-    def __init__(self, thresholds=None, name=None, dtype=None):
-        super(Yolo_Precision, self).__init__(name=name, dtype=dtype)
-        self.init_thresholds = thresholds
-
-        default_threshold = 0.5
-
-        self.thresholds = default_threshold if thresholds is None else thresholds
-
-        self.true_positives = self.add_weight(
-            'tp', initializer=init_ops.zeros_initializer)  # type: ResourceVariable
-
-        self.false_positives = self.add_weight(
-            'fp', initializer=init_ops.zeros_initializer)  # type: ResourceVariable
-
-    def update_state(self, y_true, y_pred, sample_weight=None):
-        true_confidence = y_true[..., 4:5]
-        pred_confidence = y_pred[..., 4:5]
-        pred_confidence_sigmoid = sigmoid(pred_confidence)
-
-        values = logical_and(true_confidence > self.thresholds, pred_confidence > self.thresholds)
-        values = cast(values, self.dtype)
-        self.true_positives.assign_add(reduce_sum(values))
-
-        values = logical_and(logical_not(true_confidence > self.thresholds),
-                             pred_confidence > self.thresholds)
-        values = cast(values, self.dtype)
-        self.false_positives.assign_add(reduce_sum(values))
-
-    def result(self):
-        return div_no_nan(self.true_positives, (add(self.true_positives, self.false_positives)))
+YOLO_PRECISION = 0
+YOLO_RECALL = 1
 
 
-class Yolo_Recall(Metric):
-    def __init__(self, thresholds=None, name=None, dtype=None):
-        super(Yolo_Recall, self).__init__(name=name, dtype=dtype)
-        self.init_thresholds = thresholds
+class Yolo_P_R(Metric):
+    def __init__(self, out_metric: int, thresholds: float, name=None, dtype=None):
+        """ yolo out_metric common class , set out_metric to return different metrics.
 
-        default_threshold = 0.5
+            landmark to control calc different metrics.
 
-        self.thresholds = default_threshold if thresholds is None else thresholds
+        YOLO_PRECISION = 0
+        YOLO_RECALL = 1
 
-        self.true_positives = self.add_weight(
-            'tp', initializer=init_ops.zeros_initializer)
-        self.false_negatives = self.add_weight(
-            'fn', initializer=init_ops.zeros_initializer)
+        Parameters
+        ----------
+        Metric : [type]
+
+        out_metric : int
+            metric class
+        thresholds : float
+
+        name : [type], optional
+            by default None
+        dtype : [type], optional
+            by default None
+        """
+        super(Yolo_P_R, self).__init__(name=name, dtype=dtype)
+        self.out_metric = out_metric
+        self.thresholds = thresholds
+
+        if self.out_metric == YOLO_PRECISION:
+
+
+            self.tp = self.add_weight(
+                'tp', initializer=init_ops.zeros_initializer)  # type: ResourceVariable
+
+            self.fp = self.add_weight(
+                'fp', initializer=init_ops.zeros_initializer)  # type: ResourceVariable
+
+            self.fn = self.add_weight(
+                'fn', initializer=init_ops.zeros_initializer)  # type: ResourceVariable
+        else:
+            pass
 
     def update_state(self, y_true, y_pred, sample_weight=None):
-        true_confidence = y_true[..., 4:5]
-        pred_confidence = y_pred[..., 4:5]
-        pred_confidence_sigmoid = sigmoid(pred_confidence)
+        """
+        YOLO_PRECISION : will calc PRECISION,RECALL
+        YOLO_RECALL : not calc any thing.
 
-        values = logical_and(true_confidence > self.thresholds, pred_confidence > self.thresholds)
-        values = cast(values, self.dtype)
-        self.true_positives.assign_add(reduce_sum(values))  # type: ResourceVariable
+        """
+        if self.out_metric == YOLO_PRECISION:
+            true_confidence = y_true[..., 4:5]
+            pred_confidence = y_pred[..., 4:5]
+            pred_confidence_sigmoid = sigmoid(pred_confidence)
 
-        values = logical_and(true_confidence > self.thresholds,
-                             logical_not(pred_confidence > self.thresholds))
-        values = cast(values, self.dtype)
-        self.false_negatives.assign_add(reduce_sum(values))  # type: ResourceVariable
+            values = logical_and(true_confidence > self.thresholds, pred_confidence > self.thresholds)
+            values = cast(values, self.dtype)
+            self.tp.assign_add(reduce_sum(values))
+
+            values = logical_and(logical_not(true_confidence > self.thresholds),
+                                 pred_confidence > self.thresholds)
+            values = cast(values, self.dtype)
+            self.fp.assign_add(reduce_sum(values))
+
+            values = logical_and(true_confidence > self.thresholds,
+                                 logical_not(pred_confidence > self.thresholds))
+            values = cast(values, self.dtype)
+            self.fn.assign_add(reduce_sum(values))
+        else:
+            pass
 
     def result(self):
-        return div_no_nan(self.true_positives, (add(self.true_positives, self.false_negatives)))
+        if self.out_metric == YOLO_PRECISION:
+            return div_no_nan(self.tp, (add(self.tp, self.fp)))
+        elif self.out_metric == YOLO_RECALL:
+            return div_no_nan(self.tp, (add(self.tp, self.fn)))
+
+    def get_config(self):
+        return {'out_metric': self.out_metric, 'thresholds': self.thresholds, 'name': self.name, 'dtype': self.dtype}
+
 
 # NOTE From https://github.com/bojone/keras_radam
 
@@ -267,9 +284,9 @@ class PFLDMetric(Metric):
         if self.calc_fr == False:
             true_landmarks = y_true[:, :self.landmark_num * 2]
             pred_landmarks = y_pred[:, :self.landmark_num * 2]
-            
+
             pred_landmarks = sigmoid(pred_landmarks)
-            
+
             # calc landmark error
             error_all_points = reduce_sum(sqrt(reduce_sum(square(
                 reshape(pred_landmarks, (self.batch_size, self.landmark_num, 2)) -

@@ -15,6 +15,8 @@ from imgaug import BoundingBoxesOnImage
 
 from tensorflow import py_function
 from tensorflow.contrib.data import assert_element_shape
+from tensorflow.python.keras.losses import Loss
+from tensorflow.python.keras.utils import losses_utils
 import pickle
 from termcolor import colored
 from matplotlib.pyplot import text
@@ -749,39 +751,40 @@ def calc_ignore_mask(t_xy_A: tf.Tensor, t_wh_A: tf.Tensor, p_xy: tf.Tensor,
     return map_fn(lmba, tf.range(helper.batch_size), dtype=tf.float32)
 
 
-def yolo_loss(h: Helper, obj_thresh: float, iou_thresh: float, obj_weight: float,
-              noobj_weight: float, wh_weight: float, layer: int):
-    """ create the yolo loss function
+class YOLO_Loss(Loss):
+    def __init__(self, h: Helper, obj_thresh: float, iou_thresh: float,
+                 obj_weight: float, noobj_weight: float, wh_weight: float,
+                 layer: int, reduction=losses_utils.ReductionV2.AUTO, name=None):
+        """ yolo loss obj
 
-    Parameters
-    ----------
-    h : Helper
+        Parameters
+        ----------
+        h : Helper
 
-    obj_thresh : float
+        obj_thresh : float
 
-    iou_thresh : float
+        iou_thresh : float
 
-    obj_weight : float
+        obj_weight : float
 
-    noobj_weight : float
+        noobj_weight : float
 
-    wh_weight : float
+        wh_weight : float
 
-    layer : int
-        the current layer index
+        layer : int
+            the current layer index
 
-    Returns
-    -------
-    function
-        the yolo loss function
+        """
+        super().__init__(reduction=reduction, name=name)
+        self.h = h
+        self.obj_thresh = obj_thresh
+        self.iou_thresh = iou_thresh
+        self.obj_weight = obj_weight
+        self.noobj_weight = noobj_weight
+        self.wh_weight = wh_weight
+        self.layer = layer
 
-            param  : (y_true,y_pred)
-
-            return : loss
-    """
-    shapes = [[-1] + list(h.out_hw[i]) + [len(h.anchors[i]), h.class_num + 5]for i in range(len(h.anchors))]
-
-    def loss_fn(y_true: tf.Tensor, y_pred: tf.Tensor):
+    def call(self, y_true: tf.Tensor, y_pred: tf.Tensor):
         """ split the label """
         grid_pred_xy = y_pred[..., 0:2]
         grid_pred_wh = y_pred[..., 2:4]
@@ -794,43 +797,41 @@ def yolo_loss(h: Helper, obj_thresh: float, iou_thresh: float, obj_weight: float
         true_cls = y_true[..., 5:]
 
         obj_mask = true_confidence  # true_confidence[..., 0] > obj_thresh
-        obj_mask_bool = y_true[..., 4] > obj_thresh
+        obj_mask_bool = y_true[..., 4] > self.obj_thresh
 
         """ calc the ignore mask  """
 
         ignore_mask = calc_ignore_mask(all_true_xy, all_true_wh, grid_pred_xy,
                                        grid_pred_wh, obj_mask_bool,
-                                       iou_thresh, layer, h)
+                                       self.iou_thresh, self.layer, self.h)
 
-        grid_true_xy, grid_true_wh = tf_xywh_to_grid(all_true_xy, all_true_wh, layer, h)
+        grid_true_xy, grid_true_wh = tf_xywh_to_grid(all_true_xy, all_true_wh, self.layer, self.h)
         # NOTE When wh=0 , tf.log(0) = -inf, so use K.switch to avoid it
-        grid_true_wh = K.switch(obj_mask_bool, grid_true_wh, tf.zeros_like(grid_true_wh))
+        grid_true_wh = tf.where(tf.tile(obj_mask_bool[..., tf.newaxis], [1, 1, 1, 1, 2]), grid_true_wh, tf.zeros_like(grid_true_wh))
 
         """ define loss """
         coord_weight = 2 - all_true_wh[..., 0:1] * all_true_wh[..., 1:2]
 
         xy_loss = tf.reduce_sum(
             obj_mask * coord_weight * tf.nn.sigmoid_cross_entropy_with_logits(
-                labels=grid_true_xy, logits=grid_pred_xy)) / h.batch_size
+                labels=grid_true_xy, logits=grid_pred_xy))
 
         wh_loss = tf.reduce_sum(
-            obj_mask * coord_weight * wh_weight * tf.square(tf.subtract(
-                x=grid_true_wh, y=grid_pred_wh))) / h.batch_size
+            obj_mask * coord_weight * self.wh_weight * tf.square(tf.subtract(
+                x=grid_true_wh, y=grid_pred_wh)))
 
-        obj_loss = obj_weight * tf.reduce_sum(
+        obj_loss = self.obj_weight * tf.reduce_sum(
             obj_mask * tf.nn.sigmoid_cross_entropy_with_logits(
-                labels=true_confidence, logits=pred_confidence)) / h.batch_size
+                labels=true_confidence, logits=pred_confidence))
 
-        noobj_loss = noobj_weight * tf.reduce_sum(
+        noobj_loss = self.noobj_weight * tf.reduce_sum(
             (1 - obj_mask) * ignore_mask * tf.nn.sigmoid_cross_entropy_with_logits(
-                labels=true_confidence, logits=pred_confidence)) / h.batch_size
+                labels=true_confidence, logits=pred_confidence))
 
         cls_loss = tf.reduce_sum(
             obj_mask * tf.nn.sigmoid_cross_entropy_with_logits(
-                labels=true_cls, logits=pred_cls)) / h.batch_size
+                labels=true_cls, logits=pred_cls))
 
         total_loss = obj_loss + noobj_loss + cls_loss + xy_loss + wh_loss
 
         return total_loss
-
-    return loss_fn

@@ -18,7 +18,7 @@ model:
   network: yolo_mobilev2
   network_kwarg:
     alpha: 0.75
-  loss: yolo_loss
+  loss: YOLO_Loss
   loss_kwarg:
     obj_thresh: 0.7
     iou_thresh: 0.5

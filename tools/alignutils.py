@@ -9,6 +9,8 @@ from imgaug import augmenters as iaa
 import imgaug.augmenters as ia
 from tensorflow import numpy_function
 import tensorflow.python as tf
+from tensorflow.python.keras.losses import Loss
+from tensorflow.python.keras.utils import losses_utils
 from tensorflow import map_fn
 from tensorflow.python.keras.backend import switch
 
@@ -357,57 +359,62 @@ def calc_ignore_mask(t_xy_A: tf.Tensor, t_wh_A: tf.Tensor, t_landmark_A: tf.Tens
     return tf.stack(masks)
 
 
-def yoloalign_loss(h: YOLOAlignHelper, obj_thresh: float, iou_thresh: float, obj_weight: float,
-                   noobj_weight: float, wh_weight: float, landmark_weight: float, layer: int):
-    """ create the yolo loss function
+class YOLOAlign_Loss(Loss):
+    def __init__(self, h: YOLOAlignHelper, obj_thresh: float,
+                 iou_thresh: float, obj_weight: float,
+                 noobj_weight: float, wh_weight: float,
+                 landmark_weight: float, layer: int, reduction=losses_utils.ReductionV2.AUTO, name=None):
+        """  yolo align loss function
 
-    Parameters
-    ----------
-    h : Helper
+        Parameters
+        ----------
+        h : Helper
 
-    obj_thresh : float
+        obj_thresh : float
 
-    iou_thresh : float
+        iou_thresh : float
 
-    obj_weight : float
+        obj_weight : float
 
-    noobj_weight : float
+        noobj_weight : float
 
-    wh_weight : float
+        wh_weight : float
 
-    landmark_weight : float
+        landmark_weight : float
 
-    layer : int
-        the current layer index
+        layer : int
+            the current layer index
 
-    Returns
-    -------
-    function
-        the yolo loss function
+        """
+        super().__init__(reduction=reduction, name=name)
+        self.h = h
+        self.obj_thresh = obj_thresh
+        self.iou_thresh = iou_thresh
+        self.obj_weight = obj_weight
+        self.noobj_weight = noobj_weight
+        self.wh_weight = wh_weight
+        self.landmark_weight = landmark_weight
+        self.layer = layer
+        self.landmark_shape = tf.TensorShape([self.h.batch_size, self.h.out_hw[layer][0], self.h.out_hw[layer][1], self.h.anchor_number, self.h.landmark_num, 2])
+        
 
-            param  : (y_true,y_pred)
-
-            return : loss
-    """
-    landmark_shape = tf.TensorShape([h.batch_size, h.out_hw[layer][0], h.out_hw[layer][1], h.anchor_number, h.landmark_num, 2])
-
-    def loss_fn(y_true: tf.Tensor, y_pred: tf.Tensor):
+    def call(self, y_true, y_pred):
         """ Split Label """
         grid_pred_xy = y_pred[..., 0:2]
         grid_pred_wh = y_pred[..., 2:4]
         pred_confidence = y_pred[..., 4:5]
-        bbox_pred_landmark = y_pred[..., 5:5 + h.landmark_num * 2]
+        bbox_pred_landmark = y_pred[..., 5:5 + self.h.landmark_num * 2]
         pred_cls = y_pred[..., 5:]
 
         all_true_xy = y_true[..., 0:2]
         all_true_wh = y_true[..., 2:4]
-        obj_mask_bool = y_true[..., 4] > obj_thresh
+        obj_mask_bool = y_true[..., 4] > self.obj_thresh
         true_confidence = y_true[..., 4:5]
-        all_true_landmark = y_true[..., 5:5 + h.landmark_num * 2]
+        all_true_landmark = y_true[..., 5:5 + self.h.landmark_num * 2]
         true_cls = y_true[..., 5:]
 
-        all_true_landmark = tf.reshape(all_true_landmark, landmark_shape)
-        bbox_pred_landmark = tf.reshape(bbox_pred_landmark, landmark_shape)
+        all_true_landmark = tf.reshape(all_true_landmark, self.landmark_shape)
+        bbox_pred_landmark = tf.reshape(bbox_pred_landmark, self.landmark_shape)
 
         obj_mask = true_confidence  # true_confidence[..., 0] > obj_thresh
 
@@ -415,14 +422,14 @@ def yoloalign_loss(h: YOLOAlignHelper, obj_thresh: float, iou_thresh: float, obj
 
         ignore_mask = calc_ignore_mask(all_true_xy, all_true_wh, all_true_landmark,
                                        grid_pred_xy, grid_pred_wh, bbox_pred_landmark,
-                                       obj_mask_bool, iou_thresh, layer, h)
+                                       obj_mask_bool, self.iou_thresh, self.layer, self.h)
 
         grid_true_xy, grid_true_wh, bbox_true_landmark = tf_all_to_grid(
-            all_true_xy, all_true_wh, all_true_landmark, layer, h)
+            all_true_xy, all_true_wh, all_true_landmark, self.layer, self.h)
 
         # NOTE When wh=0 , tf.log(0) = -inf, so use K.switch to avoid it
         grid_true_wh = tf.where(tf.tile(obj_mask_bool[..., tf.newaxis], [1, 1, 1, 1, 2]), grid_true_wh, tf.zeros_like(grid_true_wh))
-        bbox_true_landmark = switch(tf.tile(obj_mask_bool[..., tf.newaxis, tf.newaxis], [1, 1, 1, 1, h.landmark_num, 2]), bbox_true_landmark, tf.zeros_like(bbox_true_landmark))
+        bbox_true_landmark = tf.where(tf.tile(obj_mask_bool[..., tf.newaxis, tf.newaxis], [1, 1, 1, 1, self.h.landmark_num, 2]), bbox_true_landmark, tf.zeros_like(bbox_true_landmark))
 
         """ define loss """
         coord_weight = 2 - all_true_wh[..., 0:1] * all_true_wh[..., 1:2]
@@ -432,19 +439,19 @@ def yoloalign_loss(h: YOLOAlignHelper, obj_thresh: float, iou_thresh: float, obj
                 labels=grid_true_xy, logits=grid_pred_xy))
 
         wh_loss = tf.reduce_sum(
-            obj_mask * coord_weight * wh_weight * tf.square(tf.subtract(
+            obj_mask * coord_weight * self.wh_weight * tf.square(tf.subtract(
                 x=grid_true_wh, y=grid_pred_wh)))
 
         landmark_loss = tf.reduce_sum(
             # NOTE obj_mask shape is [?,7,10,5,1] can't broadcast with [?,7,10,5,5,2]
-            landmark_weight * obj_mask[..., tf.newaxis] * tf.square(tf.subtract(
+            self.landmark_weight * obj_mask[..., tf.newaxis] * tf.square(tf.subtract(
                 x=bbox_true_landmark, y=tf.sigmoid(bbox_pred_landmark))))
 
-        obj_loss = obj_weight * tf.reduce_sum(
+        obj_loss = self.obj_weight * tf.reduce_sum(
             obj_mask * tf.nn.sigmoid_cross_entropy_with_logits(
                 labels=true_confidence, logits=pred_confidence))
 
-        noobj_loss = noobj_weight * tf.reduce_sum(
+        noobj_loss = self.noobj_weight * tf.reduce_sum(
             (1 - obj_mask) * ignore_mask * tf.nn.sigmoid_cross_entropy_with_logits(
                 labels=true_confidence, logits=pred_confidence))
 
@@ -452,10 +459,6 @@ def yoloalign_loss(h: YOLOAlignHelper, obj_thresh: float, iou_thresh: float, obj
             obj_mask * tf.nn.sigmoid_cross_entropy_with_logits(
                 labels=true_cls, logits=pred_cls))
 
-        total_loss = (obj_loss + noobj_loss +
-                      cls_loss + xy_loss +
-                      wh_loss + landmark_loss) / h.batch_size
+        total_loss = obj_loss + noobj_loss + cls_loss + xy_loss + wh_loss + landmark_loss
 
         return total_loss
-
-    return loss_fn

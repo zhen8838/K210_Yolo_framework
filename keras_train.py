@@ -1,10 +1,10 @@
 import tensorflow.python as tf
 from tensorflow.python import keras
 from tensorflow.python.keras.callbacks import TensorBoard, LearningRateScheduler, EarlyStopping
-from tools.utils import Helper, yolo_loss, INFO, ERROR, NOTE
-from tools.alignutils import YOLOAlignHelper, yoloalign_loss
-from tools.landmarkutils import LandmarkHelper, landmark_loss
-from tools.custom import Yolo_Precision, Yolo_Recall, Lookahead, PFLDMetric
+from tools.utils import Helper, YOLO_Loss, INFO, ERROR, NOTE
+from tools.alignutils import YOLOAlignHelper, YOLOAlign_Loss
+from tools.landmarkutils import LandmarkHelper, LandMark_Loss
+from tools.custom import Yolo_P_R, Lookahead, PFLDMetric
 from models.yolonet import yolo_mobilev2, pfld
 import os
 from pathlib import Path
@@ -82,14 +82,20 @@ def main(config_file, new_cfg, mode, model, train, prune):
     """ Comile Model """
     optimizer = optimizer_register[train.optimizer](**train.optimizer_kwarg)
     if 'yolo' in model.name:
-        create_loss = loss_register[model.loss]  # type:yolo_loss
-        losses = [create_loss(h=h, layer=layer, **model.loss_kwarg)
-                  for layer in range(len(train_model.output) if isinstance(train_model.output, list) else 1)]
-        metrics = [Yolo_Precision(model.loss_kwarg['obj_thresh'], name='p'),
-                   Yolo_Recall(model.loss_kwarg['obj_thresh'], name='r')]
+        loss_obj = loss_register[model.loss]  # type:YOLOAlign_Loss
+        losses = [loss_obj(h=h, layer=layer, name='loss', **model.loss_kwarg)
+                  for layer in range(len(train_model.output) if isinstance(train_model.output, list) else 1)]  # type:[YOLOAlign_Loss]
+
+        metrics = []
+        for i in range(len(losses)):
+            precision = Yolo_P_R(0, model.loss_kwarg['obj_thresh'], name='p', dtype=tf.float32)
+            recall = Yolo_P_R(1, model.loss_kwarg['obj_thresh'], name='r', dtype=tf.float32)
+            recall.tp, recall.fn = precision.tp, precision.fn # share the variable avoid more repeated calculation
+            metrics.append([precision, recall])
+
     elif model.name == 'pfld':
-        create_loss = loss_register[model.loss]  # type:landmark_loss
-        losses = [landmark_loss(h=h, **model.loss_kwarg)]
+        loss_obj = loss_register[model.loss]  # type:LandMark_Loss
+        losses = [loss_obj(h=h, **model.loss_kwarg)]
         # NOTE share the variable avoid more repeated calculation
         le = PFLDMetric(False, model.helper_kwarg['landmark_num'], train.batch_size, name='LE', dtype=tf.float32)
         fr = PFLDMetric(True, model.helper_kwarg['landmark_num'], train.batch_size, name='FR', dtype=tf.float32)
@@ -102,7 +108,7 @@ def main(config_file, new_cfg, mode, model, train, prune):
     """ Load Pre-Train Model Weights """
     if train.pre_ckpt != None and train.pre_ckpt != 'None' and train.pre_ckpt != '':
         if 'h5' in train.pre_ckpt:
-            initial_epoch = int(Path(train.pre_ckpt).stem.split('_')[-1])
+            initial_epoch = int(Path(train.pre_ckpt).stem.split('_')[-1]) + 1
             trainable_model.load_weights(str(train.pre_ckpt))
             print(INFO, f' Load CKPT {str(train.pre_ckpt)}')
         else:

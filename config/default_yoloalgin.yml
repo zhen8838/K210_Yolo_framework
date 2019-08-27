@@ -1,6 +1,6 @@
 mode: train
 model:
-  name: yolo
+  name: yoloalign
   helper: YOLOAlignHelper
   helper_kwarg:
     image_ann: data/celeba_img_ann.npy
@@ -13,14 +13,12 @@ model:
     out_hw:
       - - 7
         - 10
-      - - 14
-        - 20
     validation_split: 0.1
-  network: yoloalgin_mobilev1
+  network: yolov2algin_mobilev1
   network_kwarg:
     landmark_num: 5
     alpha: 0.75
-  loss: yoloalign_loss
+  loss: YOLOAlign_Loss
   loss_kwarg:
     obj_thresh: 0.7
     iou_thresh: 0.5

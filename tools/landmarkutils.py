@@ -9,6 +9,8 @@ from skimage.transform import AffineTransform, warp
 import tensorflow.python as tf
 from tensorflow import numpy_function
 import tensorflow.python.keras.backend as K
+from tensorflow.python.keras.losses import Loss
+from tensorflow.python.keras.utils import losses_utils
 from tensorflow.contrib.data import assert_element_shape
 from tools.utils import INFO, ERROR, NOTE
 
@@ -231,32 +233,34 @@ def rotationMatrixToEulerAngles(R):
     return np.array([x, y, z])
 
 
-def landmark_loss(h: LandmarkHelper, landmark_weight=1., eular_weight=1.):
-    """ create landmark loss
+class LandMark_Loss(Loss):
+    def __init__(self, h: LandmarkHelper, landmark_weight=1., eular_weight=1.,
+                 reduction=losses_utils.ReductionV2.AUTO, name=None):
+        super().__init__(reduction=reduction, name=name)
+        """ landmark loss
 
-    Parameters
-    ----------
-    h : LandmarkHelper
+        Parameters
+        ----------
+        h : LandmarkHelper
 
-    landmark_weight : [float], optional
-        by default 1.
-    eular_weight : [float], optional
-        by default 1.
+        landmark_weight : [float], optional
+            by default 1.
+        eular_weight : [float], optional
+            by default 1.
 
-    Returns
-    -------
-    function
-            loss fn
-    """
-    def loss_fn(y_true, y_pred):
-        true_landmark, true_a_w, true_eular = tf.split(y_true, [h.landmark_num * 2, 1, 3], 1)
+        """
+        super().__init__(reduction=reduction, name=name)
+        self.h = h
+        self.landmark_weight = landmark_weight
+        self.eular_weight = eular_weight
 
-        pred_landmark, pred_eular = tf.split(y_pred, [h.landmark_num * 2, 3], 1)
+    def call(self, y_true, y_pred):
+        true_landmark, true_a_w, true_eular = tf.split(y_true, [self.h.landmark_num * 2, 1, 3], 1)
 
-        eular_loss = tf.reduce_sum(1. - tf.cos(tf.abs(true_eular - pred_eular)), axis=1)
-        landmark_loss = tf.reduce_sum(tf.square(true_landmark - tf.sigmoid(pred_landmark)), 1)
+        pred_landmark, pred_eular = tf.split(y_pred, [self.h.landmark_num * 2, 3], 1)
+
+        eular_loss = self.eular_weight * tf.reduce_sum(1. - tf.cos(tf.abs(true_eular - pred_eular)), axis=1)
+        landmark_loss = self.landmark_weight * tf.reduce_sum(tf.square(true_landmark - tf.sigmoid(pred_landmark)), 1)
 
         loss = tf.reduce_mean(true_a_w * landmark_loss * eular_loss)
         return loss
-
-    return loss_fn

@@ -120,8 +120,8 @@ def yolov2algin_mobilev1(input_shape: list, anchor_num: int, class_num: int, lan
 
     if alpha == .5:
         y = compose(
-            DarknetConv2D_BN_Leaky(128, (3, 3)),
-            DarknetConv2D_BN_Leaky(128, (3, 3)))(x)
+            DarknetConv2D_BN_Leaky(192, (3, 3)),
+            DarknetConv2D_BN_Leaky(192, (3, 3)))(x)
     elif alpha == .75:
         y = compose(
             DarknetConv2D_BN_Leaky(192, (3, 3)),
