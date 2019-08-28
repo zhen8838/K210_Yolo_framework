@@ -1,4 +1,4 @@
-import tensorflow.python as tf
+import tensorflow as tf
 from tensorflow.python import keras
 from tensorflow.python.keras.callbacks import TensorBoard, LearningRateScheduler, EarlyStopping
 from tools.utils import Helper, YOLO_Loss, INFO, ERROR, NOTE

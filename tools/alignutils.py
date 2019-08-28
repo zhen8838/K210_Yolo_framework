@@ -7,21 +7,20 @@ import numpy as np
 from imgaug import BoundingBoxesOnImage, KeypointsOnImage
 from imgaug import augmenters as iaa
 import imgaug.augmenters as ia
-from tensorflow import numpy_function
-import tensorflow.python as tf
+import tensorflow as tf
 from tensorflow.python.keras.losses import Loss
 import tensorflow.python.keras.backend as K
 from tensorflow.python.keras.utils import losses_utils
 from tensorflow.python.keras.engine.base_layer_utils import make_variable
 from tensorflow.python.ops.init_ops import zeros_initializer
-from tensorflow import map_fn
 from tensorflow.python.keras.backend import switch
 
 
 class YOLOAlignHelper(Helper):
     def __init__(self, image_ann: str, class_num: int, anchors: np.ndarray,
                  landmark_num: int, in_hw: tuple, out_hw: tuple, validation_split=0.1):
-        super().__init__(image_ann, class_num, anchors, in_hw, out_hw, validation_split=validation_split)
+        super().__init__(image_ann, class_num, anchors, in_hw, out_hw,
+                         validation_split=validation_split)
         self.landmark_num = landmark_num  # landmark point numbers
 
     def box_to_label(self, true_box: np.ndarray) -> tuple:
@@ -140,7 +139,7 @@ class YOLOAlignHelper(Helper):
                 # draw bbox
                 rr, cc = rectangle_perimeter(left_top[i], right_bottom[i], shape=img.shape, clip=True)
                 img[rr, cc] = self.colormap[classes]
-                for j in range(self.landmark_num):  
+                for j in range(self.landmark_num):
                     # NOTE circle( y, x, radius )
                     rr, cc = circle(landmarks[i][j][0], landmarks[i][j][1], 2)
                     img[rr, cc] = self.colormap[classes]
@@ -349,7 +348,9 @@ def calc_ignore_mask(t_xy_A: tf.Tensor, t_wh_A: tf.Tensor, t_landmark_A: tf.Tens
         ignore_mask, shape = [batch size, h, w, anchors, 1]
     """
     with tf.name_scope('calc_mask_%d' % layer):
-        pred_xy, pred_wh, pred_landmark = tf_grid_to_all(p_xy, p_wh, p_landmark, layer, helper)
+        pred_xy, pred_wh, pred_landmark = tf_grid_to_all(p_xy, p_wh,
+                                                         p_landmark,
+                                                         layer, helper)
 
         masks = []
         for bc in range(helper.batch_size):
@@ -366,7 +367,8 @@ class YOLOAlign_Loss(Loss):
     def __init__(self, h: YOLOAlignHelper, obj_thresh: float,
                  iou_thresh: float, obj_weight: float,
                  noobj_weight: float, wh_weight: float,
-                 landmark_weight: float, layer: int, reduction=losses_utils.ReductionV2.AUTO, name=None):
+                 landmark_weight: float, layer: int,
+                 reduction=losses_utils.ReductionV2.AUTO, name=None):
         """  yolo align loss function
 
         Parameters
@@ -398,8 +400,13 @@ class YOLOAlign_Loss(Loss):
         self.wh_weight = wh_weight
         self.landmark_weight = landmark_weight
         self.layer = layer
-        self.landmark_shape = tf.TensorShape([self.h.batch_size, self.h.out_hw[layer][0], self.h.out_hw[layer][1], self.h.anchor_number, self.h.landmark_num, 2])
-        self.landmark_error = make_variable('landmark_error', shape=(), initializer=zeros_initializer, trainable=False)
+        self.landmark_shape = tf.TensorShape([self.h.batch_size, self.h.out_hw[layer][0],
+                                              self.h.out_hw[layer][1],
+                                              self.h.anchor_number,
+                                              self.h.landmark_num, 2])
+        self.landmark_error = make_variable('landmark_error', shape=(),
+                                            initializer=zeros_initializer,
+                                            trainable=False)
 
     def call(self, y_true, y_pred):
         """ Split Label """
@@ -431,8 +438,14 @@ class YOLOAlign_Loss(Loss):
             all_true_xy, all_true_wh, all_true_landmark, self.layer, self.h)
 
         # NOTE When wh=0 , tf.log(0) = -inf, so use K.switch to avoid it
-        grid_true_wh = tf.where(tf.tile(obj_mask_bool[..., tf.newaxis], [1, 1, 1, 1, 2]), grid_true_wh, tf.zeros_like(grid_true_wh))
-        bbox_true_landmark = tf.where(tf.tile(obj_mask_bool[..., tf.newaxis, tf.newaxis], [1, 1, 1, 1, self.h.landmark_num, 2]), bbox_true_landmark, tf.zeros_like(bbox_true_landmark))
+        grid_true_wh = tf.where(
+            tf.tile(obj_mask_bool[..., tf.newaxis],
+                    [1, 1, 1, 1, 2]),
+            grid_true_wh, tf.zeros_like(grid_true_wh))
+        bbox_true_landmark = tf.where(
+            tf.tile(obj_mask_bool[..., tf.newaxis, tf.newaxis],
+                    [1, 1, 1, 1, self.h.landmark_num, 2]),
+            bbox_true_landmark, tf.zeros_like(bbox_true_landmark))
 
         """ define loss """
         coord_weight = 2 - all_true_wh[..., 0:1] * all_true_wh[..., 1:2]
@@ -462,6 +475,7 @@ class YOLOAlign_Loss(Loss):
             self.landmark_weight * obj_mask[..., tf.newaxis] * tf.square(tf.subtract(
                 x=bbox_true_landmark, y=tf.sigmoid(bbox_pred_landmark))))
 
-        total_loss = obj_loss + noobj_loss + cls_loss + xy_loss + wh_loss + landmark_loss + 0 * self.landmark_error.assign(landmark_loss)
+        total_loss = (obj_loss + noobj_loss + cls_loss + xy_loss + wh_loss +
+                      landmark_loss + 0 * self.landmark_error.assign(landmark_loss))
 
         return total_loss

@@ -59,7 +59,7 @@ import warnings
 # from .imagenet_utils import decode_predictions
 # from .imagenet_utils import _obtain_input_shape
 # from tensorflow.python.keras.applications import keras_modules_injection
-import tensorflow.python as tf
+import tensorflow as tf
 from tensorflow.python.keras import layers, backend, models
 from tensorflow.python.keras import utils as keras_utils
 

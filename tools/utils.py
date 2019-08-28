@@ -1,6 +1,3 @@
-import tensorflow.python as tf
-import tensorflow.python.keras.backend as K
-from tensorflow import map_fn, numpy_function
 import numpy as np
 import os
 import cv2
@@ -13,7 +10,8 @@ from math import cos, sin
 import imgaug.augmenters as iaa
 from imgaug import BoundingBoxesOnImage
 
-from tensorflow import py_function
+import tensorflow as tf
+import tensorflow.python.keras.backend as K
 from tensorflow.contrib.data import assert_element_shape
 from tensorflow.python.keras.losses import Loss
 from tensorflow.python.keras.utils import losses_utils
@@ -501,17 +499,17 @@ class Helper(object):
 
         def _parser_wrapper(i: tf.Tensor):
             # TODO 使用ragged tensorflow来提高速度
-            img_path, true_box = numpy_function(lambda idx: (image_ann_list[idx][0], image_ann_list[idx][1]),
-                                                [i], [tf.dtypes.string, tf.float64])
+            img_path, true_box = tf.numpy_function(lambda idx: (image_ann_list[idx][0], image_ann_list[idx][1]),
+                                                   [i], [tf.dtypes.string, tf.float64])
             # load image
             raw_img = tf.image.decode_jpeg(tf.read_file(img_path), channels=3)
-            # resize image
-            raw_img, true_box = numpy_function(self.resize_img, [raw_img, true_box], [tf.uint8, tf.float64])
-            # image augmenter
-            if is_training:
-                raw_img, true_box = numpy_function(self.data_augmenter, [raw_img, true_box], [tf.uint8, tf.float64])
+            # resize image and image augmenter
+            raw_img, true_box = tf.numpy_function(self.process_img,
+                                                  [raw_img, true_box, is_training, True],
+                                                  [tf.uint8, tf.float64])
             # make labels
-            labels = numpy_function(self.box_to_label, [true_box], [tf.float32] * len(self.anchors))
+            labels = tf.numpy_function(self.box_to_label, [true_box], [tf.float32] * len(self.anchors))
+
             # normlize image
             img = tf.cast(raw_img, tf.float32) / 255. - 0.5
 
@@ -748,7 +746,7 @@ def calc_ignore_mask(t_xy_A: tf.Tensor, t_wh_A: tf.Tensor, p_xy: tf.Tensor,
             best_iou = tf.reduce_max(iou_score, axis=-1, keepdims=True)
             return tf.cast(best_iou < iou_thresh, tf.float32)
 
-    return map_fn(lmba, tf.range(helper.batch_size), dtype=tf.float32)
+    return tf.map_fn(lmba, tf.range(helper.batch_size), dtype=tf.float32)
 
 
 class YOLO_Loss(Loss):

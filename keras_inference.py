@@ -1,4 +1,4 @@
-import tensorflow.python as tf
+import tensorflow as tf
 from tensorflow.python import keras
 from pathlib import Path
 from tools.utils import Helper, INFO, ERROR, NOTE, tf_xywh_to_all

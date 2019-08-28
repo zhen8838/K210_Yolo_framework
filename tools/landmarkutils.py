@@ -6,8 +6,7 @@ from skimage.draw import rectangle_perimeter, circle
 from skimage.io import imshow, imread, imsave, show
 from skimage.color import gray2rgb
 from skimage.transform import AffineTransform, warp
-import tensorflow.python as tf
-from tensorflow import numpy_function
+import tensorflow as tf
 import tensorflow.python.keras.backend as K
 from tensorflow.python.keras.losses import Loss
 from tensorflow.python.keras.utils import losses_utils
@@ -67,7 +66,7 @@ class LandmarkHelper(object):
         print(INFO, 'data augment is ', str(is_training))
 
         def _parser_wrapper(i: tf.Tensor) -> [tf.Tensor, tf.Tensor]:
-            img_path, label = numpy_function(lambda idx: (image_ann_list[idx][0], image_ann_list[idx][1].astype('float32')), [i], [tf.dtypes.string, tf.float32])
+            img_path, label = tf.numpy_function(lambda idx: (image_ann_list[idx][0], image_ann_list[idx][1].astype('float32')), [i], [tf.dtypes.string, tf.float32])
             raw_img = tf.image.decode_image(tf.read_file(img_path), channels=3)
             if is_training == False:
                 raw_img = tf.image.resize_images(raw_img, self.in_hw, method=0)

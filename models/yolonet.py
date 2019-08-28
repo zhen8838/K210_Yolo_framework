@@ -1,4 +1,4 @@
-import tensorflow.python as tf
+import tensorflow as tf
 from tensorflow.contrib import slim
 from models.mobilenet_v2 import training_scope, mobilenet_base
 import tensorflow.python.keras as k
