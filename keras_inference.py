@@ -9,8 +9,10 @@ from PIL import Image, ImageFont, ImageDraw
 import argparse
 import sys
 import numpy as np
-from register import dict2obj, network_register, optimizer_register
+from register import dict2obj, network_register, optimizer_register, helper_register
 from yaml import safe_load
+from skimage.io import imshow, show
+from skimage.draw import circle
 
 tf.enable_eager_execution()
 config = tf.ConfigProto()
@@ -218,7 +220,7 @@ def parser_yoloalgin_output(orig_img: np.ndarray, y_pred: list, input_hw: tuple,
         pred_confidence = pred_label[..., 4:5]
         pred_landmark = tf.reshape(pred_label[..., 5:5 + landmark_num * 2],
                                    pred_label.shape[:-1] + (landmark_num, 2))
-        # TODO 把解析函数搞定
+
         pred_cls = pred_label[..., 5 + landmark_num * 2:]
         # box_scores = obj_score * class_score
         box_scores = tf.sigmoid(pred_cls) * tf.sigmoid(pred_confidence)
@@ -314,39 +316,61 @@ def parser_yoloalgin_output(orig_img: np.ndarray, y_pred: list, input_hw: tuple,
 
 
 def main(ckpt_path: Path, model, train, test_image: Path):
-    if model.name == 'yolo':
-        h = Helper(None, model.class_num, f'data/{train.dataset}_anchor.npy',
-                   model.input_hw, np.reshape(np.array(model.output_hw), (-1, 2)), train.vail_split)
-    elif model.name == 'yoloalgin':
-        h = YOLOAlignHelper(None, model.class_num, f'data/{train.dataset}_anchor.npy',
-                            model.landmark_num, model.input_hw, np.reshape(np.array(model.output_hw), (-1, 2)),
-                            train.vail_split)
 
-    network = network_register[model.network]  # type :yolo_mobilev2
-    if model.name == 'yolo':
-        saved_model, trainable_model = network([model.input_hw[0], model.input_hw[1], 3],
-                                               len(h.anchors[0]), model.class_num,
-                                               alpha=model.depth_multiplier)
-    elif model.name == 'yoloalgin':
-        saved_model, trainable_model = network([model.input_hw[0], model.input_hw[1], 3],
-                                               len(h.anchors[0]), model.class_num, model.landmark_num,
-                                               alpha=model.depth_multiplier)
+    h = helper_register[model.helper](**model.helper_kwarg)  # type: Helper
 
+    if 'yolo' in model.name:
+        network = network_register[model.network]  # type:yolo_mobilev2
+        saved_model, trainable_model = network(model.helper_kwarg['in_hw'] + [3],
+                                               len(h.anchors[0]), model.helper_kwarg['class_num'],
+                                               **model.network_kwarg)
+    elif model.name == 'pfld':
+        network = network_register[model.network]  # type:pfld
+        pflp_infer_model, auxiliary_model, trainable_model = network(
+            model.helper_kwarg['in_hw'] + [3], **model.network_kwarg)
+
+    print(INFO, f' Load CKPT from {str(ckpt_path)}')
     trainable_model.load_weights(str(ckpt_path))
-    print(INFO, f' Load CKPT {str(ckpt_path)}')
-    """ load images """
-    orig_img = h.read_img(str(test_image))
-    image_hw = orig_img.shape[0:2]
-    img, _ = h.process_img(orig_img, true_box=None, is_training=False, is_resize=True)
-    img = tf.expand_dims(img, 0)
-    """ get output """
-    y_pred = trainable_model.predict(img)
 
-    """ parser output """
-    if model.name == 'yolo':
-        parser_yolo_output(orig_img, y_pred, model.input_hw, image_hw, model.class_num, model.obj_thresh, model.iou_thresh, h)
-    elif model.name == 'yoloalgin':
-        parser_yoloalgin_output(orig_img, y_pred, model.input_hw, image_hw, model.class_num, model.landmark_num, model.obj_thresh, model.iou_thresh, h)
+    if 'yolo' in model.name:
+        """ load images """
+        orig_img = h.read_img(str(test_image))
+        image_hw = orig_img.shape[0:2]
+        img, _ = h.process_img(orig_img, true_box=None, is_training=False, is_resize=True)
+        img = tf.expand_dims(img, 0)
+        """ get output """
+        y_pred = trainable_model.predict(img)
+        """ parser output """
+        if model.name == 'yolo':
+            parser_yolo_output(orig_img, y_pred, model.input_hw, image_hw, model.class_num, model.obj_thresh, model.iou_thresh, h)
+        elif model.name == 'yoloalgin':
+            parser_yoloalgin_output(orig_img, y_pred, model.input_hw, image_hw, model.class_num, model.landmark_num, model.obj_thresh, model.iou_thresh, h)
+
+    elif model.name == 'pfld':
+        """ load images """
+        raw_img = tf.image.decode_image(tf.read_file(str(test_image)), 3)
+        raw_img_hw = raw_img.numpy().shape[0:2]
+        resize_img = tf.image.resize_images(raw_img, h.in_hw, method=0)
+        img = tf.cast(resize_img, tf.float32)
+        img = img / 255. - 0.5
+        img = tf.expand_dims(img, 0)
+        """ get output """
+        y_pred = trainable_model.predict(img)
+        """ parser output """
+        pred_landmark, pred_eular = tf.split(y_pred, [h.landmark_num * 2, 3], 1)
+        pred_landmark = tf.sigmoid(pred_landmark)
+        pred_landmark, pred_eular = pred_landmark[0].numpy(), pred_eular[0].numpy()
+        """ draw """
+        pred_landmark = np.reshape(pred_landmark, (h.landmark_num, 2))
+        pred_landmark = pred_landmark * raw_img_hw[::-1]
+        darw_img = raw_img.numpy()
+        for i in range(h.landmark_num):
+            # NOTE circle( y, x, radius )
+            rr, cc = circle(pred_landmark[i][1], pred_landmark[i][0], 1)
+            darw_img[rr, cc] = (200, 0, 0)
+
+        imshow(darw_img)
+        show()
 
 
 if __name__ == "__main__":

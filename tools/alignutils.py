@@ -131,9 +131,8 @@ class YOLOAlignHelper(Helper):
             left_top = ((true_box[:, 1:3] - true_box[:, 3:5] / 2)[:, ::-1] * img.shape[0:2]).astype('int32')
             right_bottom = ((true_box[:, 1:3] + true_box[:, 3:5] / 2)[:, ::-1] * img.shape[0:2]).astype('int32')
 
-            # convert landmark
+            # convert landmark  from [n,[x,y]] ===> [n,[y,x]]
             landmarks = true_box[:, 5:5 + self.landmark_num * 2].reshape((-1, self.landmark_num, 2))
-            # landmarks = (((landmarks * true_box[:, 3:5])[:, :, ::-1] + (true_box[:, 1:3] - true_box[:, 3:5] / 2)[:, ::-1]) * img.shape[0:2]).astype('int32')
             landmarks = (landmarks[:, :, ::-1] * img.shape[0:2]).astype('int32')
 
             for i in range(len(p)):
@@ -141,7 +140,8 @@ class YOLOAlignHelper(Helper):
                 # draw bbox
                 rr, cc = rectangle_perimeter(left_top[i], right_bottom[i], shape=img.shape, clip=True)
                 img[rr, cc] = self.colormap[classes]
-                for j in range(self.landmark_num):  # draw landmark
+                for j in range(self.landmark_num):  
+                    # NOTE circle( y, x, radius )
                     rr, cc = circle(landmarks[i][j][0], landmarks[i][j][1], 2)
                     img[rr, cc] = self.colormap[classes]
 

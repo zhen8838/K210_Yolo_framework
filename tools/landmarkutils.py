@@ -68,7 +68,7 @@ class LandmarkHelper(object):
 
         def _parser_wrapper(i: tf.Tensor) -> [tf.Tensor, tf.Tensor]:
             img_path, label = numpy_function(lambda idx: (image_ann_list[idx][0], image_ann_list[idx][1].astype('float32')), [i], [tf.dtypes.string, tf.float32])
-            raw_img = tf.image.decode_png(tf.read_file(img_path), channels=3)
+            raw_img = tf.image.decode_image(tf.read_file(img_path), channels=3)
             if is_training == False:
                 raw_img = tf.image.resize_images(raw_img, self.in_hw, method=0)
 

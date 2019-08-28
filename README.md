@@ -141,7 +141,7 @@ Please refer [nncase](https://github.com/kendryte/nncase)
 
 ## Prepare dataset
 
-Download (CelebFaces)[http://mmlab.ie.cuhk.edu.hk/projects/CelebA.html] dataset.
+Download [CelebFaces](http://mmlab.ie.cuhk.edu.hk/projects/CelebA.html) dataset.
 
 I found CelebFaces dataset bbox annotation mislabel, So I corrected it and put the modified file in [weyun](https://share.weiyun.com/5FFNDXr)
 
@@ -193,4 +193,10 @@ python3 ./keras_train.py --config_file config/default_landmark.yml
 
 ```sh
 python3 ./keras_train.py --config_file config/default_landmark.yml
+```
+
+## inference
+
+```sh
+python3 ./keras_inference.py log/xxxxx/saved_model_xx.h5 xxxxx/xxx.png
 ```
