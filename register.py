@@ -1,4 +1,4 @@
-from models.yolonet import yolo_mobilev1, yolo_mobilev2, tiny_yolo, yolo,\
+from models.networks import yolo_mobilev1, yolo_mobilev2, tiny_yolo, yolo,\
     yoloalgin_mobilev1, yoloalgin_mobilev2, yolov2algin_mobilev1, pfld
 from tensorflow.python.keras.optimizers import Adam, SGD, RMSprop
 from tools.custom import RAdam
@@ -91,6 +91,16 @@ ArgDict = {
             'mode': 'auto',
             'baseline': None,
             'restore_best_weights': False,
+        },
+        'modelcheckpoint': True,
+        'modelcheckpoint_kwarg': {
+            'monitor': 'val_loss',
+            'verbose': 0,
+            'save_best_only': True,
+            'save_weights_only': False,
+            'mode': 'auto',
+            'save_freq': 'epoch',
+            'load_weights_on_restart': False,
         },
     },
 

@@ -248,13 +248,17 @@ def pfld(input_shape: list, landmark_num: int, alpha=1., weight_decay=5e-5) -> [
     landmark_num : int
 
     alpha : float , optional
+    
         by default 1.
+        
     weight_decay : float , optional
+    
         by default 5e-5
 
     Returns
     -------
     [k.Model, k.Model, k.Model]
+    
         pflp_infer_model, auxiliary_model, train_model
     """
     bn_kwargs = {
@@ -280,29 +284,29 @@ def pfld(input_shape: list, landmark_num: int, alpha=1., weight_decay=5e-5) -> [
     inputs = k.Input(input_shape)
     conv1 = pipe(inputs, *[kl.Conv2D(int(64 * alpha), [3, 3], 2, **conv_kwargs),
                            kl.BatchNormalization(**bn_kwargs),
-                           kl.Activation(tf.nn.relu6)])
+                           kl.ReLU(6)])
 
     # 56*56*64
     conv2 = pipe(conv1, *[kl.DepthwiseConv2D(3, 1, **depthwise_kwargs),
                           kl.BatchNormalization(),
-                          kl.Activation(tf.nn.relu6)])
+                          kl.ReLU(6)])
     # 56*56*64
     conv3_1 = pipe(conv2, *[kl.Conv2D(128, 1, 2, **conv_kwargs),
                             kl.BatchNormalization(),
-                            kl.Activation(tf.nn.relu6),
+                            kl.ReLU(6),
                             kl.DepthwiseConv2D(3, 1, **depthwise_kwargs),
                             kl.BatchNormalization(),
-                            kl.Activation(tf.nn.relu6),
+                            kl.ReLU(6),
                             kl.Conv2D(int(64 * alpha), 1, 1, **conv_kwargs),
                             kl.BatchNormalization(),
-                            kl.Activation(tf.nn.relu6)])
+                            kl.ReLU(6)])
 
     conv3_2 = pipe(conv3_1, *[kl.Conv2D(128, 1, 1, **conv_kwargs),
                               kl.BatchNormalization(),
-                              kl.Activation(tf.nn.relu6),
+                              kl.ReLU(6),
                               kl.DepthwiseConv2D(3, 1, **depthwise_kwargs),
                               kl.BatchNormalization(),
-                              kl.Activation(tf.nn.relu6),
+                              kl.ReLU(6),
                               kl.Conv2D(int(64 * alpha), 1, 1, **conv_kwargs),
                               kl.BatchNormalization()])
 
@@ -310,10 +314,10 @@ def pfld(input_shape: list, landmark_num: int, alpha=1., weight_decay=5e-5) -> [
 
     conv3_3 = pipe(block3_2, *[kl.Conv2D(128, 1, 1, **conv_kwargs),
                                kl.BatchNormalization(),
-                               kl.Activation(tf.nn.relu6),
+                               kl.ReLU(6),
                                kl.DepthwiseConv2D(3, 1, **depthwise_kwargs),
                                kl.BatchNormalization(),
-                               kl.Activation(tf.nn.relu6),
+                               kl.ReLU(6),
                                kl.Conv2D(int(64 * alpha), 1, 1, **conv_kwargs),
                                kl.BatchNormalization()])
 
@@ -321,10 +325,10 @@ def pfld(input_shape: list, landmark_num: int, alpha=1., weight_decay=5e-5) -> [
 
     conv3_4 = pipe(block3_3, *[kl.Conv2D(128, 1, 1, **conv_kwargs),
                                kl.BatchNormalization(),
-                               kl.Activation(tf.nn.relu6),
+                               kl.ReLU(6),
                                kl.DepthwiseConv2D(3, 1, **depthwise_kwargs),
                                kl.BatchNormalization(),
-                               kl.Activation(tf.nn.relu6),
+                               kl.ReLU(6),
                                kl.Conv2D(int(64 * alpha), 1, 1, **conv_kwargs),
                                kl.BatchNormalization()])
 
@@ -332,10 +336,10 @@ def pfld(input_shape: list, landmark_num: int, alpha=1., weight_decay=5e-5) -> [
 
     conv3_5 = pipe(block3_4, *[kl.Conv2D(128, 1, 1, **conv_kwargs),
                                kl.BatchNormalization(),
-                               kl.Activation(tf.nn.relu6),
+                               kl.ReLU(6),
                                kl.DepthwiseConv2D(3, 1, **depthwise_kwargs),
                                kl.BatchNormalization(),
-                               kl.Activation(tf.nn.relu6),
+                               kl.ReLU(6),
                                kl.Conv2D(int(64 * alpha), 1, 1, **conv_kwargs),
                                kl.BatchNormalization()])
 
@@ -344,28 +348,28 @@ def pfld(input_shape: list, landmark_num: int, alpha=1., weight_decay=5e-5) -> [
 
     conv4_1 = pipe(block3_5, *[kl.Conv2D(128, 1, 2, **conv_kwargs),
                                kl.BatchNormalization(),
-                               kl.Activation(tf.nn.relu6),
+                               kl.ReLU(6),
                                kl.DepthwiseConv2D(3, 1, **depthwise_kwargs),
                                kl.BatchNormalization(),
-                               kl.Activation(tf.nn.relu6),
+                               kl.ReLU(6),
                                kl.Conv2D(int(128 * alpha), 1, 1, **conv_kwargs),
                                kl.BatchNormalization()])
     # 14*14*128
     conv5_1 = pipe(conv4_1, *[kl.Conv2D(512, 1, 1, **conv_kwargs),
                               kl.BatchNormalization(),
-                              kl.Activation(tf.nn.relu6),
+                              kl.ReLU(6),
                               kl.DepthwiseConv2D(3, 1, **depthwise_kwargs),
                               kl.BatchNormalization(),
-                              kl.Activation(tf.nn.relu6),
+                              kl.ReLU(6),
                               kl.Conv2D(int(128 * alpha), 1, 1, **conv_kwargs),
                               kl.BatchNormalization()])
 
     conv5_2 = pipe(conv5_1, *[kl.Conv2D(512, 1, 1, **conv_kwargs),
                               kl.BatchNormalization(),
-                              kl.Activation(tf.nn.relu6),
+                              kl.ReLU(6),
                               kl.DepthwiseConv2D(3, 1, **depthwise_kwargs),
                               kl.BatchNormalization(),
-                              kl.Activation(tf.nn.relu6),
+                              kl.ReLU(6),
                               kl.Conv2D(int(128 * alpha), 1, 1, **conv_kwargs),
                               kl.BatchNormalization()])
 
@@ -373,10 +377,10 @@ def pfld(input_shape: list, landmark_num: int, alpha=1., weight_decay=5e-5) -> [
 
     conv5_3 = pipe(block5_2, *[kl.Conv2D(512, 1, 1, **conv_kwargs),
                                kl.BatchNormalization(),
-                               kl.Activation(tf.nn.relu6),
+                               kl.ReLU(6),
                                kl.DepthwiseConv2D(3, 1, **depthwise_kwargs),
                                kl.BatchNormalization(),
-                               kl.Activation(tf.nn.relu6),
+                               kl.ReLU(6),
                                kl.Conv2D(int(128 * alpha), 1, 1, **conv_kwargs),
                                kl.BatchNormalization()])
 
@@ -384,10 +388,10 @@ def pfld(input_shape: list, landmark_num: int, alpha=1., weight_decay=5e-5) -> [
 
     conv5_4 = pipe(block5_3, *[kl.Conv2D(512, 1, 1, **conv_kwargs),
                                kl.BatchNormalization(),
-                               kl.Activation(tf.nn.relu6),
+                               kl.ReLU(6),
                                kl.DepthwiseConv2D(3, 1, **depthwise_kwargs),
                                kl.BatchNormalization(),
-                               kl.Activation(tf.nn.relu6),
+                               kl.ReLU(6),
                                kl.Conv2D(int(128 * alpha), 1, 1, **conv_kwargs),
                                kl.BatchNormalization()])
 
@@ -395,10 +399,10 @@ def pfld(input_shape: list, landmark_num: int, alpha=1., weight_decay=5e-5) -> [
 
     conv5_5 = pipe(block5_4, *[kl.Conv2D(512, 1, 1, **conv_kwargs),
                                kl.BatchNormalization(),
-                               kl.Activation(tf.nn.relu6),
+                               kl.ReLU(6),
                                kl.DepthwiseConv2D(3, 1, **depthwise_kwargs),
                                kl.BatchNormalization(),
-                               kl.Activation(tf.nn.relu6),
+                               kl.ReLU(6),
                                kl.Conv2D(int(128 * alpha), 1, 1, **conv_kwargs),
                                kl.BatchNormalization()])
 
@@ -406,10 +410,10 @@ def pfld(input_shape: list, landmark_num: int, alpha=1., weight_decay=5e-5) -> [
 
     conv5_6 = pipe(block5_5, *[kl.Conv2D(512, 1, 1, **conv_kwargs),
                                kl.BatchNormalization(),
-                               kl.Activation(tf.nn.relu6),
+                               kl.ReLU(6),
                                kl.DepthwiseConv2D(3, 1, **depthwise_kwargs),
                                kl.BatchNormalization(),
-                               kl.Activation(tf.nn.relu6),
+                               kl.ReLU(6),
                                kl.Conv2D(int(128 * alpha), 1, 1, **conv_kwargs),
                                kl.BatchNormalization()])
 
@@ -418,21 +422,21 @@ def pfld(input_shape: list, landmark_num: int, alpha=1., weight_decay=5e-5) -> [
     # 14*14*128
     conv6_1 = pipe(block5_6, *[kl.Conv2D(256, 1, 1, **conv_kwargs),
                                kl.BatchNormalization(),
-                               kl.Activation(tf.nn.relu6),
+                               kl.ReLU(6),
                                kl.DepthwiseConv2D(3, 1, **depthwise_kwargs),
                                kl.BatchNormalization(),
-                               kl.Activation(tf.nn.relu6),
+                               kl.ReLU(6),
                                kl.Conv2D(int(16 * alpha), 1, 1, **conv_kwargs),
                                kl.BatchNormalization()])
     # 14*14*16
     conv7 = pipe(conv6_1, *[kl.Conv2D(int(32 * alpha), 3, 2, **conv_kwargs),
                             kl.BatchNormalization(),
-                            kl.Activation(tf.nn.relu6)])
+                            kl.ReLU(6)])
 
     conv_kwargs['padding'] = 'valid'
     conv8 = pipe(conv7, *[kl.Conv2D(int(128 * alpha), 7, 1, **conv_kwargs),
                           kl.BatchNormalization(),
-                          kl.Activation(tf.nn.relu6)])
+                          kl.ReLU(6)])
 
     avg_pool1 = kl.AvgPool2D(conv6_1.shape[1:3], 1)(conv6_1)
 
@@ -453,16 +457,16 @@ def pfld(input_shape: list, landmark_num: int, alpha=1., weight_decay=5e-5) -> [
     euler_angles_pre = pipe(pfld_input,
                             *[kl.Conv2D(128, 3, 2, **conv_kwargs),
                               kl.BatchNormalization(),
-                              kl.Activation(tf.nn.relu6),
+                              kl.ReLU(6),
                               kl.Conv2D(128, 3, 1, **conv_kwargs),
                               kl.BatchNormalization(),
-                              kl.Activation(tf.nn.relu6),
+                              kl.ReLU(6),
                               kl.Conv2D(32, 3, 2, **conv_kwargs),
                               kl.BatchNormalization(),
-                              kl.Activation(tf.nn.relu6),
+                              kl.ReLU(6),
                               kl.Conv2D(128, 7, 1, **conv_kwargs),
                               kl.BatchNormalization(),
-                              kl.Activation(tf.nn.relu6),
+                              kl.ReLU(6),
                               kl.MaxPool2D(3, 1, 'same'),
                               kl.Flatten(),
                               kl.Dense(32),
@@ -476,6 +480,248 @@ def pfld(input_shape: list, landmark_num: int, alpha=1., weight_decay=5e-5) -> [
 
     return pflp_infer_model, auxiliary_model, train_model
 
+
+def pfld_optimized(input_shape: list, landmark_num: int, alpha=1., weight_decay=5e-5) -> [k.Model, k.Model, k.Model]:
+    """ pfld landmark model optimized to fit k210 chip.
+
+    Parameters
+    ----------
+    input_shape : list
+
+    landmark_num : int
+
+    alpha : float , optional
+    
+        by default 1.
+        
+    weight_decay : float , optional
+    
+        by default 5e-5
+
+    Returns
+    -------
+    [k.Model, k.Model, k.Model]
+    
+        pflp_infer_model, auxiliary_model, train_model
+    """
+    bn_kwargs = {
+        'momentum': 0.995,
+        'epsilon': 0.001
+    }
+    conv_kwargs = {
+        'kernel_initializer': k.initializers.TruncatedNormal(stddev=0.01),
+        'bias_initializer': k.initializers.Zeros(),
+        'kernel_regularizer': k.regularizers.l2(weight_decay),
+        'bias_regularizer': k.regularizers.l2(weight_decay),
+        'padding': 'same'}
+
+    depthwise_kwargs = {
+        'depthwise_initializer': k.initializers.TruncatedNormal(stddev=0.01),
+        'bias_initializer': k.initializers.Zeros(),
+        'depthwise_regularizer': k.regularizers.l2(weight_decay),
+        'bias_regularizer': k.regularizers.l2(weight_decay),
+        'padding': 'same'}
+    # pfld_inference
+
+    # 112*112*3
+    inputs = k.Input(input_shape)
+    conv1 = pipe(inputs, *[kl.Conv2D(int(64 * alpha), [3, 3], 2, **conv_kwargs),
+                           kl.BatchNormalization(**bn_kwargs),
+                           kl.ReLU(6)])
+
+    # 56*56*64
+    conv2 = pipe(conv1, *[kl.DepthwiseConv2D(3, 1, **depthwise_kwargs),
+                          kl.BatchNormalization(),
+                          kl.ReLU(6)])
+    # 56*56*64
+    conv3_1 = pipe(conv2, *[kl.Conv2D(128, 1, 2, **conv_kwargs),
+                            kl.BatchNormalization(),
+                            kl.ReLU(6),
+                            kl.DepthwiseConv2D(3, 1, **depthwise_kwargs),
+                            kl.BatchNormalization(),
+                            kl.ReLU(6),
+                            kl.Conv2D(int(64 * alpha), 1, 1, **conv_kwargs),
+                            kl.BatchNormalization(),
+                            kl.ReLU(6)])
+
+    conv3_2 = pipe(conv3_1, *[kl.Conv2D(128, 1, 1, **conv_kwargs),
+                              kl.BatchNormalization(),
+                              kl.ReLU(6),
+                              kl.DepthwiseConv2D(3, 1, **depthwise_kwargs),
+                              kl.BatchNormalization(),
+                              kl.ReLU(6),
+                              kl.Conv2D(int(64 * alpha), 1, 1, **conv_kwargs),
+                              kl.BatchNormalization()])
+
+    block3_2 = kl.Add()([conv3_1, conv3_2])
+
+    conv3_3 = pipe(block3_2, *[kl.Conv2D(128, 1, 1, **conv_kwargs),
+                               kl.BatchNormalization(),
+                               kl.ReLU(6),
+                               kl.DepthwiseConv2D(3, 1, **depthwise_kwargs),
+                               kl.BatchNormalization(),
+                               kl.ReLU(6),
+                               kl.Conv2D(int(64 * alpha), 1, 1, **conv_kwargs),
+                               kl.BatchNormalization()])
+
+    block3_3 = kl.Add()([block3_2, conv3_3])
+
+    conv3_4 = pipe(block3_3, *[kl.Conv2D(128, 1, 1, **conv_kwargs),
+                               kl.BatchNormalization(),
+                               kl.ReLU(6),
+                               kl.DepthwiseConv2D(3, 1, **depthwise_kwargs),
+                               kl.BatchNormalization(),
+                               kl.ReLU(6),
+                               kl.Conv2D(int(64 * alpha), 1, 1, **conv_kwargs),
+                               kl.BatchNormalization()])
+
+    block3_4 = kl.Add()([block3_3, conv3_4])
+
+    conv3_5 = pipe(block3_4, *[kl.Conv2D(128, 1, 1, **conv_kwargs),
+                               kl.BatchNormalization(),
+                               kl.ReLU(6),
+                               kl.DepthwiseConv2D(3, 1, **depthwise_kwargs),
+                               kl.BatchNormalization(),
+                               kl.ReLU(6),
+                               kl.Conv2D(int(64 * alpha), 1, 1, **conv_kwargs),
+                               kl.BatchNormalization()])
+
+    block3_5 = kl.Add()([block3_4, conv3_5])
+    auxiliary_input = block3_5
+
+    conv4_1 = pipe(block3_5, *[kl.Conv2D(128, 1, 2, **conv_kwargs),
+                               kl.BatchNormalization(),
+                               kl.ReLU(6),
+                               kl.DepthwiseConv2D(3, 1, **depthwise_kwargs),
+                               kl.BatchNormalization(),
+                               kl.ReLU(6),
+                               kl.Conv2D(int(128 * alpha), 1, 1, **conv_kwargs),
+                               kl.BatchNormalization()])
+    # 14*14*128
+    conv5_1 = pipe(conv4_1, *[kl.Conv2D(512, 1, 1, **conv_kwargs),
+                              kl.BatchNormalization(),
+                              kl.ReLU(6),
+                              kl.DepthwiseConv2D(3, 1, **depthwise_kwargs),
+                              kl.BatchNormalization(),
+                              kl.ReLU(6),
+                              kl.Conv2D(int(128 * alpha), 1, 1, **conv_kwargs),
+                              kl.BatchNormalization()])
+
+    conv5_2 = pipe(conv5_1, *[kl.Conv2D(512, 1, 1, **conv_kwargs),
+                              kl.BatchNormalization(),
+                              kl.ReLU(6),
+                              kl.DepthwiseConv2D(3, 1, **depthwise_kwargs),
+                              kl.BatchNormalization(),
+                              kl.ReLU(6),
+                              kl.Conv2D(int(128 * alpha), 1, 1, **conv_kwargs),
+                              kl.BatchNormalization()])
+
+    block5_2 = kl.Add()([conv5_1, conv5_2])
+
+    conv5_3 = pipe(block5_2, *[kl.Conv2D(512, 1, 1, **conv_kwargs),
+                               kl.BatchNormalization(),
+                               kl.ReLU(6),
+                               kl.DepthwiseConv2D(3, 1, **depthwise_kwargs),
+                               kl.BatchNormalization(),
+                               kl.ReLU(6),
+                               kl.Conv2D(int(128 * alpha), 1, 1, **conv_kwargs),
+                               kl.BatchNormalization()])
+
+    block5_3 = kl.Add()([block5_2, conv5_3])
+
+    conv5_4 = pipe(block5_3, *[kl.Conv2D(512, 1, 1, **conv_kwargs),
+                               kl.BatchNormalization(),
+                               kl.ReLU(6),
+                               kl.DepthwiseConv2D(3, 1, **depthwise_kwargs),
+                               kl.BatchNormalization(),
+                               kl.ReLU(6),
+                               kl.Conv2D(int(128 * alpha), 1, 1, **conv_kwargs),
+                               kl.BatchNormalization()])
+
+    block5_4 = kl.Add()([block5_3, conv5_4])
+
+    conv5_5 = pipe(block5_4, *[kl.Conv2D(512, 1, 1, **conv_kwargs),
+                               kl.BatchNormalization(),
+                               kl.ReLU(6),
+                               kl.DepthwiseConv2D(3, 1, **depthwise_kwargs),
+                               kl.BatchNormalization(),
+                               kl.ReLU(6),
+                               kl.Conv2D(int(128 * alpha), 1, 1, **conv_kwargs),
+                               kl.BatchNormalization()])
+
+    block5_5 = kl.Add()([block5_4, conv5_5])
+
+    conv5_6 = pipe(block5_5, *[kl.Conv2D(512, 1, 1, **conv_kwargs),
+                               kl.BatchNormalization(),
+                               kl.ReLU(6),
+                               kl.DepthwiseConv2D(3, 1, **depthwise_kwargs),
+                               kl.BatchNormalization(),
+                               kl.ReLU(6),
+                               kl.Conv2D(int(128 * alpha), 1, 1, **conv_kwargs),
+                               kl.BatchNormalization()])
+
+    block5_6 = kl.Add()([block5_5, conv5_6])
+
+    # 14*14*128
+    conv6_1 = pipe(block5_6, *[kl.Conv2D(256, 1, 1, **conv_kwargs),
+                               kl.BatchNormalization(),
+                               kl.ReLU(6),
+                               kl.DepthwiseConv2D(3, 1, **depthwise_kwargs),
+                               kl.BatchNormalization(),
+                               kl.ReLU(6),
+                               kl.Conv2D(int(16 * alpha), 1, 1, **conv_kwargs),
+                               kl.BatchNormalization()])
+    # 14*14*16
+    conv7 = pipe(conv6_1, *[kl.Conv2D(int(32 * alpha), 3, 2, **conv_kwargs),
+                            kl.BatchNormalization(),
+                            kl.ReLU(6)])
+
+    conv_kwargs['padding'] = 'valid'
+    conv8 = pipe(conv7, *[kl.Conv2D(int(128 * alpha), 3, 1, **conv_kwargs),
+                          kl.BatchNormalization(),
+                          kl.ReLU(6)])
+
+    avg_pool1 = kl.AvgPool2D(conv6_1.shape[1:3], 1)(conv6_1)
+
+    avg_pool2 = kl.AvgPool2D(conv7.shape[1:3], 1)(conv7)
+
+    s1 = kl.Flatten()(avg_pool1)
+    s2 = kl.Flatten()(avg_pool2)
+    # 1*1*128
+    s3 = kl.Flatten()(conv8)
+
+    multi_scale = kl.Concatenate(1)([s1, s2, s3])
+    landmark_pre = kl.Dense(landmark_num * 2)(multi_scale)
+
+    pflp_infer_model = k.Model(inputs, landmark_pre)
+
+    pfld_input = auxiliary_input
+    conv_kwargs['padding'] = 'same'  # ! 重要
+    euler_angles_pre = pipe(pfld_input,
+                            *[kl.Conv2D(128, 3, 2, **conv_kwargs),
+                              kl.BatchNormalization(),
+                              kl.ReLU(6),
+                              kl.Conv2D(128, 3, 1, **conv_kwargs),
+                              kl.BatchNormalization(),
+                              kl.ReLU(6),
+                              kl.Conv2D(32, 3, 2, **conv_kwargs),
+                              kl.BatchNormalization(),
+                              kl.ReLU(6),
+                              kl.Conv2D(128, 7, 1, **conv_kwargs),
+                              kl.BatchNormalization(),
+                              kl.ReLU(6),
+                              kl.MaxPool2D(3, 1, 'same'),
+                              kl.Flatten(),
+                              kl.Dense(32),
+                              kl.BatchNormalization(),
+                              kl.Dense(3)])
+    
+    auxiliary_model = k.Model(inputs, euler_angles_pre)
+    # NOTE avoid keras loss shape check error
+    y_pred = kl.Concatenate(1)([landmark_pre, euler_angles_pre])
+    train_model = k.Model(inputs, y_pred)
+
+    return pflp_infer_model, auxiliary_model, train_model
 
 def tiny_yolo(input_shape, anchor_num, class_num) -> [k.Model, k.Model]:
     inputs = k.Input(input_shape)

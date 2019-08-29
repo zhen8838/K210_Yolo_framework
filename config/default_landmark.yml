@@ -21,7 +21,7 @@ model:
     eular_weight: 1.
 train:
   augmenter: false
-  batch_size: 32
+  batch_size: 64
   pre_ckpt: null
   rand_seed: 10101
   epochs: 10
@@ -49,6 +49,15 @@ train:
     mode: auto
     baseline: null
     restore_best_weights: false
+  modelcheckpoint: true
+  modelcheckpoint_kwarg:
+    monitor: val_loss
+    verbose: 0
+    save_best_only: true
+    save_weights_only: false
+    mode: auto
+    save_freq: epoch
+    load_weights_on_restart: false
 prune:
   is_prune: false
   init_sparsity: 0.5

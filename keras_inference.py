@@ -3,7 +3,7 @@ from tensorflow.python import keras
 from pathlib import Path
 from tools.utils import Helper, INFO, ERROR, NOTE, tf_xywh_to_all
 from tools.alignutils import YOLOAlignHelper, tf_grid_to_all
-from models.yolonet import *
+from models.networks import *
 from termcolor import colored
 from PIL import Image, ImageFont, ImageDraw
 import argparse
@@ -15,9 +15,9 @@ from skimage.io import imshow, show
 from skimage.draw import circle
 
 tf.enable_eager_execution()
-config = tf.ConfigProto()
+config = tf.compat.v1.ConfigProto()
 config.gpu_options.allow_growth = True
-sess = tf.Session(config=config)
+sess = tf.compat.v1.Session(config=config)
 keras.backend.set_session(sess)
 keras.backend.set_learning_phase(0)
 
@@ -348,9 +348,9 @@ def main(ckpt_path: Path, model, train, test_image: Path):
 
     elif model.name == 'pfld':
         """ load images """
-        raw_img = tf.image.decode_image(tf.read_file(str(test_image)), 3)
+        raw_img = tf.image.decode_image(tf.io.read_file(str(test_image)), channels=3, expand_animations=False)
         raw_img_hw = raw_img.numpy().shape[0:2]
-        resize_img = tf.image.resize_images(raw_img, h.in_hw, method=0)
+        resize_img = tf.image.resize(raw_img, h.in_hw, method=0)
         img = tf.cast(resize_img, tf.float32)
         img = img / 255. - 0.5
         img = tf.expand_dims(img, 0)

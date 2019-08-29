@@ -1,11 +1,11 @@
 import tensorflow as tf
-from tensorflow.python import keras
-from tensorflow.python.keras.callbacks import TensorBoard, LearningRateScheduler, EarlyStopping
+import tensorflow.python.keras as k
+from tensorflow.python.keras.callbacks import TensorBoard, EarlyStopping, CSVLogger, ModelCheckpoint
 from tools.utils import Helper, YOLO_Loss, INFO, ERROR, NOTE
 from tools.alignutils import YOLOAlignHelper, YOLOAlign_Loss
 from tools.landmarkutils import LandmarkHelper, LandMark_Loss
 from tools.custom import Yolo_P_R, Lookahead, PFLDMetric, YOLO_LE
-from models.yolonet import yolo_mobilev2, pfld
+from models.networks import yolo_mobilev2, pfld
 import os
 from pathlib import Path
 from datetime import datetime
@@ -17,19 +17,22 @@ from tensorflow_model_optimization.python.core.api.sparsity import keras as spar
 from register import dict2obj, network_register, optimizer_register, helper_register, loss_register
 from yaml import safe_dump, safe_load
 from tensorflow.python import debug as tfdebug
+from typing import List
 
 
 def main(config_file, new_cfg, mode, model, train, prune):
     """ config tensorflow backend """
-    tf.reset_default_graph()
-    tfcfg = tf.ConfigProto()
+    tf.logging.set_verbosity(tf.logging.WARN)
+    tf.compat.v1.reset_default_graph()
+    tfcfg = tf.compat.v1.ConfigProto()
     tfcfg.gpu_options.allow_growth = True
-    sess = tf.Session(config=tfcfg)
+    tfcfg.graph_options.optimizer_options.global_jit_level = (tf.OptimizerOptions.ON_1)
+    sess = tf.compat.v1.Session(config=tfcfg)
 
     if train.debug == True:
         sess = tfdebug.LocalCLIDebugWrapperSession(sess)
 
-    keras.backend.set_session(sess)
+    k.backend.set_session(sess)
 
     """ Set Golbal Paramter """
     tf.set_random_seed(train.rand_seed)
@@ -57,14 +60,14 @@ def main(config_file, new_cfg, mode, model, train, prune):
 
     if 'yolo' in model.name:
         network = network_register[model.network]  # type:yolo_mobilev2
-        saved_model, trainable_model = network(model.helper_kwarg['in_hw'] + [3],
-                                               len(h.anchors[0]), model.helper_kwarg['class_num'],
-                                               **model.network_kwarg)
+        saved_model, train_model = network(model.helper_kwarg['in_hw'] + [3],
+                                           len(h.anchors[0]), model.helper_kwarg['class_num'],
+                                           **model.network_kwarg)
     elif model.name == 'pfld':
-        network = network_register[model.network]  # type:pfld
-        pflp_infer_model, auxiliary_model, trainable_model = network(
+        network = network_register[model.network]
+        infer_model, auxiliary_model, train_model = network(
             model.helper_kwarg['in_hw'] + [3], **model.network_kwarg)
-        saved_model = trainable_model
+        saved_model = train_model  # type:k.Model
 
     """  Config Prune Model Paramter """
     if prune.is_prune == 'True':
@@ -75,16 +78,14 @@ def main(config_file, new_cfg, mode, model, train, prune):
                                                          end_step=train_epoch_step * prune.end_epoch,
                                                          frequency=prune.frequency)
         }
-        train_model = sparsity.prune_low_magnitude(trainable_model, **pruning_params)
-    else:
-        train_model = trainable_model
+        train_model = sparsity.prune_low_magnitude(train_model, **pruning_params)  # type:k.Model
 
     """ Comile Model """
     optimizer = optimizer_register[train.optimizer](**train.optimizer_kwarg)
     if 'yolo' in model.name:
         loss_obj = loss_register[model.loss]  # type:YOLOAlign_Loss
         losses = [loss_obj(h=h, layer=layer, name='loss', **model.loss_kwarg)
-                  for layer in range(len(train_model.output) if isinstance(train_model.output, list) else 1)]  # type:[YOLOAlign_Loss]
+                  for layer in range(len(train_model.output) if isinstance(train_model.output, list) else 1)]  # type: List[YOLOAlign_Loss]
 
         metrics = []
         for i in range(len(losses)):
@@ -106,14 +107,15 @@ def main(config_file, new_cfg, mode, model, train, prune):
         fr.failure_num, fr.total = le.failure_num, le.total
         metrics = [le, fr]
 
-    sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
+    sess.run([tf.compat.v1.global_variables_initializer(),
+              tf.compat.v1.local_variables_initializer()])
     train_model.compile(optimizer, loss=losses, metrics=metrics)
 
     """ Load Pre-Train Model Weights """
     if train.pre_ckpt != None and train.pre_ckpt != 'None' and train.pre_ckpt != '':
         if 'h5' in train.pre_ckpt:
             initial_epoch = int(Path(train.pre_ckpt).stem.split('_')[-1]) + 1
-            trainable_model.load_weights(str(train.pre_ckpt))
+            train_model.load_weights(str(train.pre_ckpt))
             print(INFO, f' Load CKPT {str(train.pre_ckpt)}')
         else:
             print(ERROR, ' Pre CKPT path is unvalid')
@@ -129,10 +131,14 @@ def main(config_file, new_cfg, mode, model, train, prune):
                 sparsity.PruningSummaries(log_dir=str(log_dir), profile_batch=0)]
 
     cbs.append(TensorBoard(str(log_dir), update_freq='batch', profile_batch=3))
+    cbs.append(CSVLogger(str(log_dir / 'training.csv'), '\t', True))
     if train.earlystop == True:
         cbs.append(EarlyStopping(**train.earlystop_kwarg))
+    if train.modelcheckpoint == True:
+        cbs.append(ModelCheckpoint(str(log_dir / 'auto_saved_{epoch:d}.h5'),
+                                   **train.modelcheckpoint_kwarg))
 
-    file_writer = tf.summary.FileWriter(str(log_dir), sess.graph)  # NOTE avoid can't write graph, I don't now why..
+    file_writer = tf.compat.v1.summary.FileWriter(str(log_dir), sess.graph)  # NOTE avoid can't write graph, I don't now why..
 
     """ Start Training """
     try:
@@ -150,13 +156,24 @@ def main(config_file, new_cfg, mode, model, train, prune):
     if prune.is_prune == True:
         final_model = sparsity.strip_pruning(train_model)
         prune_ckpt = log_dir / 'prune' + model_name
-        keras.models.save_model(saved_model, str(prune_ckpt), include_optimizer=False)
+        k.models.save_model(saved_model, str(prune_ckpt), include_optimizer=False)
         print()
         print(INFO, f' Save Pruned Model as {str(prune_ckpt)}')
     else:
-        keras.models.save_model(saved_model, str(ckpt))
+        k.models.save_model(saved_model, str(ckpt))
         print()
         print(INFO, f' Save Model as {str(ckpt)}')
+        if model.name == 'pfld':
+            infer_model_name = f'infer_model_{initial_epoch+int(train_model.optimizer.iterations.eval(sess) / train_epoch_step)}.h5'
+            infer_ckpt = log_dir / infer_model_name
+            k.models.save_model(infer_model, str(infer_ckpt))
+
+            if train.modelcheckpoint == True:
+                # find best auto saved model, and save best infer model
+                auto_saved_list = list(log_dir.glob('auto_saved_*.h5'))  # type:List[Path]
+                auto_saved_list.sort()
+                train_model.load_weights(str(auto_saved_list[-1]))
+                k.models.save_model(infer_model, str(auto_saved_list[-1]).replace('saved', 'infer'))
 
 
 if __name__ == "__main__":

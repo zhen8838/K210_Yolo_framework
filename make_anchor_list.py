@@ -158,9 +158,9 @@ def runkMeans(X: np.ndarray, initial_centroids: np.ndarray, max_iters: int,
     in_x, in_c, idx = build_kmeans_graph(new_x, new_c)
 
     """ run kmeans """
-    config = tf.ConfigProto()
+    config = tf.compat.v1.ConfigProto()
     config.gpu_options.allow_growth = True
-    sess = tf.Session(config=config)
+    sess = tf.compat.v1.Session(config=config)
 
     for i in range(max_iters):
         idx_ = sess.run(idx, feed_dict={in_x: new_x, in_c: new_c})

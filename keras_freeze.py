@@ -6,9 +6,9 @@ import argparse
 from pathlib import Path
 from termcolor import colored
 from tools.utils import INFO, ERROR, NOTE
-config = tf.ConfigProto()
+config = tf.compat.v1.ConfigProto()
 config.gpu_options.allow_growth = True
-sess = tf.Session(config=config)
+sess = tf.compat.v1.Session(config=config)
 keras.backend.set_session(sess)
 
 

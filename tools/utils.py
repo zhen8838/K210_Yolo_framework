@@ -24,7 +24,7 @@ ERROR = colored('[ ERROR ]', 'red')  # type:str
 NOTE = colored('[ NOTE ]', 'green')  # type:str
 
 
-def restore_from_pkl(sess: tf.Session, varlist: list, pklfile: str):
+def restore_from_pkl(sess: tf.compat.v1.Session, varlist: list, pklfile: str):
     with open(pklfile, 'rb') as f:
         tensordict = pickle.load(f)
     l = len(tensordict.keys())
@@ -40,7 +40,7 @@ def restore_from_pkl(sess: tf.Session, varlist: list, pklfile: str):
         sess.run(assgin_list[i])
 
 
-def restore_ckpt(sess: tf.Session, depth_multiplier: float, var_list: list, ckptdir: str):
+def restore_ckpt(sess: tf.compat.v1.Session, depth_multiplier: float, var_list: list, ckptdir: str):
     if ckptdir == '' or ckptdir == None:
         pass
     elif 'pkl' in ckptdir:
@@ -502,7 +502,7 @@ class Helper(object):
             img_path, true_box = tf.numpy_function(lambda idx: (image_ann_list[idx][0], image_ann_list[idx][1]),
                                                    [i], [tf.dtypes.string, tf.float64])
             # load image
-            raw_img = tf.image.decode_jpeg(tf.read_file(img_path), channels=3)
+            raw_img = tf.image.decode_image(tf.io.read_file(img_path), channels=3, expand_animations=False)
             # resize image and image augmenter
             raw_img, true_box = tf.numpy_function(self.process_img,
                                                   [raw_img, true_box, is_training, True],
