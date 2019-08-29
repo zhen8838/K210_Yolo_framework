@@ -22,7 +22,7 @@ from typing import List
 
 def main(config_file, new_cfg, mode, model, train, prune):
     """ config tensorflow backend """
-    tf.logging.set_verbosity(tf.logging.WARN)
+    tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
     tf.compat.v1.reset_default_graph()
     tfcfg = tf.compat.v1.ConfigProto()
     tfcfg.gpu_options.allow_growth = True
@@ -171,9 +171,10 @@ def main(config_file, new_cfg, mode, model, train, prune):
             if train.modelcheckpoint == True:
                 # find best auto saved model, and save best infer model
                 auto_saved_list = list(log_dir.glob('auto_saved_*.h5'))  # type:List[Path]
-                auto_saved_list.sort()
-                train_model.load_weights(str(auto_saved_list[-1]))
-                k.models.save_model(infer_model, str(auto_saved_list[-1]).replace('saved', 'infer'))
+                if len(auto_saved_list) > 0:
+                    auto_saved_list.sort()
+                    train_model.load_weights(str(auto_saved_list[-1]))
+                    k.models.save_model(infer_model, str(auto_saved_list[-1]).replace('saved', 'infer'))
 
 
 if __name__ == "__main__":
