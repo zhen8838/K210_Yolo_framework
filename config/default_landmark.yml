@@ -10,7 +10,7 @@ model:
     landmark_num: 98
     attribute_num: 6
     validation_split: 0.1
-  network: pfld
+  network: pfld_optimized
   network_kwarg:
     landmark_num: 98
     alpha: 1.
