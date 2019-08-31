@@ -195,8 +195,35 @@ python3 ./keras_train.py --config_file config/default_landmark.yml
 python3 ./keras_train.py --config_file config/default_landmark.yml
 ```
 
-## inference
+## Convert Kmodel
+
+[nncase](https://ci.appveyor.com/project/sunnycase/nncase/branch/master/job/4dwu9jnsrcfqpq2s/artifacts)
+[sdk](https://github.com/kendryte/kendryte-standalone-sdk) develop
 
 ```sh
-python3 ./keras_inference.py log/xxxxx/saved_model_xx.h5 xxxxx/xxx.png
+toco --output_file pfld_infer.tflite --keras_model_file log/xxxxxx/infer_model_xx.h5
+ncc compile pfld_infer.tflite pfld_infer.kmodel -i tflite -o kmodel -t k210 --dataset ~/xxxxx/images --inference-type uint8 --input-mean 0.5 --input-std 1.0
 ```
+
+## Inference
+
+1.  Infer one image:
+
+
+```sh
+python3 ./keras_inference.py log/xxxxx/infer_model_xx.h5 xxxxx/xxx.png
+```
+
+2.  Infer images:
+
+```sh
+python3 ./keras_inference.py log/xxxxx/infer_model_xx.h5 xxxxx/images
+```
+
+3.  Plot kmodel results:
+
+```sh
+ncc infer xxx.kmodel xxxxx/k210_infer --dataset xxxxx/images --input-mean 0.0 --input-std 0.25
+python3 ./keras_inference.py log/xxxxx/infer_model_100.h5 xxxxx/images --results_path xxxxx/k210_infer
+```
+

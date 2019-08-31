@@ -23,12 +23,12 @@ class YOLOAlignHelper(Helper):
                          validation_split=validation_split)
         self.landmark_num = landmark_num  # landmark point numbers
 
-    def box_to_label(self, true_box: np.ndarray) -> tuple:
+    def ann_to_label(self, ann: np.ndarray) -> tuple:
         """convert the annotaion to yolo v3 (add alignment) label~
 
         Parameters
         ----------
-        true_box : np.ndarray
+        ann : np.ndarray
             annotation shape :[n,5+ self.landmark_num * 2] value :[n * [ p,x,y,w,h,landmark_num*2] ]
         Returns
         -------
@@ -38,8 +38,8 @@ class YOLOAlignHelper(Helper):
         labels = [np.zeros((self.out_hw[i][0], self.out_hw[i][1],
                             len(self.anchors[i]), 5 + self.landmark_num * 2 + self.class_num),
                            dtype='float32') for i in range(self.output_number)]
-        for i in range(len(true_box)):
-            box = true_box[i]
+        for i in range(len(ann)):
+            box = ann[i]
             # NOTE box [x y w h] are relative to the size of the entire image [0~1]
             l, n = self._get_anchor_index(box[3:5])  # [layer index, anchor index]
             idx, idy = self._xy_grid_index(box[1:3], l)  # [x index , y index]
@@ -50,7 +50,7 @@ class YOLOAlignHelper(Helper):
 
         return labels
 
-    def label_to_box(self, labels: np.ndarray, thersh=0.7) -> np.ndarray:
+    def label_to_ann(self, labels: np.ndarray, thersh=0.7) -> np.ndarray:
         """reverse the labels to annotation
 
         Parameters
@@ -62,13 +62,13 @@ class YOLOAlignHelper(Helper):
         np.ndarray
             annotaions
         """
-        new_boxs = np.vstack([label[np.where(label[..., 4] > thersh)] for label in labels])
-        new_boxs = np.hstack([np.expand_dims(np.argmax(new_boxs[:, 5 + self.landmark_num * 2:], axis=-1), -1),
-                              new_boxs[:, :4],
-                              new_boxs[:, 5:5 + self.landmark_num * 2]])  # type:np.ndarray
-        return new_boxs
+        new_ann = np.vstack([label[np.where(label[..., 4] > thersh)] for label in labels])
+        new_ann = np.hstack([np.expand_dims(np.argmax(new_ann[:, 5 + self.landmark_num * 2:], axis=-1), -1),
+                              new_ann[:, :4],
+                              new_ann[:, 5:5 + self.landmark_num * 2]])  # type:np.ndarray
+        return new_ann
 
-    def resize_img(self, img: np.ndarray, true_box: np.ndarray) -> [np.ndarray, np.ndarray]:
+    def resize_img(self, img: np.ndarray, ann: np.ndarray) -> [np.ndarray, np.ndarray]:
         """
         resize image and keep ratio
 
@@ -76,13 +76,13 @@ class YOLOAlignHelper(Helper):
         ----------
         img : np.ndarray
 
-        true_box : np.ndarray
+        ann : np.ndarray
 
 
         Returns
         -------
         [np.ndarray, np.ndarray]
-            img, true_box [uint8,float64]
+            img, ann [uint8,float64]
         """
         img_wh = np.array(img.shape[1::-1])
         in_wh = self.in_hw[::-1]
@@ -94,25 +94,25 @@ class YOLOAlignHelper(Helper):
         translation = ((in_wh - img_wh * scale) / 2).astype(int)
 
         """ calculate the box transform matrix """
-        if isinstance(true_box, np.ndarray):
-            true_box[:, 1:3] = (true_box[:, 1:3] * img_wh * scale + translation) / in_wh
-            true_box[:, 3:5] = (true_box[:, 3:5] * img_wh * scale) / in_wh
-            true_box[:, 5:5 + self.landmark_num * 2] = ((true_box[:, 5:5 + self.landmark_num * 2].reshape(
+        if isinstance(ann, np.ndarray):
+            ann[:, 1:3] = (ann[:, 1:3] * img_wh * scale + translation) / in_wh
+            ann[:, 3:5] = (ann[:, 3:5] * img_wh * scale) / in_wh
+            ann[:, 5:5 + self.landmark_num * 2] = ((ann[:, 5:5 + self.landmark_num * 2].reshape(
                 (-1, self.landmark_num, 2)) * img_wh * scale + translation) / in_wh).reshape((-1, self.landmark_num * 2))
 
         """ apply Affine Transform """
         aff = AffineTransform(scale=scale, translation=translation)
         img = warp(img, aff.inverse, output_shape=self.in_hw, preserve_range=True).astype('uint8')
-        return img, true_box
+        return img, ann
 
-    def draw_image(self, img: np.ndarray, true_box: np.ndarray, is_show=True, scores=None):
-        """ draw img and show bbox , set true_box = None will not show bbox
+    def draw_image(self, img: np.ndarray, ann: np.ndarray, is_show=True, scores=None):
+        """ draw img and show bbox , set ann = None will not show bbox
 
         Parameters
         ----------
         img : np.ndarray
 
-        true_box : np.ndarray
+        ann : np.ndarray
 
            shape : [p,x,y,w,h]
 
@@ -124,14 +124,14 @@ class YOLOAlignHelper(Helper):
 
             the confidence scores
         """
-        if isinstance(true_box, np.ndarray):
-            p = true_box[:, 0]
+        if isinstance(ann, np.ndarray):
+            p = ann[:, 0]
 
-            left_top = ((true_box[:, 1:3] - true_box[:, 3:5] / 2)[:, ::-1] * img.shape[0:2]).astype('int32')
-            right_bottom = ((true_box[:, 1:3] + true_box[:, 3:5] / 2)[:, ::-1] * img.shape[0:2]).astype('int32')
+            left_top = ((ann[:, 1:3] - ann[:, 3:5] / 2)[:, ::-1] * img.shape[0:2]).astype('int32')
+            right_bottom = ((ann[:, 1:3] + ann[:, 3:5] / 2)[:, ::-1] * img.shape[0:2]).astype('int32')
 
             # convert landmark  from [n,[x,y]] ===> [n,[y,x]]
-            landmarks = true_box[:, 5:5 + self.landmark_num * 2].reshape((-1, self.landmark_num, 2))
+            landmarks = ann[:, 5:5 + self.landmark_num * 2].reshape((-1, self.landmark_num, 2))
             landmarks = (landmarks[:, :, ::-1] * img.shape[0:2]).astype('int32')
 
             for i in range(len(p)):
@@ -148,14 +148,14 @@ class YOLOAlignHelper(Helper):
             imshow((img).astype('uint8'))
             show()
 
-    def data_augmenter(self, img: np.ndarray, true_box: np.ndarray) -> tuple:
+    def data_augmenter(self, img: np.ndarray, ann: np.ndarray) -> tuple:
         """ augmenter for image with bbox and landmark
 
         Parameters
         ----------
         img : np.ndarray
             img src
-        true_box : np.ndarray
+        ann : np.ndarray
             box [cls,x,y,w,h,landmark num * 2]
 
         Returns
@@ -165,9 +165,9 @@ class YOLOAlignHelper(Helper):
             image src dtype is uint8
         """
         seq_det = self.iaaseq.to_deterministic()  # type: ia.meta.Augmenter
-        p = true_box[:, 0:1]
-        xywh_box = true_box[:, 1:5]
-        landmarks = true_box[:, 5:].reshape((len(true_box) * self.landmark_num, 2))
+        p = ann[:, 0:1]
+        xywh_box = ann[:, 1:5]
+        landmarks = ann[:, 5:].reshape((len(ann) * self.landmark_num, 2))
 
         bbs = BoundingBoxesOnImage.from_xyxy_array(center_to_corner(xywh_box, in_hw=img.shape[0:2]), shape=img.shape)
         kps = KeypointsOnImage.from_xy_array(landmarks * img.shape[1::-1], shape=img.shape)
@@ -176,12 +176,12 @@ class YOLOAlignHelper(Helper):
         bbs_aug = seq_det.augment_bounding_boxes([bbs])[0].remove_out_of_image().clip_out_of_image()
         kps_aug = seq_det.augment_keypoints([kps])[0]  # type:KeypointsOnImage
 
-        xyxy_box = bbs_aug.to_xyxy_array()
-        xywh_box = corner_to_center(xyxy_box, in_hw=img.shape[0:2])
-        new_landmarks = (kps_aug.to_xy_array() / img.shape[1::-1]).reshape((len(true_box), self.landmark_num * 2))
-        new_box = np.hstack((p, xywh_box, new_landmarks))
+        xyxy_ann = bbs_aug.to_xyxy_array()
+        xywh_ann = corner_to_center(xyxy_ann, in_hw=img.shape[0:2])
+        new_landmarks = (kps_aug.to_xy_array() / img.shape[1::-1]).reshape((len(ann), self.landmark_num * 2))
+        new_ann = np.hstack((p, xywh_ann, new_landmarks))
 
-        return image_aug, new_box
+        return image_aug, new_ann
 
     def _compute_dataset_shape(self) -> tuple:
         """ compute dataset shape to avoid keras check shape error

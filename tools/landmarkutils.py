@@ -12,10 +12,14 @@ from tensorflow.python.keras.losses import Loss
 from tensorflow.python.keras.utils import losses_utils
 from tensorflow.contrib.data import assert_element_shape
 from tools.utils import INFO, ERROR, NOTE
+from tools.baseutils import BaseHelper
+import matplotlib.pyplot as plt
+from pathlib import Path
 
 
-class LandmarkHelper(object):
+class LandmarkHelper(BaseHelper):
     def __init__(self, image_ann: str, in_hw: tuple, landmark_num: int, attribute_num: int, validation_split=0.1):
+        super().__init__()
         self.in_hw = np.array(in_hw)
         assert self.in_hw.ndim == 1
         self.landmark_num = landmark_num
@@ -46,6 +50,9 @@ class LandmarkHelper(object):
             iaa.Affine(translate_percent={"x": (-0.1, 0.1), "y": (-0.1, 0.1)})  # 随机平移
         ])  # type: iaa.meta.Augmenter
 
+    def resize_img(self, raw_img: tf.Tensor) -> tf.Tensor:
+        return tf.image.resize(raw_img, self.in_hw, method=0)
+
     def _compute_dataset_shape(self) -> tuple:
         """ compute dataset shape to avoid keras check shape error
 
@@ -62,19 +69,22 @@ class LandmarkHelper(object):
         dataset_shapes = (img_shapes, label_shape)
         return dataset_shapes
 
+    def data_augmenter(self, img, ann):
+        pass
+
     def _build_datapipe(self, image_ann_list: np.ndarray, batch_size: int, rand_seed: int, is_training: bool) -> tf.data.Dataset:
         print(INFO, 'data augment is ', str(is_training))
 
         def _parser_wrapper(i: tf.Tensor) -> [tf.Tensor, tf.Tensor]:
             img_path, label = tf.numpy_function(lambda idx: (image_ann_list[idx][0], image_ann_list[idx][1].astype('float32')), [i], [tf.dtypes.string, tf.float32])
-            raw_img = tf.image.decode_image(tf.io.read_file(img_path), channels=3, expand_animations=False)
-            if is_training == False:
-                raw_img = tf.image.resize(raw_img, self.in_hw, method=0)
 
-            img = tf.cast(raw_img, tf.float32)
+            raw_img = self.read_img(img_path)
+
+            if is_training == False:
+                raw_img = self.resize_img(raw_img)
 
             # NOTE standardized image
-            img = img / 255. - 0.5
+            img = self.normlize_img(raw_img)
 
             return img, label
 
@@ -82,7 +92,7 @@ class LandmarkHelper(object):
 
         def _batch_parser(img: tf.Tensor, label: tf.Tensor) -> [tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor]:
             """ 
-                process true_box , calc the attribute weights 
+                process ann , calc the attribute weights 
 
                 return : img , landmarks , attribute_weight , euluar
             """
@@ -114,14 +124,14 @@ class LandmarkHelper(object):
         self.train_epoch_step = self.train_total_data // self.batch_size
         self.test_epoch_step = self.test_total_data // self.batch_size
 
-    def draw_image(self, img: np.ndarray, true_box: np.ndarray, is_show=True):
-        """ draw img and show bbox , set true_box = None will not show bbox
+    def draw_image(self, img: np.ndarray, ann: np.ndarray, is_show=True):
+        """ draw img and show bbox , set ann = None will not show bbox
 
         Parameters
         ----------
         img : np.ndarray
 
-        true_box : np.ndarray
+        ann : np.ndarray
 
            shape : [p,x,y,w,h]
 
@@ -130,7 +140,7 @@ class LandmarkHelper(object):
             show image
         """
 
-        landmark, attribute, euler = np.split(true_box, [self.landmark_num * 2, self.landmark_num * 2 + self.attribute_num])
+        landmark, attribute, euler = np.split(ann, [self.landmark_num * 2, self.landmark_num * 2 + self.attribute_num])
 
         landmark = landmark.reshape(-1, 2) * img.shape[0:2]
         for (x, y) in landmark.astype('uint8'):
@@ -263,3 +273,126 @@ class LandMark_Loss(Loss):
 
         loss = tf.reduce_mean(true_a_w * landmark_loss * eular_loss)
         return loss
+
+
+def pfld_load_img_result(img_path: Path, infer_model: tf.keras.Model,
+                         h: LandmarkHelper, result_path: Path = None) -> [
+                             np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+        pfld load image and get result~
+    Parameters
+    ----------
+    img_path : Path
+        img path or img folder path
+    infer_model : k.Model
+
+    h : Helper
+
+    result_path : Path, optional
+        , by default None
+
+    Returns
+    -------
+    [np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+        raw_img, raw_img_hw, result, ncc_result
+    """
+    print(INFO, f'Load Images from {str(img_path)}')
+    if img_path.is_dir():
+        img_path_list = []
+        for suffix in ['bmp', 'jpg', 'jpeg', 'png']:
+            img_path_list += list(img_path.glob(f'*.{suffix}'))
+        raw_img = np.array([h.read_img(str(p)).numpy() for p in img_path_list])
+    elif img_path.is_file():
+        raw_img = tf.expand_dims(h.read_img(str(img_path)), 0).numpy()
+    else:
+        ValueError(f'{ERROR} img_path `{str(img_path)}` is invalid')
+
+    raw_img_hw = np.array([src.shape[0:2] for src in raw_img])
+
+    if result_path is not None:
+        print(INFO, f'Load Nncase Results from {str(result_path)}')
+        if result_path.is_dir():
+            ncc_result = np.array([np.fromfile(
+                str(result_path / (img_path_list[i].stem + '.bin')),
+                dtype='float32') for i in range(len(img_path_list))])  # type:np.ndarray
+        elif result_path.is_file():
+            ncc_result = np.expand_dims(np.fromfile(str(result_path), dtype='float32'), 0)  # type:np.ndarray
+        else:
+            ValueError(f'{ERROR} result_path `{str(result_path)}` is invalid')
+    else:
+        ncc_result = None
+    print(INFO, f'Infer Results')
+    resize_img = tf.stack([h.resize_img(src) for src in raw_img])
+
+    img = (tf.cast(resize_img, tf.float32) / 255. - 0.5) / 1
+    """ get output """
+    result = infer_model.predict(img)
+
+    return raw_img, raw_img_hw, result, ncc_result
+
+
+def pfld_draw_img_result(raw_img: np.ndarray, raw_img_hw: np.ndarray,
+                         result: np.ndarray, ncc_result: np.ndarray,
+                         h: LandmarkHelper):
+    """ show pfld_draw_img_result
+
+    Parameters
+    ----------
+    raw_img : np.ndarray
+
+    raw_img_hw : np.ndarray
+
+    result : np.ndarray
+
+    ncc_result : np.ndarray
+
+    h : Helper
+
+    """
+    if ncc_result is None:
+        """ parser output """
+        pred_landmark = tf.sigmoid(result).numpy()
+        """ draw """
+
+        for i in range(len(raw_img)):
+            landmark = np.reshape(pred_landmark[i], (h.landmark_num, 2)) * raw_img_hw[i][::-1]
+
+            for j in range(h.landmark_num):
+                # NOTE circle( y, x, radius )
+                rr, cc = circle(landmark[j][1], landmark[j][0], 1)
+                raw_img[i][rr, cc] = (200, 0, 0)
+
+            imshow(raw_img[i])
+            show()
+    else:
+        """ parser output """
+        pred_landmark = tf.sigmoid(result).numpy()
+        ncc_pred_landmark = tf.sigmoid(ncc_result).numpy()
+        """ draw """
+        for i in range(len(raw_img)):
+            fig = plt.figure()
+            ax1 = plt.subplot(121)  # type:plt.Axes
+            ax2 = plt.subplot(122)  # type:plt.Axes
+            ax1_img = raw_img[i].copy()
+            ax2_img = raw_img[i].copy()
+            """ plot ax1 """
+            landmark = np.minimum(np.reshape(pred_landmark[i], (h.landmark_num, 2)) * raw_img_hw[i][::-1],
+                                  raw_img_hw[i][0] - 1)
+            for j in range(h.landmark_num):
+                # NOTE circle( y, x, radius )
+                rr, cc = circle(landmark[j][1], landmark[j][0], 1)
+                ax1_img[rr, cc] = (200, 0, 0)
+
+            """ plot ax2 """
+            landmark = np.minimum(np.reshape(ncc_pred_landmark[i], (h.landmark_num, 2)) * raw_img_hw[i][::-1],
+                                  raw_img_hw[i][0] - 1)
+            for j in range(h.landmark_num):
+                # NOTE circle( y, x, radius )
+                rr, cc = circle(landmark[j][1], landmark[j][0], 1)
+                ax2_img[rr, cc] = (200, 0, 0)
+
+            ax1.imshow(ax1_img)
+            ax2.imshow(ax2_img)
+            ax1.set_title('GPU Infer')
+            ax2.set_title('Ncc Infer')
+            plt.show()

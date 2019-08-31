@@ -3,6 +3,7 @@ from tensorflow.python import keras
 from pathlib import Path
 from tools.utils import Helper, INFO, ERROR, NOTE, tf_xywh_to_all
 from tools.alignutils import YOLOAlignHelper, tf_grid_to_all
+from tools.landmarkutils import LandmarkHelper, pfld_draw_img_result, pfld_load_img_result
 from models.networks import *
 from termcolor import colored
 from PIL import Image, ImageFont, ImageDraw
@@ -315,31 +316,31 @@ def parser_yoloalgin_output(orig_img: np.ndarray, y_pred: list, input_hw: tuple,
         print(NOTE, ' no boxes detected')
 
 
-def main(ckpt_path: Path, model, train, test_image: Path):
+def main(ckpt_path: Path, model, train, images_path: Path, results_path: Path):
 
     h = helper_register[model.helper](**model.helper_kwarg)  # type: Helper
 
     if 'yolo' in model.name:
         network = network_register[model.network]  # type:yolo_mobilev2
-        saved_model, trainable_model = network(model.helper_kwarg['in_hw'] + [3],
-                                               len(h.anchors[0]), model.helper_kwarg['class_num'],
-                                               **model.network_kwarg)
+        saved_model, infer_model = network(model.helper_kwarg['in_hw'] + [3],
+                                           len(h.anchors[0]), model.helper_kwarg['class_num'],
+                                           **model.network_kwarg)
     elif model.name == 'pfld':
         network = network_register[model.network]  # type:pfld
-        pflp_infer_model, auxiliary_model, trainable_model = network(
+        infer_model, auxiliary_model, trainable_model = network(
             model.helper_kwarg['in_hw'] + [3], **model.network_kwarg)
 
-    print(INFO, f' Load CKPT from {str(ckpt_path)}')
-    trainable_model.load_weights(str(ckpt_path))
+    print(INFO, f'Load CKPT from {str(ckpt_path)}')
+    infer_model.load_weights(str(ckpt_path))
 
     if 'yolo' in model.name:
         """ load images """
-        orig_img = h.read_img(str(test_image))
+        orig_img = h.read_img(str(images_path))
         image_hw = orig_img.shape[0:2]
         img, _ = h.process_img(orig_img, true_box=None, is_training=False, is_resize=True)
         img = tf.expand_dims(img, 0)
         """ get output """
-        y_pred = trainable_model.predict(img)
+        y_pred = infer_model.predict(img)
         """ parser output """
         if model.name == 'yolo':
             parser_yolo_output(orig_img, y_pred, model.input_hw, image_hw, model.class_num, model.obj_thresh, model.iou_thresh, h)
@@ -348,36 +349,16 @@ def main(ckpt_path: Path, model, train, test_image: Path):
 
     elif model.name == 'pfld':
         """ load images """
-        raw_img = tf.image.decode_image(tf.io.read_file(str(test_image)), channels=3, expand_animations=False)
-        raw_img_hw = raw_img.numpy().shape[0:2]
-        resize_img = tf.image.resize(raw_img, h.in_hw, method=0)
-        img = tf.cast(resize_img, tf.float32)
-        img = img / 255. - 0.5
-        img = tf.expand_dims(img, 0)
-        """ get output """
-        y_pred = trainable_model.predict(img)
-        """ parser output """
-        pred_landmark, pred_eular = tf.split(y_pred, [h.landmark_num * 2, 3], 1)
-        pred_landmark = tf.sigmoid(pred_landmark)
-        pred_landmark, pred_eular = pred_landmark[0].numpy(), pred_eular[0].numpy()
-        """ draw """
-        pred_landmark = np.reshape(pred_landmark, (h.landmark_num, 2))
-        pred_landmark = pred_landmark * raw_img_hw[::-1]
-        darw_img = raw_img.numpy()
-        for i in range(h.landmark_num):
-            # NOTE circle( y, x, radius )
-            rr, cc = circle(pred_landmark[i][1], pred_landmark[i][0], 1)
-            darw_img[rr, cc] = (200, 0, 0)
-
-        imshow(darw_img)
-        show()
+        raw_img, raw_img_hw, result, ncc_result = pfld_load_img_result(images_path, infer_model, h, results_path)
+        pfld_draw_img_result(raw_img, raw_img_hw, result, ncc_result, h)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('pre_ckpt', type=str, help='pre-train weights path')
     parser.add_argument('--config', type=str, help='config file path, default in same folder with `pre_ckpt`', default=None)
-    parser.add_argument('test_image', type=str, help='test image path')
+    parser.add_argument('--results_path', type=str, help='inference results path', default=None)
+    parser.add_argument('pre_ckpt', type=str, help='pre-train weights path')
+    parser.add_argument('images_path', type=str, help='test images path')
     args = parser.parse_args(sys.argv[1:])
 
     pre_ckpt = Path(args.pre_ckpt)
@@ -391,4 +372,4 @@ if __name__ == "__main__":
         cfg = safe_load(f)
 
     ArgMap = dict2obj(cfg)
-    main(Path(args.pre_ckpt), ArgMap.model, ArgMap.train, Path(args.test_image))
+    main(Path(args.pre_ckpt), ArgMap.model, ArgMap.train, Path(args.images_path), Path(args.results_path) if args.results_path is not None else None)

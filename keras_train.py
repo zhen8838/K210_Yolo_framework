@@ -142,7 +142,8 @@ def main(config_file, new_cfg, mode, model, train, prune):
 
     """ Start Training """
     try:
-        train_model.fit(train_ds, epochs=train.epochs, steps_per_epoch=train_epoch_step, callbacks=cbs,
+        train_model.fit(train_ds, epochs=initial_epoch + train.epochs,
+                        steps_per_epoch=train_epoch_step, callbacks=cbs,
                         validation_data=validation_ds, validation_steps=vali_epoch_step,
                         verbose=train.verbose,
                         initial_epoch=initial_epoch)

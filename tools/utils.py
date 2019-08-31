@@ -6,10 +6,8 @@ from skimage.io import imshow, imread, imsave, show
 from skimage.color import gray2rgb
 from skimage.transform import AffineTransform, warp
 from math import cos, sin
-
 import imgaug.augmenters as iaa
 from imgaug import BoundingBoxesOnImage
-
 import tensorflow as tf
 import tensorflow.python.keras.backend as K
 from tensorflow.contrib.data import assert_element_shape
@@ -18,43 +16,11 @@ from tensorflow.python.keras.utils import losses_utils
 import pickle
 from termcolor import colored
 from matplotlib.pyplot import text
+from tools.baseutils import BaseHelper
 
 INFO = colored('[ INFO  ]', 'blue')  # type:str
 ERROR = colored('[ ERROR ]', 'red')  # type:str
 NOTE = colored('[ NOTE ]', 'green')  # type:str
-
-
-def restore_from_pkl(sess: tf.compat.v1.Session, varlist: list, pklfile: str):
-    with open(pklfile, 'rb') as f:
-        tensordict = pickle.load(f)
-    l = len(tensordict.keys())
-    cnt = 0
-    assgin_list = []
-    for var in varlist:
-        for k in tensordict.keys():
-            if var.name == k:
-                assgin_list.append(tf.assign(var, tensordict[k]))
-                cnt += 1
-    assert l == cnt
-    for i in range(len(assgin_list)):
-        sess.run(assgin_list[i])
-
-
-def restore_ckpt(sess: tf.compat.v1.Session, depth_multiplier: float, var_list: list, ckptdir: str):
-    if ckptdir == '' or ckptdir == None:
-        pass
-    elif 'pkl' in ckptdir:
-        restore_from_pkl(sess, tf.global_variables(), ckptdir)
-    else:
-        ckpt = tf.train.get_checkpoint_state(ckptdir)
-        loader = tf.train.Saver(var_list=var_list)
-        loader.restore(sess, ckpt.model_checkpoint_path)
-
-
-def write_arguments_to_file(args, filename):
-    with open(filename, 'w') as f:
-        for key, value in vars(args).items():
-            f.write('%s: %s\n' % (key, str(value)))
 
 
 def fake_iou(a: np.ndarray, b: np.ndarray) -> float:
@@ -130,12 +96,12 @@ def anchor_scale(anchors: np.ndarray, grid_wh: np.ndarray) -> np.array:
     return np.array([anchors[i] * grid_wh[i] for i in range(len(anchors))])
 
 
-def center_to_corner(xywh_box: np.ndarray, to_all_scale=True, in_hw=None) -> np.ndarray:
+def center_to_corner(xywh_ann: np.ndarray, to_all_scale=True, in_hw=None) -> np.ndarray:
     """convert box coordinate from center to corner
 
     Parameters
     ----------
-    xywh_box : np.ndarray
+    xywh_ann : np.ndarray
         true box
     to_all_scale : bool, optional
         weather to all image scale, by default True
@@ -145,29 +111,29 @@ def center_to_corner(xywh_box: np.ndarray, to_all_scale=True, in_hw=None) -> np.
     Returns
     -------
     np.ndarray
-        xyxy box
+        xyxy annotation
     """
     if to_all_scale:
-        x1 = (xywh_box[:, 0:1] - xywh_box[:, 2:3] / 2) * in_hw[1]
-        y1 = (xywh_box[:, 1:2] - xywh_box[:, 3:4] / 2) * in_hw[0]
-        x2 = (xywh_box[:, 0:1] + xywh_box[:, 2:3] / 2) * in_hw[1]
-        y2 = (xywh_box[:, 1:2] + xywh_box[:, 3:4] / 2) * in_hw[0]
+        x1 = (xywh_ann[:, 0:1] - xywh_ann[:, 2:3] / 2) * in_hw[1]
+        y1 = (xywh_ann[:, 1:2] - xywh_ann[:, 3:4] / 2) * in_hw[0]
+        x2 = (xywh_ann[:, 0:1] + xywh_ann[:, 2:3] / 2) * in_hw[1]
+        y2 = (xywh_ann[:, 1:2] + xywh_ann[:, 3:4] / 2) * in_hw[0]
     else:
-        x1 = (xywh_box[:, 0:1] - xywh_box[:, 2:3] / 2)
-        y1 = (xywh_box[:, 1:2] - xywh_box[:, 3:4] / 2)
-        x2 = (xywh_box[:, 0:1] + xywh_box[:, 2:3] / 2)
-        y2 = (xywh_box[:, 1:2] + xywh_box[:, 3:4] / 2)
+        x1 = (xywh_ann[:, 0:1] - xywh_ann[:, 2:3] / 2)
+        y1 = (xywh_ann[:, 1:2] - xywh_ann[:, 3:4] / 2)
+        x2 = (xywh_ann[:, 0:1] + xywh_ann[:, 2:3] / 2)
+        y2 = (xywh_ann[:, 1:2] + xywh_ann[:, 3:4] / 2)
 
-    xyxy_box = np.hstack([x1, y1, x2, y2])
-    return xyxy_box
+    xyxy_ann = np.hstack([x1, y1, x2, y2])
+    return xyxy_ann
 
 
-def corner_to_center(xyxy_box: np.ndarray, from_all_scale=True, in_hw=None) -> np.ndarray:
+def corner_to_center(xyxy_ann: np.ndarray, from_all_scale=True, in_hw=None) -> np.ndarray:
     """convert box coordinate from corner to center
 
     Parameters
     ----------
-    xyxy_box : np.ndarray
+    xyxy_ann : np.ndarray
         xyxy box (upper left,bottom right)
     to_all_scale : bool, optional
         weather to all image scale, by default True
@@ -177,25 +143,26 @@ def corner_to_center(xyxy_box: np.ndarray, from_all_scale=True, in_hw=None) -> n
     Returns
     -------
     np.ndarray
-        xywh box
+        xywh annotation
     """
     if from_all_scale:
-        x = ((xyxy_box[:, 2:3] + xyxy_box[:, 0:1]) / 2) / in_hw[1]
-        y = ((xyxy_box[:, 3:4] + xyxy_box[:, 1:2]) / 2) / in_hw[0]
-        w = (xyxy_box[:, 2:3] - xyxy_box[:, 0:1]) / in_hw[1]
-        h = (xyxy_box[:, 3:4] - xyxy_box[:, 1:2]) / in_hw[0]
+        x = ((xyxy_ann[:, 2:3] + xyxy_ann[:, 0:1]) / 2) / in_hw[1]
+        y = ((xyxy_ann[:, 3:4] + xyxy_ann[:, 1:2]) / 2) / in_hw[0]
+        w = (xyxy_ann[:, 2:3] - xyxy_ann[:, 0:1]) / in_hw[1]
+        h = (xyxy_ann[:, 3:4] - xyxy_ann[:, 1:2]) / in_hw[0]
     else:
-        x = ((xyxy_box[:, 2:3] + xyxy_box[:, 0:1]) / 2)
-        y = ((xyxy_box[:, 3:4] + xyxy_box[:, 1:2]) / 2)
-        w = (xyxy_box[:, 2:3] - xyxy_box[:, 0:1])
-        h = (xyxy_box[:, 3:4] - xyxy_box[:, 1:2])
+        x = ((xyxy_ann[:, 2:3] + xyxy_ann[:, 0:1]) / 2)
+        y = ((xyxy_ann[:, 3:4] + xyxy_ann[:, 1:2]) / 2)
+        w = (xyxy_ann[:, 2:3] - xyxy_ann[:, 0:1])
+        h = (xyxy_ann[:, 3:4] - xyxy_ann[:, 1:2])
 
-    true_box = np.hstack([x, y, w, h])
-    return true_box
+    xywh_ann = np.hstack([x, y, w, h])
+    return xywh_ann
 
 
-class Helper(object):
+class Helper(BaseHelper):
     def __init__(self, image_ann: str, class_num: int, anchors: str, in_hw: tuple, out_hw: tuple, validation_split=0.1):
+        super().__init__()
         self.in_hw = np.array(in_hw)
         assert self.in_hw.ndim == 1
         self.out_hw = np.array(out_hw)
@@ -305,12 +272,12 @@ class Helper(object):
         iou = fake_iou(wh, self.anchors)
         return np.unravel_index(np.argmax(iou), iou.shape)
 
-    def box_to_label(self, true_box: np.ndarray) -> tuple:
+    def ann_to_label(self, ann: np.ndarray) -> tuple:
         """convert the annotaion to yolo v3 label~
 
         Parameters
         ----------
-        true_box : np.ndarray
+        ann : np.ndarray
             annotation shape :[n,5] value :[n*[p,x,y,w,h]]
 
         Returns
@@ -320,7 +287,7 @@ class Helper(object):
         """
         labels = [np.zeros((self.out_hw[i][0], self.out_hw[i][1], len(self.anchors[i]),
                             5 + self.class_num), dtype='float32') for i in range(self.output_number)]
-        for box in true_box:
+        for box in ann:
             # NOTE box [x y w h] are relative to the size of the entire image [0~1]
             l, n = self._get_anchor_index(box[3:5])  # [layer index, anchor index]
             idx, idy = self._xy_grid_index(box[1:3], l)  # [x index , y index]
@@ -350,7 +317,7 @@ class Helper(object):
         for i in range(len(labels)):
             labels[i][..., 2:4] = np.exp(labels[i][..., 2: 4]) * self.anchors[i]
 
-    def label_to_box(self, labels: tuple, thersh=.7) -> np.ndarray:
+    def label_to_ann(self, labels: tuple, thersh=.7) -> np.ndarray:
         """reverse the labels to annotation
 
         Parameters
@@ -362,19 +329,19 @@ class Helper(object):
         np.ndarray
             annotaions
         """
-        new_boxs = np.vstack([label[np.where(label[..., 4] > thersh)] for label in labels])
-        new_boxs = np.c_[np.argmax(new_boxs[:, 5:], axis=-1), new_boxs[:, :4]]
-        return new_boxs
+        new_ann = np.vstack([label[np.where(label[..., 4] > thersh)] for label in labels])
+        new_ann = np.c_[np.argmax(new_ann[:, 5:], axis=-1), new_ann[:, :4]]
+        return new_ann
 
-    def data_augmenter(self, img: np.ndarray, true_box: np.ndarray) -> tuple:
+    def data_augmenter(self, img: np.ndarray, ann: np.ndarray) -> tuple:
         """ augmenter for image
 
         Parameters
         ----------
         img : np.ndarray
             img src
-        true_box : np.ndarray
-            box
+        ann : np.ndarray
+            one annotation
 
         Returns
         -------
@@ -383,8 +350,8 @@ class Helper(object):
             image src dtype is uint8
         """
         seq_det = self.iaaseq.to_deterministic()
-        p = true_box[:, 0:1]
-        xywh_box = true_box[:, 1:]
+        p = ann[:, 0:1]
+        xywh_box = ann[:, 1:]
 
         bbs = BoundingBoxesOnImage.from_xyxy_array(center_to_corner(xywh_box, in_hw=img.shape[0:2]), shape=img.shape)
 
@@ -393,12 +360,12 @@ class Helper(object):
         bbs_aug = bbs_aug.remove_out_of_image().clip_out_of_image()
 
         xyxy_box = bbs_aug.to_xyxy_array()
-        new_box = corner_to_center(xyxy_box, in_hw=img.shape[0:2])
-        new_box = np.hstack((p[0:new_box.shape[0], :], new_box))
+        new_ann = corner_to_center(xyxy_box, in_hw=img.shape[0:2])
+        new_ann = np.hstack((p[0:new_ann.shape[0], :], new_ann))
 
-        return image_aug, new_box
+        return image_aug, new_ann
 
-    def resize_img(self, img: np.ndarray, true_box: np.ndarray) -> [np.ndarray, np.ndarray]:
+    def resize_img(self, img: np.ndarray, ann: np.ndarray) -> [np.ndarray, np.ndarray]:
         """
         resize image and keep ratio
 
@@ -406,13 +373,13 @@ class Helper(object):
         ----------
         img : np.ndarray
 
-        true_box : np.ndarray
+        ann : np.ndarray
 
 
         Returns
         -------
         [np.ndarray, np.ndarray]
-            img, true_box [uint8,float64]
+            img, ann [uint8,float64]
         """
         img_wh = np.array(img.shape[1::-1])
         in_wh = self.in_hw[::-1]
@@ -424,19 +391,19 @@ class Helper(object):
         translation = ((in_wh - img_wh * scale) / 2).astype(int)
 
         """ calculate the box transform matrix """
-        if isinstance(true_box, np.ndarray):
-            true_box[:, 1:3] = (true_box[:, 1:3] * img_wh * scale + translation) / in_wh
-            true_box[:, 3:5] = (true_box[:, 3:5] * img_wh * scale) / in_wh
-        elif isinstance(true_box, tf.Tensor):
+        if isinstance(ann, np.ndarray):
+            ann[:, 1:3] = (ann[:, 1:3] * img_wh * scale + translation) / in_wh
+            ann[:, 3:5] = (ann[:, 3:5] * img_wh * scale) / in_wh
+        elif isinstance(ann, tf.Tensor):
             # NOTE use concat replace item assign
-            true_box = tf.concat((true_box[:, 0:1],
-                                  (true_box[:, 1:3] * img_wh * scale + translation) / in_wh,
-                                  (true_box[:, 3:5] * img_wh * scale) / in_wh), axis=1)
+            ann = tf.concat((ann[:, 0:1],
+                             (ann[:, 1:3] * img_wh * scale + translation) / in_wh,
+                             (ann[:, 3:5] * img_wh * scale) / in_wh), axis=1)
 
         """ apply Affine Transform """
         aff = AffineTransform(scale=scale, translation=translation)
         img = warp(img, aff.inverse, output_shape=self.in_hw, preserve_range=True).astype('uint8')
-        return img, true_box
+        return img, ann
 
     def read_img(self, img_path: str) -> np.ndarray:
         """ read image
@@ -456,31 +423,6 @@ class Helper(object):
             img = gray2rgb(img)
         return img[..., :3]
 
-    def process_img(self, img: np.ndarray, true_box: np.ndarray, is_training: bool, is_resize: bool) -> tuple:
-        """ process image and true box , if is training then use data augmenter
-
-        Parameters
-        ----------
-        img : np.ndarray
-            image srs
-        true_box : np.ndarray
-            box
-        is_training : bool
-            wether to use data augmenter
-        is_resize : bool
-            wether to resize the image
-
-        Returns
-        -------
-        tuple
-            image src , true box
-        """
-        if is_resize:
-            img, true_box = self.resize_img(img, true_box)
-        if is_training:
-            img, true_box = self.data_augmenter(img, true_box)
-        return img, true_box
-
     def _compute_dataset_shape(self) -> tuple:
         """ compute dataset shape to avoid keras check shape error
 
@@ -499,19 +441,19 @@ class Helper(object):
 
         def _parser_wrapper(i: tf.Tensor):
             # TODO 使用ragged tensorflow来提高速度
-            img_path, true_box = tf.numpy_function(lambda idx: (image_ann_list[idx][0], image_ann_list[idx][1]),
-                                                   [i], [tf.dtypes.string, tf.float64])
+            img_path, ann = tf.numpy_function(lambda idx: (image_ann_list[idx][0], image_ann_list[idx][1]),
+                                              [i], [tf.dtypes.string, tf.float64])
             # load image
             raw_img = tf.image.decode_image(tf.io.read_file(img_path), channels=3, expand_animations=False)
-            # resize image and image augmenter
-            raw_img, true_box = tf.numpy_function(self.process_img,
-                                                  [raw_img, true_box, is_training, True],
-                                                  [tf.uint8, tf.float64])
+            # resize image -> image augmenter -> normlize image
+            raw_img, ann = tf.numpy_function(self.process_img,
+                                             [raw_img, ann, is_training, True],
+                                             [tf.uint8, tf.float64])
             # make labels
-            labels = tf.numpy_function(self.box_to_label, [true_box], [tf.float32] * len(self.anchors))
+            labels = tf.numpy_function(self.ann_to_label, [ann], [tf.float32] * len(self.anchors))
 
             # normlize image
-            img = tf.cast(raw_img, tf.float32) / 255. - 0.5
+            img = self.normlize_img(raw_img)
 
             # NOTE use wrapper function and dynamic list construct (x,(y_1,y_2,...))
             return img, tuple(labels)
@@ -534,14 +476,14 @@ class Helper(object):
         self.train_epoch_step = self.train_total_data // self.batch_size
         self.test_epoch_step = self.test_total_data // self.batch_size
 
-    def draw_image(self, img: np.ndarray, true_box: np.ndarray, is_show=True, scores=None):
-        """ draw img and show bbox , set true_box = None will not show bbox
+    def draw_image(self, img: np.ndarray, ann: np.ndarray, is_show=True, scores=None):
+        """ draw img and show bbox , set ann = None will not show bbox
 
         Parameters
         ----------
         img : np.ndarray
 
-        true_box : np.ndarray
+        ann : np.ndarray
 
            shape : [p,x,y,w,h]
 
@@ -549,9 +491,9 @@ class Helper(object):
 
             show image
         """
-        if isinstance(true_box, np.ndarray):
-            p = true_box[:, 0]
-            xyxybox = center_to_corner(true_box[:, 1:], in_hw=img.shape[:2])
+        if isinstance(ann, np.ndarray):
+            p = ann[:, 0]
+            xyxybox = center_to_corner(ann[:, 1:], in_hw=img.shape[:2])
             for i, a in enumerate(xyxybox):
                 classes = int(p[i])
                 r_top = tuple(a[0:2].astype(int))
