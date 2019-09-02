@@ -32,7 +32,7 @@ class BaseHelper(object):
     def data_augmenter(self, img: np.ndarray, ann: np.ndarray) -> [np.ndarray, np.ndarray]:
         NotImplementedError('Must be implemented in subclasses.')
 
-    def normlize_img(img: tf.Tensor) -> tf.Tensor:
+    def normlize_img(self, img: tf.Tensor) -> tf.Tensor:
         """ normlize img """
         return (tf.cast(img, tf.float32) / 255. - 0.5) / 1
 
