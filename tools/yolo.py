@@ -13,14 +13,10 @@ import tensorflow.python.keras.backend as K
 from tensorflow.contrib.data import assert_element_shape
 from tensorflow.python.keras.losses import Loss
 from tensorflow.python.keras.utils import losses_utils
-import pickle
-from termcolor import colored
 from matplotlib.pyplot import text
-from tools.baseutils import BaseHelper
-
-INFO = colored('[ INFO  ]', 'blue')  # type:str
-ERROR = colored('[ ERROR ]', 'red')  # type:str
-NOTE = colored('[ NOTE ]', 'green')  # type:str
+from PIL import Image, ImageFont, ImageDraw
+from tools.base import BaseHelper, INFO, ERROR, NOTE
+from pathlib import Path
 
 
 def fake_iou(a: np.ndarray, b: np.ndarray) -> float:
@@ -160,7 +156,7 @@ def corner_to_center(xyxy_ann: np.ndarray, from_all_scale=True, in_hw=None) -> n
     return xywh_ann
 
 
-class Helper(BaseHelper):
+class YOLOHelper(BaseHelper):
     def __init__(self, image_ann: str, class_num: int, anchors: str, in_hw: tuple, out_hw: tuple, validation_split=0.1):
         super().__init__()
         self.in_hw = np.array(in_hw)
@@ -512,7 +508,7 @@ class Helper(BaseHelper):
             show()
 
 
-def tf_xywh_to_all(grid_pred_xy: tf.Tensor, grid_pred_wh: tf.Tensor, layer: int, h: Helper) -> [tf.Tensor, tf.Tensor]:
+def tf_xywh_to_all(grid_pred_xy: tf.Tensor, grid_pred_wh: tf.Tensor, layer: int, h: YOLOHelper) -> [tf.Tensor, tf.Tensor]:
     """ rescale the pred raw [grid_pred_xy,grid_pred_wh] to [0~1]
 
     Parameters
@@ -523,7 +519,7 @@ def tf_xywh_to_all(grid_pred_xy: tf.Tensor, grid_pred_wh: tf.Tensor, layer: int,
 
     layer : int
         the output layer
-    h : Helper
+    h : YOLOHelper
 
 
     Returns
@@ -538,7 +534,7 @@ def tf_xywh_to_all(grid_pred_xy: tf.Tensor, grid_pred_wh: tf.Tensor, layer: int,
     return all_pred_xy, all_pred_wh
 
 
-def tf_xywh_to_grid(all_true_xy: tf.Tensor, all_true_wh: tf.Tensor, layer: int, h: Helper) -> [tf.Tensor, tf.Tensor]:
+def tf_xywh_to_grid(all_true_xy: tf.Tensor, all_true_wh: tf.Tensor, layer: int, h: YOLOHelper) -> [tf.Tensor, tf.Tensor]:
     """convert true label xy wh to grid scale
 
     Parameters
@@ -549,7 +545,7 @@ def tf_xywh_to_grid(all_true_xy: tf.Tensor, all_true_wh: tf.Tensor, layer: int, 
 
     layer : int
         layer index
-    h : Helper
+    h : YOLOHelper
 
 
     Returns
@@ -563,7 +559,7 @@ def tf_xywh_to_grid(all_true_xy: tf.Tensor, all_true_wh: tf.Tensor, layer: int, 
     return grid_true_xy, grid_true_wh
 
 
-def tf_reshape_box(true_xy_A: tf.Tensor, true_wh_A: tf.Tensor, p_xy_A: tf.Tensor, p_wh_A: tf.Tensor, layer: int, helper: Helper) -> tuple:
+def tf_reshape_box(true_xy_A: tf.Tensor, true_wh_A: tf.Tensor, p_xy_A: tf.Tensor, p_wh_A: tf.Tensor, layer: int, helper: YOLOHelper) -> tuple:
     """ reshape the xywh to [?,h,w,anchor_nums,true_box_nums,2]
         NOTE  must use obj mask in atrue xywh !
     Parameters
@@ -582,7 +578,7 @@ def tf_reshape_box(true_xy_A: tf.Tensor, true_wh_A: tf.Tensor, p_xy_A: tf.Tensor
 
     layer : int
 
-    helper : Helper
+    helper : YOLOHelper
 
 
     Returns
@@ -652,7 +648,7 @@ def tf_iou(pred_xy: tf.Tensor, pred_wh: tf.Tensor, vaild_xy: tf.Tensor, vaild_wh
 
 def calc_ignore_mask(t_xy_A: tf.Tensor, t_wh_A: tf.Tensor, p_xy: tf.Tensor,
                      p_wh: tf.Tensor, obj_mask: tf.Tensor, iou_thresh: float,
-                     layer: int, helper: Helper) -> tf.Tensor:
+                     layer: int, helper: YOLOHelper) -> tf.Tensor:
     """clac the ignore mask
 
     Parameters
@@ -669,8 +665,8 @@ def calc_ignore_mask(t_xy_A: tf.Tensor, t_wh_A: tf.Tensor, p_xy: tf.Tensor,
         old obj mask,shape = [batch size,h,w,anchors]
     iou_thresh : float
         iou thresh
-    helper : Helper
-        Helper obj
+    helper : YOLOHelper
+        YOLOHelper obj
 
     Returns
     -------
@@ -692,14 +688,14 @@ def calc_ignore_mask(t_xy_A: tf.Tensor, t_wh_A: tf.Tensor, p_xy: tf.Tensor,
 
 
 class YOLO_Loss(Loss):
-    def __init__(self, h: Helper, obj_thresh: float, iou_thresh: float,
+    def __init__(self, h: YOLOHelper, obj_thresh: float, iou_thresh: float,
                  obj_weight: float, noobj_weight: float, wh_weight: float,
                  layer: int, reduction=losses_utils.ReductionV2.AUTO, name=None):
         """ yolo loss obj
 
         Parameters
         ----------
-        h : Helper
+        h : YOLOHelper
 
         obj_thresh : float
 
@@ -775,3 +771,148 @@ class YOLO_Loss(Loss):
         total_loss = obj_loss + noobj_loss + cls_loss + xy_loss + wh_loss
 
         return total_loss
+
+
+def correct_box(box_xy: tf.Tensor, box_wh: tf.Tensor, input_hw: list, image_hw: list) -> tf.Tensor:
+    """rescae predict box to orginal image scale
+
+    Parameters
+    ----------
+    box_xy : tf.Tensor
+        box xy
+    box_wh : tf.Tensor
+        box wh
+    input_hw : list
+        input shape
+    image_hw : list
+        image shape
+
+    Returns
+    -------
+    tf.Tensor
+        new boxes
+    """
+    box_yx = box_xy[..., ::-1]
+    box_hw = box_wh[..., ::-1]
+    input_hw = tf.cast(input_hw, tf.float32)
+    image_hw = tf.cast(image_hw, tf.float32)
+    new_shape = tf.round(image_hw * tf.reduce_min(input_hw / image_hw))
+    offset = (input_hw - new_shape) / 2. / input_hw
+    scale = input_hw / new_shape
+    box_yx = (box_yx - offset) * scale
+    box_hw *= scale
+
+    box_mins = box_yx - (box_hw / 2.)
+    box_maxes = box_yx + (box_hw / 2.)
+    boxes = tf.concat([
+        box_mins[..., 0:1],  # y_min
+        box_mins[..., 1:2],  # x_min
+        box_maxes[..., 0:1],  # y_max
+        box_maxes[..., 1:2]  # x_max
+    ], axis=-1)
+
+    # Scale boxes back to original image shape.
+    boxes *= tf.concat([image_hw, image_hw], axis=-1)
+    return boxes
+
+
+def yolo_infer(img_path: Path, infer_model: tf.keras.Model,
+               result_path: Path, h: YOLOHelper,
+               obj_thresh: float = .7, iou_thresh: float = .3):
+    """ load images """
+    orig_img = h.read_img(str(img_path))
+    image_hw = orig_img.shape[0:2]
+    img, _ = h.process_img(orig_img, true_box=None, is_training=False, is_resize=True)
+    img = tf.expand_dims(img, 0)
+    """ get output """
+    y_pred = infer_model.predict(img)
+    """ parser output """
+    class_num = h.landmark_num
+    in_hw = h.in_hw
+    """ box list """
+    _yxyx_box = []
+    _yxyx_box_scores = []
+    """ preprocess label """
+    for l, pred_label in enumerate(y_pred):
+        """ split the label """
+        pred_xy = pred_label[..., 0:2]
+        pred_wh = pred_label[..., 2:4]
+        pred_confidence = pred_label[..., 4:5]
+        pred_cls = pred_label[..., 5:]
+        # box_scores = obj_score * class_score
+        box_scores = tf.sigmoid(pred_cls) * tf.sigmoid(pred_confidence)
+        # obj_mask = pred_confidence_score[..., 0] > model.obj_thresh
+        """ reshape box  """
+        # NOTE tf_xywh_to_all will auto use sigmoid function
+        pred_xy_A, pred_wh_A = tf_xywh_to_all(pred_xy, pred_wh, l, h)
+        boxes = correct_box(pred_xy_A, pred_wh_A, in_hw, image_hw)
+        boxes = tf.reshape(boxes, (-1, 4))
+        box_scores = tf.reshape(box_scores, (-1, class_num))
+        """ append box and scores to global list """
+        _yxyx_box.append(boxes)
+        _yxyx_box_scores.append(box_scores)
+
+    yxyx_box = tf.concat(_yxyx_box, axis=0)
+    yxyx_box_scores = tf.concat(_yxyx_box_scores, axis=0)
+
+    mask = yxyx_box_scores >= obj_thresh
+
+    """ do nms for every classes"""
+    _boxes = []
+    _scores = []
+    _classes = []
+    for c in range(class_num):
+        class_boxes = tf.boolean_mask(yxyx_box, mask[:, c])
+        class_box_scores = tf.boolean_mask(yxyx_box_scores[:, c], mask[:, c])
+        select = tf.image.non_max_suppression(
+            class_boxes, scores=class_box_scores, max_output_size=30, iou_threshold=iou_thresh)
+        class_boxes = tf.gather(class_boxes, select)
+        class_box_scores = tf.gather(class_box_scores, select)
+        _boxes.append(class_boxes)
+        _scores.append(class_box_scores)
+        _classes.append(tf.ones_like(class_box_scores) * c)
+
+    boxes = tf.concat(_boxes, axis=0)
+    classes = tf.concat(_classes, axis=0)
+    scores = tf.concat(_scores, axis=0)
+
+    """ draw box  """
+    font = ImageFont.truetype(font='asset/FiraMono-Medium.otf',
+                              size=tf.cast(tf.floor(3e-2 * image_hw[0] + 0.5), tf.int32).numpy())
+
+    thickness = (image_hw[0] + image_hw[1]) // 300
+
+    """ show result """
+    if len(classes) > 0:
+        pil_img = Image.fromarray(orig_img)
+        print(f'[top\tleft\tbottom\tright\tscore\tclass]')
+        for i, c in enumerate(classes):
+            box = boxes[i]
+            score = scores[i]
+            label = '{:2d} {:.2f}'.format(int(c.numpy()), score.numpy())
+            draw = ImageDraw.Draw(pil_img)
+            label_size = draw.textsize(label, font)
+            top, left, bottom, right = box
+            print(f'[{top:.1f}\t{left:.1f}\t{bottom:.1f}\t{right:.1f}\t{score:.2f}\t{int(c):2d}]')
+            top = max(0, tf.cast(tf.floor(top + 0.5), tf.int32))
+            left = max(0, tf.cast(tf.floor(left + 0.5), tf.int32))
+            bottom = min(image_hw[0], tf.cast(tf.floor(bottom + 0.5), tf.int32))
+            right = min(image_hw[1], tf.cast(tf.floor(right + 0.5), tf.int32))
+
+            if top - image_hw[0] >= 0:
+                text_origin = tf.convert_to_tensor([left, top - label_size[1]])
+            else:
+                text_origin = tf.convert_to_tensor([left, top + 1])
+
+            for j in range(thickness):
+                draw.rectangle(
+                    [left + j, top + j, right - j, bottom - j],
+                    outline=h.colormap[c])
+            draw.rectangle(
+                [tuple(text_origin), tuple(text_origin + label_size)],
+                fill=h.colormap[c])
+            draw.text(text_origin, label, fill=(0, 0, 0), font=font)
+            del draw
+        pil_img.show()
+    else:
+        print(NOTE, ' no boxes detected')

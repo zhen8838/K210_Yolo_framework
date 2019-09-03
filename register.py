@@ -2,9 +2,9 @@ from models.networks import yolo_mobilev1, yolo_mobilev2, tiny_yolo, yolo,\
     yoloalgin_mobilev1, yoloalgin_mobilev2, yolov2algin_mobilev1, pfld, pfld_optimized
 from tensorflow.python.keras.optimizers import Adam, SGD, RMSprop
 from tools.custom import RAdam
-from tools.utils import Helper, YOLO_Loss
-from tools.alignutils import YOLOAlignHelper, YOLOAlign_Loss
-from tools.landmarkutils import LandmarkHelper, LandMark_Loss
+from tools.yolo import YOLOHelper, YOLO_Loss, yolo_infer
+from tools.yoloalign import YOLOAlignHelper, YOLOAlign_Loss, yoloalgin_infer
+from tools.pfld import PFLDHelper, PFLD_Loss, pfld_infer
 from yaml import safe_dump
 
 
@@ -33,7 +33,7 @@ ArgDict = {
     'model': {
         'name': 'yolo',
 
-        'helper': 'Helper',
+        'helper': 'YOLOHelper',
         'helper_kwarg': {
             'image_ann': 'data/voc_img_ann.npy',
             'class_num': 20,
@@ -45,6 +45,9 @@ ArgDict = {
 
         'network': 'yolo_mobilev2',
         'network_kwarg': {
+            'input_shape': [224, 320, 3],
+            'anchor_num': 3,
+            'class_num': 20,
             'alpha': 0.75  # depth_multiplier
         },
 
@@ -110,14 +113,22 @@ ArgDict = {
         'final_sparsity': 0.9,  # prune final sparsity range = [0 ~ 1]
         'end_epoch': 5,  # prune epochs NOTE: must < train epochs
         'frequency': 100,  # how many steps for prune once
-    }
+    },
+
+    'inference': {
+        'infer_fn': 'yolo_infer',
+        'infer_fn_kwarg': {
+            'obj_thresh': .7,
+            'iou_thresh': .3
+        },
+    },
 }
 
 
 helper_register = {
-    'Helper': Helper,
+    'YOLOHelper': YOLOHelper,
     'YOLOAlignHelper': YOLOAlignHelper,
-    'LandmarkHelper': LandmarkHelper
+    'PFLDHelper': PFLDHelper
 }
 
 
@@ -136,7 +147,7 @@ network_register = {
 loss_register = {
     'YOLO_Loss': YOLO_Loss,
     'YOLOAlign_Loss': YOLOAlign_Loss,
-    'LandMark_Loss': LandMark_Loss
+    'PFLD_Loss': PFLD_Loss
 }
 
 optimizer_register = {
@@ -146,6 +157,11 @@ optimizer_register = {
     'RAdam': RAdam
 }
 
+infer_register = {
+    'yolo_infer': yolo_infer,
+    'yoloalgin_infer': yoloalgin_infer,
+    'pfld_infer': pfld_infer,
+}
 
 if __name__ == "__main__":
     with open('config/default.yml', 'w') as f:

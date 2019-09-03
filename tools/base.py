@@ -1,6 +1,11 @@
 import tensorflow as tf
 import numpy as np
 import abc
+from termcolor import colored
+
+INFO = colored('[ INFO  ]', 'blue')  # type:str
+ERROR = colored('[ ERROR ]', 'red')  # type:str
+NOTE = colored('[ NOTE ]', 'green')  # type:str
 
 
 class BaseHelper(object):

@@ -1,9 +1,10 @@
 import tensorflow as tf
 import tensorflow.python.keras as k
 from tensorflow.python.keras.callbacks import TensorBoard, EarlyStopping, CSVLogger, ModelCheckpoint
-from tools.utils import Helper, YOLO_Loss, INFO, ERROR, NOTE
-from tools.alignutils import YOLOAlignHelper, YOLOAlign_Loss
-from tools.landmarkutils import LandmarkHelper, LandMark_Loss
+from tools.yolo import YOLOHelper, YOLO_Loss
+from tools.base import INFO, ERROR, NOTE
+from tools.yoloalign import YOLOAlignHelper, YOLOAlign_Loss
+from tools.pfld import PFLDHelper, PFLD_Loss
 from tools.custom import Yolo_P_R, Lookahead, PFLDMetric, YOLO_LE
 from models.networks import yolo_mobilev2, pfld
 import os
@@ -48,7 +49,7 @@ def main(config_file, new_cfg, mode, model, train, prune):
 
     """ Build Data Input PipeLine """
 
-    h = helper_register[model.helper](**model.helper_kwarg)  # type: Helper
+    h = helper_register[model.helper](**model.helper_kwarg)  # type: YOLOHelper
     h.set_dataset(train.batch_size, train.rand_seed, is_training=train.augmenter)
 
     train_ds = h.train_dataset
@@ -58,16 +59,8 @@ def main(config_file, new_cfg, mode, model, train, prune):
 
     """ Build Network """
 
-    if 'yolo' in model.name:
-        network = network_register[model.network]  # type:yolo_mobilev2
-        saved_model, train_model = network(model.helper_kwarg['in_hw'] + [3],
-                                           len(h.anchors[0]), model.helper_kwarg['class_num'],
-                                           **model.network_kwarg)
-    elif model.name == 'pfld':
-        network = network_register[model.network]
-        infer_model, auxiliary_model, train_model = network(
-            model.helper_kwarg['in_hw'] + [3], **model.network_kwarg)
-        saved_model = train_model  # type:k.Model
+    network = network_register[model.network]  # type:yolo_mobilev2
+    infer_model, train_model = network(**model.network_kwarg)
 
     """  Config Prune Model Paramter """
     if prune.is_prune == 'True':
@@ -99,7 +92,7 @@ def main(config_file, new_cfg, mode, model, train, prune):
                 m.append(YOLO_LE(losses[i].landmark_error))
 
     elif model.name == 'pfld':
-        loss_obj = loss_register[model.loss]  # type:LandMark_Loss
+        loss_obj = loss_register[model.loss]  # type:PFLD_Loss
         losses = [loss_obj(h=h, **model.loss_kwarg)]
         # NOTE share the variable avoid more repeated calculation
         le = PFLDMetric(False, model.helper_kwarg['landmark_num'], train.batch_size, name='LE', dtype=tf.float32)
@@ -135,7 +128,7 @@ def main(config_file, new_cfg, mode, model, train, prune):
     if train.earlystop == True:
         cbs.append(EarlyStopping(**train.earlystop_kwarg))
     if train.modelcheckpoint == True:
-        cbs.append(ModelCheckpoint(str(log_dir / 'auto_saved_{epoch:d}.h5'),
+        cbs.append(ModelCheckpoint(str(log_dir / 'auto_train_{epoch:d}.h5'),
                                    **train.modelcheckpoint_kwarg))
 
     file_writer = tf.compat.v1.summary.FileWriter(str(log_dir), sess.graph)  # NOTE avoid can't write graph, I don't now why..
@@ -151,31 +144,34 @@ def main(config_file, new_cfg, mode, model, train, prune):
         pass
 
     """ Finish Training """
-    model_name = f'saved_model_{initial_epoch+int(train_model.optimizer.iterations.eval(sess) / train_epoch_step)}.h5'
+    model_name = f'train_model_{initial_epoch+int(train_model.optimizer.iterations.eval(sess) / train_epoch_step)}.h5'
     ckpt = log_dir / model_name
 
     if prune.is_prune == True:
         final_model = sparsity.strip_pruning(train_model)
         prune_ckpt = log_dir / 'prune' + model_name
-        k.models.save_model(saved_model, str(prune_ckpt), include_optimizer=False)
+        k.models.save_model(train_model, str(prune_ckpt), include_optimizer=False)
         print()
         print(INFO, f' Save Pruned Model as {str(prune_ckpt)}')
     else:
-        k.models.save_model(saved_model, str(ckpt))
+        k.models.save_model(train_model, str(ckpt))
         print()
-        print(INFO, f' Save Model as {str(ckpt)}')
-        if model.name == 'pfld':
-            infer_model_name = f'infer_model_{initial_epoch+int(train_model.optimizer.iterations.eval(sess) / train_epoch_step)}.h5'
-            infer_ckpt = log_dir / infer_model_name
-            k.models.save_model(infer_model, str(infer_ckpt))
+        print(INFO, f' Save Train Model as {str(ckpt)}')
 
-            if train.modelcheckpoint == True:
-                # find best auto saved model, and save best infer model
-                auto_saved_list = list(log_dir.glob('auto_saved_*.h5'))  # type:List[Path]
-                if len(auto_saved_list) > 0:
-                    auto_saved_list.sort()
-                    train_model.load_weights(str(auto_saved_list[-1]))
-                    k.models.save_model(infer_model, str(auto_saved_list[-1]).replace('saved', 'infer'))
+        infer_model_name = f'infer_model_{initial_epoch+int(train_model.optimizer.iterations.eval(sess) / train_epoch_step)}.h5'
+        infer_ckpt = log_dir / infer_model_name
+        k.models.save_model(infer_model, str(infer_ckpt))
+        print(INFO, f' Save Infer Model as {str(infer_ckpt)}')
+
+        if train.modelcheckpoint == True:
+            # find best auto saved model, and save best infer model
+            auto_saved_list = list(log_dir.glob('auto_train_*.h5'))  # type:List[Path]
+            if len(auto_saved_list) > 0:
+                auto_saved_list.sort()
+                train_model.load_weights(str(auto_saved_list[-1]))
+                infer_ckpt = str(auto_saved_list[-1]).replace('train', 'infer')
+                k.models.save_model(infer_model, infer_ckpt)
+            print(INFO, f' Save Best Infer Model as {infer_ckpt}')
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@ import sys
 import argparse
 from skimage.io import imread, imshow, show, imsave
 from skimage.util import crop
-from tools.utils import INFO, ERROR, NOTE
+from tools.base import  INFO, ERROR, NOTE
 from tqdm import tqdm
 import shutil
 

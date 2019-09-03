@@ -11,13 +11,12 @@ import tensorflow.python.keras.backend as K
 from tensorflow.python.keras.losses import Loss
 from tensorflow.python.keras.utils import losses_utils
 from tensorflow.contrib.data import assert_element_shape
-from tools.utils import INFO, ERROR, NOTE
-from tools.baseutils import BaseHelper
+from tools.base import BaseHelper, INFO, ERROR, NOTE
 import matplotlib.pyplot as plt
 from pathlib import Path
 
 
-class LandmarkHelper(BaseHelper):
+class PFLDHelper(BaseHelper):
     def __init__(self, image_ann: str, in_hw: tuple, landmark_num: int, attribute_num: int, validation_split=0.1):
         super().__init__()
         self.in_hw = np.array(in_hw)
@@ -242,15 +241,15 @@ def rotationMatrixToEulerAngles(R):
     return np.array([x, y, z])
 
 
-class LandMark_Loss(Loss):
-    def __init__(self, h: LandmarkHelper, landmark_weight=1., eular_weight=1.,
+class PFLD_Loss(Loss):
+    def __init__(self, h: PFLDHelper, landmark_weight=1., eular_weight=1.,
                  reduction=losses_utils.ReductionV2.AUTO, name=None):
         super().__init__(reduction=reduction, name=name)
         """ landmark loss
 
         Parameters
         ----------
-        h : LandmarkHelper
+        h : PFLDHelper
 
         landmark_weight : [float], optional
             by default 1.
@@ -275,9 +274,8 @@ class LandMark_Loss(Loss):
         return loss
 
 
-def pfld_load_img_result(img_path: Path, infer_model: tf.keras.Model,
-                         h: LandmarkHelper, result_path: Path = None) -> [
-                             np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def pfld_infer(img_path: Path, infer_model: tf.keras.Model,
+               result_path: Path, h: PFLDHelper, radius: int = 1):
     """
         pfld load image and get result~
     Parameters
@@ -286,15 +284,11 @@ def pfld_load_img_result(img_path: Path, infer_model: tf.keras.Model,
         img path or img folder path
     infer_model : k.Model
 
-    h : Helper
+    result_path : Path
+        by default None
 
-    result_path : Path, optional
-        , by default None
+    h : YOLOHelper
 
-    Returns
-    -------
-    [np.ndarray, np.ndarray, np.ndarray, np.ndarray]
-        raw_img, raw_img_hw, result, ncc_result
     """
     print(INFO, f'Load Images from {str(img_path)}')
     if img_path.is_dir():
@@ -324,31 +318,13 @@ def pfld_load_img_result(img_path: Path, infer_model: tf.keras.Model,
     print(INFO, f'Infer Results')
     resize_img = tf.stack([h.resize_img(src) for src in raw_img])
 
-    img = (tf.cast(resize_img, tf.float32) / 255. - 0.5) / 1
+    img = h.normlize_img(resize_img)
     """ get output """
-    result = infer_model.predict(img)
+    result = infer_model.predict(img)  # type:np.ndarray
+    if result.ndim == 4:
+        result = np.reshape(np.transpose(result, (0, 3, 1, 2)), (-1, h.landmark_num * 2))
 
-    return raw_img, raw_img_hw, result, ncc_result
-
-
-def pfld_draw_img_result(raw_img: np.ndarray, raw_img_hw: np.ndarray,
-                         result: np.ndarray, ncc_result: np.ndarray,
-                         h: LandmarkHelper):
-    """ show pfld_draw_img_result
-
-    Parameters
-    ----------
-    raw_img : np.ndarray
-
-    raw_img_hw : np.ndarray
-
-    result : np.ndarray
-
-    ncc_result : np.ndarray
-
-    h : Helper
-
-    """
+    """ show pfld_draw_img_result """
     if ncc_result is None:
         """ parser output """
         pred_landmark = tf.sigmoid(result).numpy()
@@ -388,7 +364,7 @@ def pfld_draw_img_result(raw_img: np.ndarray, raw_img_hw: np.ndarray,
                                   raw_img_hw[i][0] - 1)
             for j in range(h.landmark_num):
                 # NOTE circle( y, x, radius )
-                rr, cc = circle(landmark[j][1], landmark[j][0], 1)
+                rr, cc = circle(landmark[j][1], landmark[j][0], radius=radius)
                 ax2_img[rr, cc] = (200, 0, 0)
 
             ax1.imshow(ax1_img)

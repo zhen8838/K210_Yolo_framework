@@ -238,7 +238,7 @@ def yoloalgin_mobilev2(input_shape: list, anchor_num: int, class_num: int, landm
     return yolo_model, yolo_model_warpper
 
 
-def pfld(input_shape: list, landmark_num: int, alpha=1., weight_decay=5e-5) -> [k.Model, k.Model, k.Model]:
+def pfld(input_shape: list, landmark_num: int, alpha=1., weight_decay=5e-5) -> [k.Model, k.Model]:
     """ pfld landmark model
 
     Parameters
@@ -248,18 +248,18 @@ def pfld(input_shape: list, landmark_num: int, alpha=1., weight_decay=5e-5) -> [
     landmark_num : int
 
     alpha : float , optional
-    
+
         by default 1.
-        
+
     weight_decay : float , optional
-    
+
         by default 5e-5
 
     Returns
     -------
-    [k.Model, k.Model, k.Model]
-    
-        pflp_infer_model, auxiliary_model, train_model
+    [k.Model, k.Model]
+
+        infer_model, train_model
     """
     bn_kwargs = {
         'momentum': 0.995,
@@ -452,9 +452,8 @@ def pfld(input_shape: list, landmark_num: int, alpha=1., weight_decay=5e-5) -> [
 
     pflp_infer_model = k.Model(inputs, landmark_pre)
 
-    pfld_input = auxiliary_input
     conv_kwargs['padding'] = 'same'  # ! 重要
-    euler_angles_pre = pipe(pfld_input,
+    euler_angles_pre = pipe(auxiliary_input,
                             *[kl.Conv2D(128, 3, 2, **conv_kwargs),
                               kl.BatchNormalization(),
                               kl.ReLU(6),
@@ -473,15 +472,15 @@ def pfld(input_shape: list, landmark_num: int, alpha=1., weight_decay=5e-5) -> [
                               kl.BatchNormalization(),
                               kl.Dense(3)])
 
-    auxiliary_model = k.Model(inputs, euler_angles_pre)
     # NOTE avoid keras loss shape check error
     y_pred = kl.Concatenate(1)([landmark_pre, euler_angles_pre])
     train_model = k.Model(inputs, y_pred)
 
-    return pflp_infer_model, auxiliary_model, train_model
+    return pflp_infer_model, train_model
 
 
-def pfld_optimized(input_shape: list, landmark_num: int, alpha=1., weight_decay=5e-5) -> [k.Model, k.Model, k.Model]:
+def pfld_optimized(input_shape: list, landmark_num: int,
+                   alpha=1., weight_decay=5e-5) -> [k.Model, k.Model]:
     """ pfld landmark model optimized to fit k210 chip.
 
     Parameters
@@ -491,18 +490,18 @@ def pfld_optimized(input_shape: list, landmark_num: int, alpha=1., weight_decay=
     landmark_num : int
 
     alpha : float , optional
-    
+
         by default 1.
-        
+
     weight_decay : float , optional
-    
+
         by default 5e-5
 
     Returns
     -------
-    [k.Model, k.Model, k.Model]
-    
-        pflp_infer_model, auxiliary_model, train_model
+    [k.Model, k.Model]
+
+        pflp_infer_model, train_model
     """
     bn_kwargs = {
         'momentum': 0.995,
@@ -521,11 +520,16 @@ def pfld_optimized(input_shape: list, landmark_num: int, alpha=1., weight_decay=
         'depthwise_regularizer': k.regularizers.l2(weight_decay),
         'bias_regularizer': k.regularizers.l2(weight_decay),
         'padding': 'same'}
-    # pfld_inference
+
+    conv_kwargs_copy = conv_kwargs.copy()
+    depthwise_kwargs_copy = depthwise_kwargs.copy()
+    conv_kwargs_copy.pop('padding')
+    depthwise_kwargs_copy.pop('padding')
 
     # 112*112*3
     inputs = k.Input(input_shape)
-    conv1 = pipe(inputs, *[kl.Conv2D(int(64 * alpha), [3, 3], 2, **conv_kwargs),
+    conv1 = pipe(inputs, *[kl.ZeroPadding2D(),
+                           kl.Conv2D(int(64 * alpha), 3, 2, **conv_kwargs_copy),
                            kl.BatchNormalization(**bn_kwargs),
                            kl.ReLU(6)])
 
@@ -533,16 +537,19 @@ def pfld_optimized(input_shape: list, landmark_num: int, alpha=1., weight_decay=
     conv2 = pipe(conv1, *[kl.DepthwiseConv2D(3, 1, **depthwise_kwargs),
                           kl.BatchNormalization(),
                           kl.ReLU(6)])
-    # 56*56*64
-    conv3_1 = pipe(conv2, *[kl.Conv2D(128, 1, 2, **conv_kwargs),
-                            kl.BatchNormalization(),
-                            kl.ReLU(6),
-                            kl.DepthwiseConv2D(3, 1, **depthwise_kwargs),
-                            kl.BatchNormalization(),
-                            kl.ReLU(6),
-                            kl.Conv2D(int(64 * alpha), 1, 1, **conv_kwargs),
-                            kl.BatchNormalization(),
-                            kl.ReLU(6)])
+    # 28*28*64
+    conv3_1 = pipe(conv2, *[
+        kl.ZeroPadding2D(),
+        kl.Conv2D(128, 3, 2, **conv_kwargs_copy),
+        kl.BatchNormalization(),
+        kl.ReLU(6),
+        kl.DepthwiseConv2D(3, 1, **depthwise_kwargs),
+        kl.BatchNormalization(),
+        kl.ReLU(6),
+        kl.Conv2D(int(64 * alpha), 1, 1, **conv_kwargs),
+        kl.BatchNormalization(),
+        kl.ReLU(6)
+    ])
 
     conv3_2 = pipe(conv3_1, *[kl.Conv2D(128, 1, 1, **conv_kwargs),
                               kl.BatchNormalization(),
@@ -589,7 +596,8 @@ def pfld_optimized(input_shape: list, landmark_num: int, alpha=1., weight_decay=
     block3_5 = kl.Add()([block3_4, conv3_5])
     auxiliary_input = block3_5
 
-    conv4_1 = pipe(block3_5, *[kl.Conv2D(128, 1, 2, **conv_kwargs),
+    conv4_1 = pipe(block3_5, *[kl.ZeroPadding2D(),
+                               kl.Conv2D(128, 3, 2, **conv_kwargs_copy),
                                kl.BatchNormalization(),
                                kl.ReLU(6),
                                kl.DepthwiseConv2D(3, 1, **depthwise_kwargs),
@@ -597,7 +605,7 @@ def pfld_optimized(input_shape: list, landmark_num: int, alpha=1., weight_decay=
                                kl.ReLU(6),
                                kl.Conv2D(int(128 * alpha), 1, 1, **conv_kwargs),
                                kl.BatchNormalization()])
-    # 14*14*128
+
     conv5_1 = pipe(conv4_1, *[kl.Conv2D(512, 1, 1, **conv_kwargs),
                               kl.BatchNormalization(),
                               kl.ReLU(6),
@@ -660,44 +668,40 @@ def pfld_optimized(input_shape: list, landmark_num: int, alpha=1., weight_decay=
                                kl.Conv2D(int(128 * alpha), 1, 1, **conv_kwargs),
                                kl.BatchNormalization()])
 
-    block5_6 = kl.Add()([block5_5, conv5_6])
+    block5_6 = kl.Add()([block5_5, conv5_6])  # 14,14,128
 
-    # 14*14*128
-    conv6_1 = pipe(block5_6, *[kl.Conv2D(256, 1, 1, **conv_kwargs),
+    # 7,7,16
+    conv6_1 = pipe(block5_6, *[kl.Conv2D(256, 1, 1, **conv_kwargs_copy),
                                kl.BatchNormalization(),
-                               kl.ReLU(6),
-                               kl.DepthwiseConv2D(3, 1, **depthwise_kwargs),
+                               kl.ReLU(6),  # 14,14,256
+                               kl.ZeroPadding2D(),
+                               # can be modify filters
+                               kl.Conv2D(int(16 * alpha), 3, 2, **conv_kwargs_copy),
                                kl.BatchNormalization(),
-                               kl.ReLU(6),
-                               kl.Conv2D(int(16 * alpha), 1, 1, **conv_kwargs),
-                               kl.BatchNormalization()])
-    # 14*14*16
-    conv7 = pipe(conv6_1, *[kl.Conv2D(int(32 * alpha), 3, 2, **conv_kwargs),
-                            kl.BatchNormalization(),
-                            kl.ReLU(6)])
+                               kl.ReLU(6),  # 7,7,16
+                               ])
 
-    conv_kwargs['padding'] = 'valid'
-    conv8 = pipe(conv7, *[kl.Conv2D(int(128 * alpha), 3, 1, **conv_kwargs),
-                          kl.BatchNormalization(),
-                          kl.ReLU(6)])
+    # 7,7,32
+    conv7 = pipe(conv6_1, *[
+        # can be modify filters
+        kl.Conv2D(int(32 * alpha), 3, 1, **conv_kwargs),
+        kl.BatchNormalization(),
+        kl.ReLU(6)])
 
-    avg_pool1 = kl.AvgPool2D(conv6_1.shape[1:3], 1)(conv6_1)
-
-    avg_pool2 = kl.AvgPool2D(conv7.shape[1:3], 1)(conv7)
-
-    s1 = kl.Flatten()(avg_pool1)
-    s2 = kl.Flatten()(avg_pool2)
-    # 1*1*128
-    s3 = kl.Flatten()(conv8)
-
-    multi_scale = kl.Concatenate(1)([s1, s2, s3])
-    landmark_pre = kl.Dense(landmark_num * 2)(multi_scale)
+    # 7,7,64
+    conv8 = pipe(conv7, *[
+        # can be modify filters
+        kl.Conv2D(int(128 * alpha), 3, 1, **conv_kwargs),
+        kl.BatchNormalization(),
+        kl.ReLU(6)])
+    # 7,7,112
+    multi_scale = kl.Concatenate()([conv6_1, conv7, conv8])
+    # 7,7,4 = 196  can be modify kernel size
+    landmark_pre = kl.Conv2D(landmark_num * 2 // (7 * 7), 3, 1, 'same')(multi_scale)
 
     pflp_infer_model = k.Model(inputs, landmark_pre)
 
-    pfld_input = auxiliary_input
-    conv_kwargs['padding'] = 'same'  # ! 重要
-    euler_angles_pre = pipe(pfld_input,
+    euler_angles_pre = pipe(auxiliary_input,
                             *[kl.Conv2D(128, 3, 2, **conv_kwargs),
                               kl.BatchNormalization(),
                               kl.ReLU(6),
@@ -715,13 +719,17 @@ def pfld_optimized(input_shape: list, landmark_num: int, alpha=1., weight_decay=
                               kl.Dense(32),
                               kl.BatchNormalization(),
                               kl.Dense(3)])
-    
-    auxiliary_model = k.Model(inputs, euler_angles_pre)
-    # NOTE avoid keras loss shape check error
-    y_pred = kl.Concatenate(1)([landmark_pre, euler_angles_pre])
+
+    flatten_landmark_pre = pipe(landmark_pre, *[
+        kl.Permute((3, 1, 2)),
+        kl.Flatten()
+    ])
+
+    y_pred = kl.Concatenate()([flatten_landmark_pre, euler_angles_pre])
     train_model = k.Model(inputs, y_pred)
 
-    return pflp_infer_model, auxiliary_model, train_model
+    return pflp_infer_model, train_model
+
 
 def tiny_yolo(input_shape, anchor_num, class_num) -> [k.Model, k.Model]:
     inputs = k.Input(input_shape)

@@ -1,4 +1,4 @@
-from tools.utils import Helper, center_to_corner, corner_to_center
+from tools.yolo import YOLOHelper, center_to_corner, corner_to_center
 from skimage.draw import rectangle_perimeter, circle
 from skimage.io import imshow, imread, imsave, show
 from skimage.color import gray2rgb
@@ -14,9 +14,12 @@ from tensorflow.python.keras.utils import losses_utils
 from tensorflow.python.keras.engine.base_layer_utils import make_variable
 from tensorflow.python.ops.init_ops import zeros_initializer
 from tensorflow.python.keras.backend import switch
+from PIL import Image, ImageFont, ImageDraw
+from tools.base import ERROR, INFO, NOTE
+from pathlib import Path
 
 
-class YOLOAlignHelper(Helper):
+class YOLOAlignHelper(YOLOHelper):
     def __init__(self, image_ann: str, class_num: int, anchors: np.ndarray,
                  landmark_num: int, in_hw: tuple, out_hw: tuple, validation_split=0.1):
         super().__init__(image_ann, class_num, anchors, in_hw, out_hw,
@@ -64,8 +67,8 @@ class YOLOAlignHelper(Helper):
         """
         new_ann = np.vstack([label[np.where(label[..., 4] > thersh)] for label in labels])
         new_ann = np.hstack([np.expand_dims(np.argmax(new_ann[:, 5 + self.landmark_num * 2:], axis=-1), -1),
-                              new_ann[:, :4],
-                              new_ann[:, 5:5 + self.landmark_num * 2]])  # type:np.ndarray
+                             new_ann[:, :4],
+                             new_ann[:, 5:5 + self.landmark_num * 2]])  # type:np.ndarray
         return new_ann
 
     def resize_img(self, img: np.ndarray, ann: np.ndarray) -> [np.ndarray, np.ndarray]:
@@ -338,8 +341,8 @@ def calc_ignore_mask(t_xy_A: tf.Tensor, t_wh_A: tf.Tensor, t_landmark_A: tf.Tens
         old obj mask,shape = [batch size,h,w,anchors]
     iou_thresh : float
         iou thresh
-    helper : Helper
-        Helper obj
+    helper : YOLOHelper
+        YOLOHelper obj
 
     Returns
     -------
@@ -373,7 +376,7 @@ class YOLOAlign_Loss(Loss):
 
         Parameters
         ----------
-        h : Helper
+        h : YOLOHelper
 
         obj_thresh : float
 
@@ -479,3 +482,174 @@ class YOLOAlign_Loss(Loss):
                       landmark_loss + 0 * self.landmark_error.assign(landmark_loss))
 
         return total_loss
+
+
+def correct_algin_box(box_xy: tf.Tensor, box_wh: tf.Tensor, landmark: tf.Tensor, input_hw: list, image_hw: list) -> tf.Tensor:
+    """rescae predict box to orginal image scale
+
+    Parameters
+    ----------
+    box_xy : tf.Tensor
+        box xy
+    box_wh : tf.Tensor
+        box wh
+    landmark : tf.Tensor
+        landmark 
+    input_hw : list
+        input shape
+    image_hw : list
+        image shape
+
+    Returns
+    -------
+    tf.Tensor
+        new boxes
+    """
+    box_yx = box_xy[..., ::-1]
+    box_hw = box_wh[..., ::-1]
+    input_hw = tf.cast(input_hw, tf.float32)
+    image_hw = tf.cast(image_hw, tf.float32)
+    new_shape = tf.round(image_hw * tf.reduce_min(input_hw / image_hw))
+    offset = (input_hw - new_shape) / 2. / input_hw
+    scale = input_hw / new_shape
+    box_yx = (box_yx - offset) * scale
+    # NOTE landmark is [x,y] -> new landmarkes is [x,y]
+    new_landmark = ((landmark[..., ::-1] - offset) * scale)[..., ::-1]
+    box_hw *= scale
+
+    box_mins = box_yx - (box_hw / 2.)
+    box_maxes = box_yx + (box_hw / 2.)
+    boxes = tf.concat([
+        box_mins[..., 0:1],  # y_min
+        box_mins[..., 1:2],  # x_min
+        box_maxes[..., 0:1],  # y_max
+        box_maxes[..., 1:2]  # x_max
+    ], axis=-1)
+
+    # Scale boxes back to original image shape.
+    boxes *= tf.concat([image_hw, image_hw], axis=-1)
+    new_landmark *= image_hw[::-1]
+    return boxes, new_landmark
+
+
+def yoloalgin_infer(img_path: Path, infer_model: tf.keras.Model,
+                    result_path: Path, h: YOLOAlignHelper,
+                    obj_thresh: float = .7, iou_thresh: float = .3):
+    """ load images """
+    orig_img = h.read_img(str(img_path))
+    image_hw = orig_img.shape[0:2]
+    img, _ = h.process_img(orig_img, true_box=None, is_training=False, is_resize=True)
+    img = tf.expand_dims(img, 0)
+    """ get output """
+    y_pred = infer_model.predict(img)
+    """ parser output """
+
+    landmark_num = h.landmark_num
+    class_num = h.landmark_num
+    in_hw = h.in_hw
+
+    """ box list """
+    _yxyx_box = []
+    _yxyx_box_scores = []
+    _xy_landmarks = []
+    """ preprocess label """
+    for l, pred_label in enumerate(y_pred):
+        """ split the label """
+        pred_xy = pred_label[..., 0:2]
+        pred_wh = pred_label[..., 2:4]
+        pred_confidence = pred_label[..., 4:5]
+        pred_landmark = tf.reshape(pred_label[..., 5:5 + landmark_num * 2],
+                                   pred_label.shape[:-1] + (landmark_num, 2))
+
+        pred_cls = pred_label[..., 5 + landmark_num * 2:]
+        # box_scores = obj_score * class_score
+        box_scores = tf.sigmoid(pred_cls) * tf.sigmoid(pred_confidence)
+        # obj_mask = pred_confidence_score[..., 0] > model.obj_thresh
+        """ reshape box  """
+        # NOTE tf_xywh_to_all will auto use sigmoid function
+        pred_xy_A, pred_wh_A, pred_landmark_A = tf_grid_to_all(pred_xy, pred_wh, pred_landmark, l, h)
+        boxes, landmarkes = correct_algin_box(pred_xy_A, pred_wh_A, pred_landmark_A, in_hw, image_hw)
+        boxes = tf.reshape(boxes, (-1, 4))
+        box_scores = tf.reshape(box_scores, (-1, class_num))
+        landmarkes = tf.reshape(landmarkes, (-1, landmark_num, 2))
+        """ append box and scores to global list """
+        _yxyx_box.append(boxes)
+        _yxyx_box_scores.append(box_scores)
+        _xy_landmarks.append(landmarkes)
+
+    yxyx_box = tf.concat(_yxyx_box, axis=0)
+    yxyx_box_scores = tf.concat(_yxyx_box_scores, axis=0)
+    xy_landmarks = tf.concat(_xy_landmarks, axis=0)
+
+    mask = yxyx_box_scores >= obj_thresh
+
+    """ do nms for every classes"""
+    _boxes = []
+    _scores = []
+    _classes = []
+    _landmarkes = []
+    for c in range(class_num):
+        class_boxes = tf.boolean_mask(yxyx_box, mask[:, c])
+        class_box_scores = tf.boolean_mask(yxyx_box_scores[:, c], mask[:, c])
+        class_landmarks = tf.boolean_mask(xy_landmarks, mask[:, c])
+        select = tf.image.non_max_suppression(
+            class_boxes, scores=class_box_scores, max_output_size=30, iou_threshold=iou_thresh)
+        class_boxes = tf.gather(class_boxes, select)
+        class_box_scores = tf.gather(class_box_scores, select)
+        class_landmarks = tf.gather(class_landmarks, select)
+        _boxes.append(class_boxes)
+        _scores.append(class_box_scores)
+        _classes.append(tf.ones_like(class_box_scores) * c)
+        _landmarkes.append(class_landmarks)
+
+    boxes = tf.concat(_boxes, axis=0)
+    classes = tf.concat(_classes, axis=0)
+    scores = tf.concat(_scores, axis=0)
+    landmarkes = tf.concat(_landmarkes, axis=0)
+    """ draw box  """
+    font = ImageFont.truetype(font='asset/FiraMono-Medium.otf',
+                              size=tf.cast(tf.floor(3e-2 * image_hw[0] + 0.5), tf.int32).numpy())
+
+    thickness = (image_hw[0] + image_hw[1]) // 300
+
+    """ show result """
+    if len(classes) > 0:
+        pil_img = Image.fromarray(orig_img)
+        print('[' + 'top\tleft\tbottom\tright\tscore\tclass\t' + '\t'.join([f'p{i//2}_{i-i//2}' for i in range(landmark_num * 2)]) + ']')
+        for i, c in enumerate(classes):
+            box = boxes[i]
+            score = scores[i]
+            label = '{:2d} {:.2f}'.format(int(c.numpy()), score.numpy())
+            draw = ImageDraw.Draw(pil_img)
+            label_size = draw.textsize(label, font)
+            top, left, bottom, right = box
+            strings = f'[{top:.1f}\t{left:.1f}\t{bottom:.1f}\t{right:.1f}\t{score:.2f}\t{int(c):2d}'
+            top = max(0, tf.cast(tf.floor(top + 0.5), tf.int32))
+            left = max(0, tf.cast(tf.floor(left + 0.5), tf.int32))
+            bottom = min(image_hw[0], tf.cast(tf.floor(bottom + 0.5), tf.int32))
+            right = min(image_hw[1], tf.cast(tf.floor(right + 0.5), tf.int32))
+
+            if top - image_hw[0] >= 0:
+                text_origin = tf.convert_to_tensor([left, top - label_size[1]])
+            else:
+                text_origin = tf.convert_to_tensor([left, top + 1])
+
+            for j in range(thickness):
+                draw.rectangle(
+                    [left + j, top + j, right - j, bottom - j],
+                    outline=h.colormap[c])
+            draw.rectangle([tuple(text_origin), tuple(text_origin + label_size)],
+                           fill=h.colormap[c])
+            draw.text(text_origin, label, fill=(0, 0, 0), font=font)
+            r = 3
+            for points in landmarkes:
+                for point in points:
+                    strings += f'\t{point[0]:.1f}\t{point[1]:.1f}'
+                    draw.ellipse((point[0] - r, point[1] - r, point[0] + r, point[1] + r),
+                                 fill=h.colormap[c])
+
+            print(strings + ']')
+            del draw
+        pil_img.show()
+    else:
+        print(NOTE, ' no boxes detected')

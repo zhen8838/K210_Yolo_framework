@@ -1,7 +1,7 @@
 mode: train
 model:
   name: yolo
-  helper: Helper
+  helper: YOLOHelper
   helper_kwarg:
     image_ann: data/voc_img_ann.npy
     class_num: 20
@@ -17,6 +17,12 @@ model:
     validation_split: 0.1
   network: yolo_mobilev2
   network_kwarg:
+    input_shape:
+    - 224
+    - 320
+    - 3
+    anchor_num: 3
+    class_num: 20
     alpha: 0.75
   loss: YOLO_Loss
   loss_kwarg:
@@ -70,3 +76,8 @@ prune:
   final_sparsity: 0.9
   end_epoch: 5
   frequency: 100
+inference:
+  infer_fn: yolo_infer
+  infer_fn_kwarg:
+    obj_thresh: 0.7
+    iou_thresh: 0.3

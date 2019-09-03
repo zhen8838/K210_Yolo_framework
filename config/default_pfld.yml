@@ -1,7 +1,7 @@
 mode: train
 model:
   name: pfld
-  helper: LandmarkHelper
+  helper: PFLDHelper
   helper_kwarg:
     image_ann: data/wflw_img_ann.npy
     in_hw:
@@ -10,12 +10,16 @@ model:
     landmark_num: 98
     attribute_num: 6
     validation_split: 0.1
-  network: pfld_optimized
+  network: pfld
   network_kwarg:
+    input_shape:
+    - 112
+    - 112
+    - 3
     landmark_num: 98
     alpha: 1.
     weight_decay: 0.00005
-  loss: LandMark_Loss
+  loss: PFLD_Loss
   loss_kwarg:
     landmark_weight: 1.
     eular_weight: 1.
@@ -64,3 +68,7 @@ prune:
   final_sparsity: 0.9
   end_epoch: 5
   frequency: 100
+inference:
+  infer_fn: pfld_infer
+  infer_fn_kwarg:
+    radius: 1
