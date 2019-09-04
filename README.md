@@ -155,6 +155,8 @@ Please refer [nncase v0.1.0-RC5](https://github.com/kendryte/nncase/tree/v0.1.0-
 
 ## Demo
 
+Use [kendryte-standalone-sdk v0.5.6](https://github.com/kendryte/kendryte-standalone-sdk/tree/V0.5.6)
+
 *   [KD233](https://kendryte.com/)
 
 Use [Kflash.py](https://github.com/kendryte/kflash.py) 
