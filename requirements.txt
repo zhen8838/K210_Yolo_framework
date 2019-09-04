@@ -8,5 +8,3 @@ scikit_image==0.15.0
 numpy==1.16.2
 imgaug==0.2.9
 Pillow==6.1.0
-skimage==0.0
-tensorflow==1.14.0
