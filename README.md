@@ -151,7 +151,7 @@ Now you have `mobile_yolo.tflite`
 
 ## Convert Kmodel
 
-Please refer [nncase](https://github.com/kendryte/nncase)
+Please refer [nncase v0.1.0-RC5](https://github.com/kendryte/nncase/tree/v0.1.0-rc5) [example](https://github.com/kendryte/nncase/tree/v0.1.0-rc5/examples/20classes_yolo)
 
 ## Demo
 
