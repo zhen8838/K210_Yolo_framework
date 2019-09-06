@@ -186,13 +186,13 @@ python3 ./make_wflw_list.py xxxxx/WFLW_annotations xxxxx/WFLW_images xxxxx/wflw_
 1.  start train
 
 ```sh
-python3 ./keras_train.py --config_file config/default_landmark.yml
+python3 ./keras_train.py --config_file config/default_pfld.yml
 ```
 
 2.  modify `default_landmark.yml` `pre_ckpt` to `log/xxxxx/saved_model_xx.h5`
 
 ```sh
-python3 ./keras_train.py --config_file config/default_landmark.yml
+python3 ./keras_train.py --config_file config/default_pfld.yml
 ```
 
 ## Convert Kmodel
@@ -202,7 +202,7 @@ python3 ./keras_train.py --config_file config/default_landmark.yml
 
 ```sh
 toco --output_file pfld_infer.tflite --keras_model_file log/xxxxxx/infer_model_xx.h5
-ncc compile pfld_infer.tflite pfld_infer.kmodel -i tflite -o kmodel -t k210 --dataset ~/xxxxx/images --inference-type uint8 --input-mean 0.5 --input-std 1.0
+ncc compile pfld_infer.tflite pfld_opted.kmodel -i tflite -o kmodel -t k210 --dataset ~/xxxxx/images --inference-type uint8 --input-mean 0.5 --input-std 1.0
 ```
 
 ## Inference
