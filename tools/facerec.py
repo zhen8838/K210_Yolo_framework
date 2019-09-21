@@ -106,7 +106,7 @@ class Triplet_Loss(kls.Loss):
 class FaceAccuracy(MeanMetricWrapper):
     """Calculates how often predictions matches labels."""
 
-    def __init__(self, p_dist: ResourceVariable, threshold: float, batch_size: int, name='acc', dtype=None):
+    def __init__(self, p_dist: ResourceVariable, threshold: float, name='acc', dtype=None):
         super(FaceAccuracy, self).__init__(
-            lambda y_true, y_pred, p_dist, threshold, batch_size: tf.reduce_sum(tf.cast(p_dist < threshold, tf.float32)) / batch_size,
-            name, dtype=dtype, p_dist=p_dist.read_value(), batch_size=batch_size, threshold=threshold)
+            lambda y_true, y_pred, p_dist, threshold: tf.reduce_sum(tf.cast(p_dist < threshold, tf.float32)),
+            name, dtype=dtype, p_dist=p_dist.read_value(), threshold=threshold)
