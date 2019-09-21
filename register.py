@@ -1,5 +1,5 @@
 from models.networks import yolo_mobilev1, yolo_mobilev2, tiny_yolo, yolo,\
-    yoloalgin_mobilev1, yoloalgin_mobilev2, yolov2algin_mobilev1, pfld, pfld_optimized, mobilev2dcn_ctdet,\
+    yoloalgin_mobilev1, yoloalgin_mobilev2, yolov2algin_mobilev1, pfld, pfld_optimized, mobilev2_ctdet,\
     mobilev1_face
 from tensorflow.python.keras.optimizers import Adam, SGD, RMSprop
 from tools.custom import RAdam
@@ -148,7 +148,7 @@ network_register = {
     'yolov2algin_mobilev1': yolov2algin_mobilev1,
     'pfld': pfld,
     'pfld_optimized': pfld_optimized,
-    'mobilev2dcn_ctdet': mobilev2dcn_ctdet,
+    'mobilev2_ctdet': mobilev2_ctdet,
     'mobilev1_face': mobilev1_face
 }
 

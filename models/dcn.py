@@ -131,7 +131,7 @@ class DeconvLayer(object):
         self.l = []
         for i in range(layer_num):
             kernel, padding, output_padding = self._get_cfg(kernel_num[i], i)
-            self.l.append([DCN(filter_num[i], 3, 1),
+            self.l.append([kl.Conv2D(filter_num[i], 3, 1, padding='same'),
                            kl.BatchNormalization(momentum=0.1),
                            kl.ReLU(),
                            kl.Conv2DTranspose(filter_num[i], kernel, 2, padding, output_padding, use_bias=False),

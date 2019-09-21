@@ -125,7 +125,7 @@ class CtdetHelper(BaseHelper):
         Returns
         -------
         tuple
-            [image src,box] after data augmenter 
+            [image src,box] after data augmenter
             image src dtype is uint8
         """
         seq_det = self.iaaseq.to_deterministic()
@@ -179,7 +179,7 @@ class CtdetHelper(BaseHelper):
         return img, ann
 
     def colors_img(self, heatmap: np.ndarray) -> np.ndarray:
-        """ 
+        """
 
         Parameters
         ----------
@@ -223,7 +223,7 @@ class CtdetHelper(BaseHelper):
         Parameters
         ----------
         ann : np.ndarray
-            annotation [n,5] 
+            annotation [n,5]
             value : [n*[p,x,y,w,h]]
 
         Returns
@@ -266,7 +266,7 @@ class CtdetHelper(BaseHelper):
         Returns
         -------
         np.ndarray
-            annotaions 
+            annotaions
         """
         heatmap, obj_wh, offset, mask = labels
 
@@ -278,7 +278,7 @@ class CtdetHelper(BaseHelper):
 
         return np.concatenate((clses, (ct_int + offset[idx]) / self.out_hw, obj_wh[idx] / self.out_hw), -1)
 
-    def _build_datapipe(self, image_ann_list: np.ndarray, batch_size: int, rand_seed: int, is_augment: bool) -> tf.data.Dataset:
+    def _build_datapipe(self, image_ann_list: np.ndarray, batch_size: int, rand_seed: int, is_augment: bool, is_normlize: bool) -> tf.data.Dataset:
         print(INFO, 'data augment is ', str(is_augment))
 
         def parser(i: tf.Tensor):
@@ -296,7 +296,10 @@ class CtdetHelper(BaseHelper):
             labels = tf.concat(labels, -1)
 
             # normlize image
-            img = self.normlize_img(raw_img)  # type:tf.Tensor
+            if is_normlize is True:
+                img = self.normlize_img(raw_img)  # type:tf.Tensor
+            else:
+                img = tf.cast(raw_img, tf.float32)
 
             labels.set_shape(self.out_hw.tolist() + [self.class_num + 2 + 2 + 1])
             img.set_shape(self.in_hw.tolist() + [3])
@@ -310,9 +313,9 @@ class CtdetHelper(BaseHelper):
 
         return dataset
 
-    def set_dataset(self, batch_size, rand_seed, is_augment=True):
-        self.train_dataset = self._build_datapipe(self.train_list, batch_size, rand_seed, is_augment)
-        self.test_dataset = self._build_datapipe(self.test_list, batch_size, rand_seed, False)
+    def set_dataset(self, batch_size, rand_seed, is_augment=True, is_normlize=True):
+        self.train_dataset = self._build_datapipe(self.train_list, batch_size, rand_seed, is_augment, is_normlize)
+        self.test_dataset = self._build_datapipe(self.test_list, batch_size, rand_seed, False, is_normlize)
 
         self.batch_size = batch_size
         self.train_epoch_step = self.train_total_data // self.batch_size
@@ -360,7 +363,7 @@ class CtdetHelper(BaseHelper):
 
 class Ctdet_Loss(tf.keras.losses.Loss):
     def __init__(self, h: CtdetHelper, obj_thresh: float, hm_weight: float, wh_weight: float, offset_weight: float,
-                 reduction=ReductionV2.AUTO, name=None):
+                 reduction=ReductionV2.SUM_OVER_BATCH_SIZE, name=None):
         """ centernet detection loss obj
 
         Parameters
@@ -388,41 +391,38 @@ class Ctdet_Loss(tf.keras.losses.Loss):
         self.wh_weight = wh_weight
         self.offset_weight = offset_weight
 
-    def focal_loss(self, gt: tf.Tensor, pred: tf.Tensor) -> tf.Tensor:
+    def focal_loss(self, true_hm: tf.Tensor, pred_hm: tf.Tensor) -> tf.Tensor:
         """ Modified focal loss. Exactly the same as CornerNet.
             Runs faster and costs a little bit more memory
 
         Parameters
         ----------
-        gt : tf.Tensor
+        true_hm : tf.Tensor
             shape : [batch, out_h , out_w, calss_num]
-        pred : tf.Tensor
+        pred_hm : tf.Tensor
             shape : [batch, out_h , out_w, calss_num]
 
         Returns
         -------
         tf.Tensor
-            heatmap loss 
-            shape : [1,]
+            heatmap loss
+            shape : [batch,]
         """
-        pos_inds = tf.cast(tf.equal(gt, 1), tf.float32)
+        pos_inds = tf.cast(tf.equal(true_hm, 1.), tf.float32)
         neg_inds = 1 - pos_inds
 
-        neg_weights = tf.pow(1 - gt, 4)
+        neg_weights = tf.pow(1 - true_hm, 4)
 
-        loss = 0
+        pos_loss = tf.log(pred_hm) * tf.pow(1 - pred_hm, 2) * pos_inds
+        neg_loss = tf.log(1 - pred_hm) * tf.pow(pred_hm, 2) * neg_weights * neg_inds
+        # sum ==> [batch,]
+        num_pos = tf.reduce_sum(pos_inds, [1, 2, 3])
+        pos_loss = tf.reduce_sum(pos_loss, [1, 2, 3])
+        neg_loss = tf.reduce_sum(neg_loss, [1, 2, 3])
 
-        pos_loss = tf.log(pred) * tf.pow(1 - pred, 2) * pos_inds
-        neg_loss = tf.log(1 - pred) * tf.pow(pred, 2) * neg_weights * neg_inds
+        return tf.div_no_nan(- pos_loss - neg_loss, num_pos)
 
-        num_pos = tf.reduce_sum(pos_inds)
-        pos_loss = tf.reduce_sum(pos_loss)
-        neg_loss = tf.reduce_sum(neg_loss)
-
-        heatmap_loss = - (pos_loss + neg_loss) / num_pos
-        return heatmap_loss
-
-    def regl1_loss(self, gt: tf.Tensor, pred: tf.Tensor, mask: tf.Tensor) -> tf.Tensor:
+    def regl1_loss(self, gt: tf.Tensor, pred: tf.Tensor, mask: tf.Tensor, mask_sum: tf.Tensor) -> tf.Tensor:
         """[summary]
 
         Parameters
@@ -433,25 +433,31 @@ class Ctdet_Loss(tf.keras.losses.Loss):
             shape : [batch, out_h, out_w, 2]
         mask : tf.Tensor
             shape : [batch, out_h, out_w, 1]
+        mask_sum : tf.Tensor
+            valid mask sum
+            shape : [batch, ]
 
 
         Returns
         -------
         tf.Tensor
-            shape : [1,]
+            total_loss 
+            shape : [batch,]
         """
-        return tf.div_no_nan(tf.reduce_sum(tf.abs((gt - pred) * mask)), tf.reduce_sum(tf.cast(mask, tf.float32)))
+        return tf.div_no_nan(tf.reduce_sum(tf.abs((gt - pred) * mask), [1, 2, 3]), mask_sum)
 
     def call(self, y_true: tf.Tensor, y_pred: tf.Tensor):
         """ split the label """
         hm_true, wh_true, off_true, mask = tf.split(y_true, [self.h.class_num, 2, 2, 1], -1)
         hm_pred, wh_pred, off_pred = tf.split(y_pred, [self.h.class_num, 2, 2], -1)
+        mask_sum = tf.reduce_sum(tf.cast(mask, tf.float32), [1, 2, 3])
+
         hm_pred = tf.sigmoid(hm_pred)
 
         heatmap_loss = self.focal_loss(hm_true, hm_pred)
-        wh_loss = self.regl1_loss(wh_true, wh_pred, mask)
-        off_loss = self.regl1_loss(off_true, off_pred, mask)
-
+        wh_loss = self.regl1_loss(wh_true, wh_pred, mask, mask_sum)
+        off_loss = self.regl1_loss(off_true, off_pred, mask, mask_sum)
+        # total_loss [batch, ]
         total_loss = self.hm_weight * heatmap_loss + self.wh_weight * wh_loss + self.offset_weight * off_loss
 
-        return total_loss
+        return total_loss / self.h.batch_size

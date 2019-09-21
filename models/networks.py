@@ -819,7 +819,7 @@ def yolo(input_shape, anchor_num, class_num) -> [k.Model, k.Model]:
     return yolo_model, yolo_model_warpper
 
 
-def mobilev2dcn_ctdet(input_shape: list, class_num: list, filter_num: list, kernel_num: list, alpha: float = 1.0):
+def mobilev2_ctdet(input_shape: list, class_num: list, filter_num: list, kernel_num: list, alpha: float = 1.0):
     assert len(filter_num) == len(kernel_num)
     from tensorflow.python.keras.applications import MobileNetV2
     input_tensor = k.Input(input_shape)
@@ -832,16 +832,16 @@ def mobilev2dcn_ctdet(input_shape: list, class_num: list, filter_num: list, kern
     out = DeconvLayer(len(filter_num), filter_num, kernel_num)(body_model.output)  # shape=(?, 96, 96, 64)
 
     out_heatmap = pipe(out, *[kl.Conv2D(64, 3, 1, 'same'),
-                              kl.ReLU(),
-                              kl.Conv2D(class_num, 1, 1, bias_initializer=tf.initializers.constant(-2.19))])
+                              kl.LeakyReLU(),
+                              kl.Conv2D(class_num, 1, 1)])
 
     out_wh = pipe(out, *[kl.Conv2D(64, 3, 1, 'same'),
-                         kl.ReLU(),
-                         kl.Conv2D(2, 1, 1, bias_initializer=tf.initializers.constant(-2.19))])
+                         kl.LeakyReLU(),
+                         kl.Conv2D(2, 1, 1)])
 
     out_reg = pipe(out, *[kl.Conv2D(64, 3, 1, 'same'),
-                          kl.ReLU(),
-                          kl.Conv2D(2, 1, 1, bias_initializer=tf.initializers.constant(-2.19))])
+                          kl.LeakyReLU(),
+                          kl.Conv2D(2, 1, 1)])
 
     infer_model = k.Model(input_tensor, [out_heatmap, out_wh, out_reg])
 
