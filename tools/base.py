@@ -16,7 +16,7 @@ class BaseHelper(object):
         self.test_epoch_step = None
 
     @abc.abstractmethod
-    def set_dataset(self, batch_size, rand_seed, is_training=True):
+    def set_dataset(self, batch_size, rand_seed, is_augment=True):
         NotImplementedError('Must be implemented in subclasses.')
 
     def read_img(self, img_path: str) -> tf.Tensor:
@@ -42,7 +42,7 @@ class BaseHelper(object):
         return (tf.cast(img, tf.float32) / 255. - 0.5) / 1
 
     def process_img(self, img: np.ndarray, ann: np.ndarray,
-                    is_training: bool, is_resize: bool, is_normlize: bool) -> [np.ndarray, np.ndarray]:
+                    is_augment: bool, is_resize: bool, is_normlize: bool) -> [np.ndarray, np.ndarray]:
         """ process image and true box , if is training then use data augmenter
 
         Parameters
@@ -51,7 +51,7 @@ class BaseHelper(object):
             image srs
         ann : np.ndarray
             one annotation
-        is_training : bool
+        is_augment : bool
             wether to use data augmenter
         is_resize : bool
             wether to resize the image
@@ -65,7 +65,7 @@ class BaseHelper(object):
         """
         if is_resize:
             img, ann = self.resize_img(img, ann)
-        if is_training:
+        if is_augment:
             img, ann = self.data_augmenter(img, ann)
         if is_normlize:
             img = self.normlize_img(img)

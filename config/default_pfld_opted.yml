@@ -24,6 +24,7 @@ model:
     landmark_weight: 1.
     eular_weight: 1.
 train:
+  jit: true
   augmenter: false
   batch_size: 64
   pre_ckpt: null

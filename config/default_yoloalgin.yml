@@ -33,6 +33,7 @@ model:
     wh_weight: 1
     landmark_weight: 2
 train:
+  jit: true
   augmenter: false
   batch_size: 16
   pre_ckpt: null

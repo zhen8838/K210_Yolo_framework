@@ -6,6 +6,7 @@ import tensorflow.python.keras.backend as K
 import tensorflow.python.keras.layers as kl
 from models.keras_mobilenet_v2 import MobileNetV2
 from models.keras_mobilenet import MobileNet
+from models.dcn import DCN, DeconvLayer
 from functools import reduce, wraps
 from toolz import pipe
 
@@ -816,6 +817,79 @@ def yolo(input_shape, anchor_num, class_num) -> [k.Model, k.Model]:
     yolo_model.set_weights(new_weights)
 
     return yolo_model, yolo_model_warpper
+
+
+def mobilev2dcn_ctdet(input_shape: list, class_num: list, filter_num: list, kernel_num: list, alpha: float = 1.0):
+    assert len(filter_num) == len(kernel_num)
+    from tensorflow.python.keras.applications import MobileNetV2
+    input_tensor = k.Input(input_shape)
+    body_model = MobileNetV2(include_top=False,
+                             input_tensor=input_tensor,
+                             alpha=alpha,
+                             input_shape=input_shape,
+                             pooling=None)  # type:k.Model
+
+    out = DeconvLayer(len(filter_num), filter_num, kernel_num)(body_model.output)  # shape=(?, 96, 96, 64)
+
+    out_heatmap = pipe(out, *[kl.Conv2D(64, 3, 1, 'same'),
+                              kl.ReLU(),
+                              kl.Conv2D(class_num, 1, 1, bias_initializer=tf.initializers.constant(-2.19))])
+
+    out_wh = pipe(out, *[kl.Conv2D(64, 3, 1, 'same'),
+                         kl.ReLU(),
+                         kl.Conv2D(2, 1, 1, bias_initializer=tf.initializers.constant(-2.19))])
+
+    out_reg = pipe(out, *[kl.Conv2D(64, 3, 1, 'same'),
+                          kl.ReLU(),
+                          kl.Conv2D(2, 1, 1, bias_initializer=tf.initializers.constant(-2.19))])
+
+    infer_model = k.Model(input_tensor, [out_heatmap, out_wh, out_reg])
+
+    train_model = k.Model(input_tensor, kl.Concatenate()([out_heatmap, out_wh, out_reg]))
+
+    return infer_model, train_model
+
+
+def mobilev1_face(input_shape: list, embedding_size: int,
+                  depth_multiplier: float = 1.0) -> [k.Model, k.Model]:
+    in_a = k.Input(input_shape, name='in_a')
+    in_p = k.Input(input_shape, name='in_p')
+    in_n = k.Input(input_shape, name='in_n')
+
+    """ build dummy model body """
+
+    base_model = MobileNet(input_tensor=in_a, input_shape=input_shape,
+                           include_top=False, weights=None, alpha=depth_multiplier)  # type: keras.Model
+
+    if depth_multiplier == .5:
+        base_model.load_weights('data/mobilenet_v1_base_5.h5')
+    elif depth_multiplier == .75:
+        base_model.load_weights('data/mobilenet_v1_base_7.h5')
+    elif depth_multiplier == 1.:
+        base_model.load_weights('data/mobilenet_v1_base_10.h5')
+
+    body_model = k.Sequential([
+        kl.Flatten(),
+        kl.Dense(2048),
+        kl.AlphaDropout(0.2),
+        kl.LeakyReLU(),
+        kl.Dense(512),
+        kl.AlphaDropout(0.2),
+        kl.LeakyReLU(),
+        kl.Dense(embedding_size, use_bias=False, kernel_constraint=k.constraints.UnitNorm())
+    ])
+
+    out_a = body_model(base_model.output)
+
+    infer_model = k.Model(inputs=in_a, outputs=out_a)
+
+    out_p = infer_model(in_p)
+    out_n = infer_model(in_n)
+
+    """ build train model """
+    train_model = k.Model([in_a, in_p, in_n], kl.Concatenate()([out_a, out_p, out_n]))
+
+    return infer_model, train_model
 
 
 def resblock_body(x, num_filters, num_blocks):

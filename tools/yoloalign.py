@@ -6,7 +6,6 @@ from skimage.transform import AffineTransform, warp
 import numpy as np
 from imgaug import BoundingBoxesOnImage, KeypointsOnImage
 from imgaug import augmenters as iaa
-import imgaug.augmenters as ia
 import tensorflow as tf
 from tensorflow.python.keras.losses import Loss
 import tensorflow.python.keras.backend as K
@@ -167,7 +166,7 @@ class YOLOAlignHelper(YOLOHelper):
             [image src,box] after data augmenter
             image src dtype is uint8
         """
-        seq_det = self.iaaseq.to_deterministic()  # type: ia.meta.Augmenter
+        seq_det = self.iaaseq.to_deterministic()  # type: iaa.meta.Augmenter
         p = ann[:, 0:1]
         xywh_box = ann[:, 1:5]
         landmarks = ann[:, 5:].reshape((len(ann) * self.landmark_num, 2))
@@ -538,7 +537,7 @@ def yoloalgin_infer(img_path: Path, infer_model: tf.keras.Model,
     """ load images """
     orig_img = h.read_img(str(img_path))
     image_hw = orig_img.shape[0:2]
-    img, _ = h.process_img(orig_img, true_box=None, is_training=False, is_resize=True)
+    img, _ = h.process_img(orig_img, true_box=None, is_augment=False, is_resize=True)
     img = tf.expand_dims(img, 0)
     """ get output """
     y_pred = infer_model.predict(img)

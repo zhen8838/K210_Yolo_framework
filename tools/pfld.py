@@ -71,15 +71,15 @@ class PFLDHelper(BaseHelper):
     def data_augmenter(self, img, ann):
         pass
 
-    def _build_datapipe(self, image_ann_list: np.ndarray, batch_size: int, rand_seed: int, is_training: bool) -> tf.data.Dataset:
-        print(INFO, 'data augment is ', str(is_training))
+    def _build_datapipe(self, image_ann_list: np.ndarray, batch_size: int, rand_seed: int, is_augment: bool) -> tf.data.Dataset:
+        print(INFO, 'data augment is ', str(is_augment))
 
         def _parser_wrapper(i: tf.Tensor) -> [tf.Tensor, tf.Tensor]:
             img_path, label = tf.numpy_function(lambda idx: (image_ann_list[idx][0], image_ann_list[idx][1].astype('float32')), [i], [tf.dtypes.string, tf.float32])
 
             raw_img = self.read_img(img_path)
 
-            if is_training == False:
+            if is_augment == False:
                 raw_img = self.resize_img(raw_img)
 
             # NOTE standardized image
@@ -115,8 +115,8 @@ class PFLDHelper(BaseHelper):
 
         return dataset
 
-    def set_dataset(self, batch_size, rand_seed, is_training=True):
-        self.train_dataset = self._build_datapipe(self.train_list, batch_size, rand_seed, is_training)
+    def set_dataset(self, batch_size, rand_seed, is_augment=True):
+        self.train_dataset = self._build_datapipe(self.train_list, batch_size, rand_seed, is_augment)
         self.test_dataset = self._build_datapipe(self.test_list, batch_size, rand_seed, False)
 
         self.batch_size = batch_size

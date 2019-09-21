@@ -5,6 +5,7 @@ from tools.yolo import YOLOHelper, YOLO_Loss
 from tools.base import INFO, ERROR, NOTE
 from tools.yoloalign import YOLOAlignHelper, YOLOAlign_Loss
 from tools.pfld import PFLDHelper, PFLD_Loss
+from tools.facerec import FaceAccuracy
 from tools.custom import Yolo_P_R, Lookahead, PFLDMetric, YOLO_LE
 from models.networks import yolo_mobilev2, pfld
 import os
@@ -27,7 +28,8 @@ def main(config_file, new_cfg, mode, model, train, prune):
     tf.compat.v1.reset_default_graph()
     tfcfg = tf.compat.v1.ConfigProto()
     tfcfg.gpu_options.allow_growth = True
-    tfcfg.graph_options.optimizer_options.global_jit_level = (tf.OptimizerOptions.ON_1)
+    if train.jit is True:
+        tfcfg.graph_options.optimizer_options.global_jit_level = (tf.OptimizerOptions.ON_1)
     sess = tf.compat.v1.Session(config=tfcfg)
 
     if train.debug == True:
@@ -50,7 +52,7 @@ def main(config_file, new_cfg, mode, model, train, prune):
     """ Build Data Input PipeLine """
 
     h = helper_register[model.helper](**model.helper_kwarg)  # type: YOLOHelper
-    h.set_dataset(train.batch_size, train.rand_seed, is_training=train.augmenter)
+    h.set_dataset(train.batch_size, train.rand_seed, is_augment=train.augmenter)
 
     train_ds = h.train_dataset
     validation_ds = h.test_dataset
@@ -99,6 +101,14 @@ def main(config_file, new_cfg, mode, model, train, prune):
         fr = PFLDMetric(True, model.helper_kwarg['landmark_num'], train.batch_size, name='FR', dtype=tf.float32)
         fr.failure_num, fr.total = le.failure_num, le.total
         metrics = [le, fr]
+    elif model.name == 'feacrec':
+        loss_obj = loss_register[model.loss](h=h, **model.loss_kwarg)
+        losses = [loss_obj]
+        metrics = [FaceAccuracy(loss_obj.p_dist_var, loss_obj.alpha, h.batch_size)]
+    else:
+        loss_obj = loss_register[model.loss](h=h, **model.loss_kwarg)
+        losses = [loss_obj]
+        metrics = []
 
     sess.run([tf.compat.v1.global_variables_initializer(),
               tf.compat.v1.local_variables_initializer()])

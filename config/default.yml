@@ -32,6 +32,7 @@ model:
     noobj_weight: 1
     wh_weight: 1
 train:
+  jit: true
   augmenter: false
   batch_size: 16
   pre_ckpt: null

@@ -204,15 +204,15 @@ def MobileNet(input_shape=None,
     #                       'Weights for input shape (224, 224) will be'
     #                       ' loaded as the default.')
 
-    # if input_tensor is None:
-    #     img_input = layers.Input(shape=input_shape)
-    # else:
-    #     if not backend.is_keras_tensor(input_tensor):
-    #         img_input = layers.Input(tensor=input_tensor, shape=input_shape)
-    #     else:
-    #         img_input = input_tensor
+    if input_tensor is None:
+        img_input = layers.Input(shape=input_shape)
+    else:
+        if not backend.is_keras_tensor(input_tensor):
+            img_input = layers.Input(tensor=input_tensor, shape=input_shape)
+        else:
+            img_input = input_tensor
 
-    img_input = input_tensor
+    # img_input = input_tensor
     x = _conv_block(img_input, 32, alpha, strides=(2, 2))
     x = _depthwise_conv_block(x, 40 if alpha == 1. else 64, alpha, depth_multiplier, block_id=1)
     x = _depthwise_conv_block(x, 128, alpha, depth_multiplier, strides=(2, 2), block_id=2)

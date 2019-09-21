@@ -1,10 +1,13 @@
 from models.networks import yolo_mobilev1, yolo_mobilev2, tiny_yolo, yolo,\
-    yoloalgin_mobilev1, yoloalgin_mobilev2, yolov2algin_mobilev1, pfld, pfld_optimized
+    yoloalgin_mobilev1, yoloalgin_mobilev2, yolov2algin_mobilev1, pfld, pfld_optimized, mobilev2dcn_ctdet,\
+    mobilev1_face
 from tensorflow.python.keras.optimizers import Adam, SGD, RMSprop
 from tools.custom import RAdam
 from tools.yolo import YOLOHelper, YOLO_Loss, yolo_infer
 from tools.yoloalign import YOLOAlignHelper, YOLOAlign_Loss, yoloalgin_infer
 from tools.pfld import PFLDHelper, PFLD_Loss, pfld_infer
+from tools.ctdet import CtdetHelper, Ctdet_Loss
+from tools.facerec import FcaeRecHelper, Triplet_Loss
 from yaml import safe_dump
 
 
@@ -63,6 +66,7 @@ ArgDict = {
     },
 
     'train': {
+        'jit': True,
         'augmenter': False,
         'batch_size': 16,
         'pre_ckpt': None,
@@ -128,7 +132,9 @@ ArgDict = {
 helper_register = {
     'YOLOHelper': YOLOHelper,
     'YOLOAlignHelper': YOLOAlignHelper,
-    'PFLDHelper': PFLDHelper
+    'PFLDHelper': PFLDHelper,
+    'CtdetHelper': CtdetHelper,
+    'FcaeRecHelper': FcaeRecHelper
 }
 
 
@@ -141,14 +147,19 @@ network_register = {
     'yoloalgin_mobilev2': yoloalgin_mobilev2,
     'yolov2algin_mobilev1': yolov2algin_mobilev1,
     'pfld': pfld,
-    'pfld_optimized': pfld_optimized
+    'pfld_optimized': pfld_optimized,
+    'mobilev2dcn_ctdet': mobilev2dcn_ctdet,
+    'mobilev1_face': mobilev1_face
 }
 
 loss_register = {
     'YOLO_Loss': YOLO_Loss,
     'YOLOAlign_Loss': YOLOAlign_Loss,
-    'PFLD_Loss': PFLD_Loss
+    'PFLD_Loss': PFLD_Loss,
+    'Ctdet_Loss': Ctdet_Loss,
+    'Triplet_Loss': Triplet_Loss
 }
+
 
 optimizer_register = {
     'Adam': Adam,

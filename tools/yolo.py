@@ -432,8 +432,8 @@ class YOLOHelper(BaseHelper):
         dataset_shapes = (tf.TensorShape([None] + list(self.in_hw) + [3]), tuple(output_shapes))
         return dataset_shapes
 
-    def _build_datapipe(self, image_ann_list: np.ndarray, batch_size: int, rand_seed: int, is_training: bool) -> tf.data.Dataset:
-        print(INFO, 'data augment is ', str(is_training))
+    def _build_datapipe(self, image_ann_list: np.ndarray, batch_size: int, rand_seed: int, is_augment: bool) -> tf.data.Dataset:
+        print(INFO, 'data augment is ', str(is_augment))
 
         def _parser_wrapper(i: tf.Tensor):
             # TODO 使用ragged tensorflow来提高速度
@@ -443,7 +443,7 @@ class YOLOHelper(BaseHelper):
             raw_img = tf.image.decode_image(tf.io.read_file(img_path), channels=3, expand_animations=False)
             # resize image -> image augmenter -> normlize image
             raw_img, ann = tf.numpy_function(self.process_img,
-                                             [raw_img, ann, is_training, True],
+                                             [raw_img, ann, is_augment, True],
                                              [tf.uint8, tf.float64])
             # make labels
             labels = tf.numpy_function(self.ann_to_label, [ann], [tf.float32] * len(self.anchors))
@@ -457,15 +457,15 @@ class YOLOHelper(BaseHelper):
         dataset_shapes = self._compute_dataset_shape()
 
         dataset = (tf.data.Dataset.from_tensor_slices(tf.range(len(image_ann_list))).
-                   shuffle(batch_size * 500 if is_training == True else batch_size * 50, rand_seed).repeat().
+                   shuffle(batch_size * 500 if is_augment == True else batch_size * 50, rand_seed).repeat().
                    map(_parser_wrapper, -1).
                    batch(batch_size, True).prefetch(-1).
                    apply(assert_element_shape(dataset_shapes)))
 
         return dataset
 
-    def set_dataset(self, batch_size, rand_seed, is_training=True):
-        self.train_dataset = self._build_datapipe(self.train_list, batch_size, rand_seed, is_training)
+    def set_dataset(self, batch_size, rand_seed, is_augment=True):
+        self.train_dataset = self._build_datapipe(self.train_list, batch_size, rand_seed, is_augment)
         self.test_dataset = self._build_datapipe(self.test_list, batch_size, rand_seed, False)
 
         self.batch_size = batch_size
@@ -822,7 +822,7 @@ def yolo_infer(img_path: Path, infer_model: tf.keras.Model,
     """ load images """
     orig_img = h.read_img(str(img_path))
     image_hw = orig_img.shape[0:2]
-    img, _ = h.process_img(orig_img, true_box=None, is_training=False, is_resize=True)
+    img, _ = h.process_img(orig_img, true_box=None, is_augment=False, is_resize=True)
     img = tf.expand_dims(img, 0)
     """ get output """
     y_pred = infer_model.predict(img)

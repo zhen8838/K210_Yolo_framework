@@ -1,3 +1,4 @@
+import tensorflow as tf
 from tensorflow.python import keras
 from tensorflow.python.ops import init_ops
 from tensorflow.python.ops.math_ops import reduce_mean, reduce_sum,\

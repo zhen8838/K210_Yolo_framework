@@ -154,7 +154,7 @@ def mobilenet_base(  # pylint: disable=invalid-name
         output_stride=None,
         use_explicit_padding=False,
         scope=None,
-        is_training=False):
+        is_augment=False):
     """Mobilenet base network.
 
     Constructs a network from inputs to the given final endpoint. By default
@@ -188,14 +188,14 @@ def mobilenet_base(  # pylint: disable=invalid-name
         inputs so that the output dimensions are the same as if 'SAME' padding
         were used.
       scope: optional variable scope.
-      is_training: How to setup batch_norm and other ops. Note: most of the time
+      is_augment: How to setup batch_norm and other ops. Note: most of the time
         this does not need be set directly. Use mobilenet.training_scope() to set
         up training instead. This parameter is here for backward compatibility
         only. It is safe to set it to the value matching
-        training_scope(is_training=...). It is also safe to explicitly set
+        training_scope(is_augment=...). It is also safe to explicitly set
         it to False, even if there is outer training_scope set to to training.
         (The network will be built in inference mode). If this is set to None,
-        no arg_scope is added for slim.batch_norm's is_training parameter.
+        no arg_scope is added for slim.batch_norm's is_augment parameter.
 
     Returns:
       tensor_out: output tensor.
@@ -228,7 +228,7 @@ def mobilenet_base(  # pylint: disable=invalid-name
     # d) set all extra overrides.
     # pylint: disable=g-backslash-continuation
     with _scope_all(scope, default_scope='Mobilenet'), \
-            safe_arg_scope([slim.batch_norm], is_training=is_training), \
+            safe_arg_scope([slim.batch_norm], is_augment=is_augment), \
             _set_arg_scope_defaults(conv_defs_defaults), \
             _set_arg_scope_defaults(conv_defs_overrides):
         # The current_stride variable keeps track of the output stride of the
@@ -364,7 +364,7 @@ def mobilenet(inputs,
     Raises:
       ValueError: Input rank is invalid.
     """
-    is_training = mobilenet_args.get('is_training', False)
+    is_augment = mobilenet_args.get('is_augment', False)
     input_shape = inputs.get_shape().as_list()
     if len(input_shape) != 4:
         raise ValueError('Expected rank 4 input, was: %d' % len(input_shape))
@@ -382,7 +382,7 @@ def mobilenet(inputs,
             end_points['global_pool'] = net
             if not num_classes:
                 return net, end_points
-            net = slim.dropout(net, scope='Dropout', is_training=is_training)
+            net = slim.dropout(net, scope='Dropout', is_augment=is_augment)
             # 1 x 1 x num_classes
             # Note: legacy scope name.
             logits = slim.conv2d(
@@ -428,7 +428,7 @@ def global_pool(input_tensor, pool_op=tf.nn.avg_pool2d):
     return output
 
 
-def training_scope(is_training=True,
+def training_scope(is_augment=True,
                    weight_decay=0.00004,
                    stddev=0.09,
                    dropout_keep_prob=0.8,
@@ -442,7 +442,7 @@ def training_scope(is_training=True,
        # the network created will be trainble with dropout/batch norm
        # initialized appropriately.
     Args:
-      is_training: if set to False this will ensure that all customizations are
+      is_augment: if set to False this will ensure that all customizations are
         set to non-training mode. This might be helpful for code that is reused
         across both training/evaluation, but most of the time training_scope with
         value False is not needed. If this is set to None, the parameters is not
@@ -461,7 +461,7 @@ def training_scope(is_training=True,
     # model here (for example whether to use bias), modify conv_def instead.
     batch_norm_params = {
         'decay': bn_decay,
-        'is_training': is_training
+        'is_augment': is_augment
     }
     if stddev < 0:
         weight_intitializer = slim.initializers.xavier_initializer()
@@ -473,9 +473,9 @@ def training_scope(is_training=True,
             [slim.conv2d, slim.fully_connected, slim.separable_conv2d],
             weights_initializer=weight_intitializer,
             normalizer_fn=slim.batch_norm), \
-            slim.arg_scope([mobilenet_base, mobilenet], is_training=is_training),\
+            slim.arg_scope([mobilenet_base, mobilenet], is_augment=is_augment),\
             safe_arg_scope([slim.batch_norm], **batch_norm_params), \
-            safe_arg_scope([slim.dropout], is_training=is_training,
+            safe_arg_scope([slim.dropout], is_augment=is_augment,
                            keep_prob=dropout_keep_prob), \
             slim.arg_scope([slim.conv2d],
                            weights_regularizer=slim.l2_regularizer(weight_decay)), \
