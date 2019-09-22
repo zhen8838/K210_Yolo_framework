@@ -408,19 +408,21 @@ class Ctdet_Loss(tf.keras.losses.Loss):
             heatmap loss
             shape : [batch,]
         """
-        pos_inds = tf.cast(tf.equal(true_hm, 1.), tf.float32)
+        z = true_hm
+        x = pred_hm
+        x_s = tf.sigmoid(pred_hm)
+
+        pos_inds = tf.cast(tf.equal(z, 1.), tf.float32)
         neg_inds = 1 - pos_inds
+        neg_weights = tf.pow(1 - z, 4)
 
-        neg_weights = tf.pow(1 - true_hm, 4)
+        # neg entropy loss =  −log(sigmoid(x)) ∗ (1−sigmoid(x))^2 − log(1−sigmoid(x)) ∗ sigmoid(x)^2
+        loss = tf.add(tf.nn.softplus(-x) * tf.pow(1 - x_s, 2) * pos_inds, (x + tf.nn.softplus(-x)) * tf.pow(x_s, 2) * neg_weights * neg_inds)
 
-        pos_loss = tf.log(pred_hm) * tf.pow(1 - pred_hm, 2) * pos_inds
-        neg_loss = tf.log(1 - pred_hm) * tf.pow(pred_hm, 2) * neg_weights * neg_inds
-        # sum ==> [batch,]
         num_pos = tf.reduce_sum(pos_inds, [1, 2, 3])
-        pos_loss = tf.reduce_sum(pos_loss, [1, 2, 3])
-        neg_loss = tf.reduce_sum(neg_loss, [1, 2, 3])
+        loss = tf.reduce_sum(loss, [1, 2, 3])
 
-        return tf.div_no_nan(- pos_loss - neg_loss, num_pos)
+        return tf.div_no_nan(loss, num_pos)
 
     def regl1_loss(self, gt: tf.Tensor, pred: tf.Tensor, mask: tf.Tensor, mask_sum: tf.Tensor) -> tf.Tensor:
         """[summary]
@@ -446,13 +448,38 @@ class Ctdet_Loss(tf.keras.losses.Loss):
         """
         return tf.div_no_nan(tf.reduce_sum(tf.abs((gt - pred) * mask), [1, 2, 3]), mask_sum)
 
+    def cross_entropy_loss(self, true_hm: tf.Tensor, pred_hm: tf.Tensor) -> tf.Tensor:
+        """ use cross entropy calc heatmap loss
+
+        Parameters
+        ----------
+        true_hm : tf.Tensor
+            shape : [batch, out_h , out_w, calss_num]
+        pred_hm : tf.Tensor
+            shape : [batch, out_h , out_w, calss_num]
+
+        Returns
+        -------
+        tf.Tensor
+            shape : [batch, ]
+        """
+        z = true_hm
+        x = pred_hm
+
+        pos_inds = tf.cast(tf.equal(z, 1.), tf.float32)
+        neg_inds = 1 - pos_inds
+        neg_weight = tf.pow(1 - z, 4)
+
+        loss = tf.add(neg_weight * (1 - z) * x, (neg_weight * (1 - z) + z) * (tf.log1p(tf.exp(-tf.abs(x))) + tf.nn.relu(-x)))
+        loss = tf.reduce_sum(loss, [1, 2, 3])
+        num_pos = tf.reduce_sum(pos_inds, [1, 2, 3])
+        return tf.div_no_nan(loss, num_pos)
+
     def call(self, y_true: tf.Tensor, y_pred: tf.Tensor):
         """ split the label """
         hm_true, wh_true, off_true, mask = tf.split(y_true, [self.h.class_num, 2, 2, 1], -1)
         hm_pred, wh_pred, off_pred = tf.split(y_pred, [self.h.class_num, 2, 2], -1)
         mask_sum = tf.reduce_sum(tf.cast(mask, tf.float32), [1, 2, 3])
-
-        hm_pred = tf.sigmoid(hm_pred)
 
         heatmap_loss = self.focal_loss(hm_true, hm_pred)
         wh_loss = self.regl1_loss(wh_true, wh_pred, mask, mask_sum)
@@ -460,4 +487,4 @@ class Ctdet_Loss(tf.keras.losses.Loss):
         # total_loss [batch, ]
         total_loss = self.hm_weight * heatmap_loss + self.wh_weight * wh_loss + self.offset_weight * off_loss
 
-        return total_loss / self.h.batch_size
+        return total_loss
