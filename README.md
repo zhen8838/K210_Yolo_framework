@@ -227,3 +227,30 @@ ncc infer xxx.kmodel xxxxx/k210_infer --dataset xxxxx/images --input-mean 0.0 --
 python3 ./keras_inference.py log/xxxxx/infer_model_100.h5 xxxxx/images --results_path xxxxx/k210_infer
 ```
 
+
+
+# FACE Recognition
+
+## Prepare dataset
+
+Download [CelebFaces](http://mmlab.ie.cuhk.edu.hk/projects/CelebA.html) dataset.
+Download dlib [landmark data](https://share.weiyun.com/5L3XEQc)
+
+```sh
+python3 ./make_celeba_facerec.py --align_data data/landmarks.dat \
+                              --org_root xxxxx/img_align_celeba \
+                              --new_root xxxxx/img_cropped_celeba \
+                              --identity_file xxxxx/identity_CelebA.txt \
+                              --partition_file xxxxx/list_eval_partition.txt \
+                              --ann_file data/celeba_facerec_img_ann.npy \
+                              --is_crop True \
+                              --is_save True
+```
+
+now you have `data/celeba_facerec_img_ann.npy`
+
+## Train
+
+```sh
+make train CFG=config/default_facerec.yml
+```
