@@ -370,7 +370,7 @@ class YOLOAlign_Loss(Loss):
                  iou_thresh: float, obj_weight: float,
                  noobj_weight: float, wh_weight: float,
                  landmark_weight: float, layer: int,
-                 reduction=losses_utils.ReductionV2.AUTO, name=None):
+                 reduction=losses_utils.ReductionV2.SUM_OVER_BATCH_SIZE, name=None):
         """  yolo align loss function
 
         Parameters
@@ -454,31 +454,31 @@ class YOLOAlign_Loss(Loss):
 
         xy_loss = tf.reduce_sum(
             obj_mask * coord_weight * tf.nn.sigmoid_cross_entropy_with_logits(
-                labels=grid_true_xy, logits=grid_pred_xy))
+                labels=grid_true_xy, logits=grid_pred_xy), [1, 2, 3, 4])
 
         wh_loss = tf.reduce_sum(
             obj_mask * coord_weight * self.wh_weight * tf.square(tf.subtract(
-                x=grid_true_wh, y=grid_pred_wh)))
+                x=grid_true_wh, y=grid_pred_wh)), [1, 2, 3, 4])
 
         obj_loss = self.obj_weight * tf.reduce_sum(
             obj_mask * tf.nn.sigmoid_cross_entropy_with_logits(
-                labels=true_confidence, logits=pred_confidence))
+                labels=true_confidence, logits=pred_confidence), [1, 2, 3, 4])
 
         noobj_loss = self.noobj_weight * tf.reduce_sum(
             (1 - obj_mask) * ignore_mask * tf.nn.sigmoid_cross_entropy_with_logits(
-                labels=true_confidence, logits=pred_confidence))
+                labels=true_confidence, logits=pred_confidence), [1, 2, 3, 4])
 
         cls_loss = tf.reduce_sum(
             obj_mask * tf.nn.sigmoid_cross_entropy_with_logits(
-                labels=true_cls, logits=pred_cls))
+                labels=true_cls, logits=pred_cls), [1, 2, 3, 4])
 
         landmark_loss = tf.reduce_sum(
-            # NOTE obj_mask shape is [?,7,10,5,1] can't broadcast with [?,7,10,5,5,2]
+            # NOTE obj_mask shape is [?,7,10,anchor,1] can't broadcast with [?,7,10,anchor,landmark,2]
             self.landmark_weight * obj_mask[..., tf.newaxis] * tf.square(tf.subtract(
-                x=bbox_true_landmark, y=tf.sigmoid(bbox_pred_landmark))))
+                x=bbox_true_landmark, y=tf.sigmoid(bbox_pred_landmark))), [1, 2, 3, 4, 5])
 
-        total_loss = (obj_loss + noobj_loss + cls_loss + xy_loss + wh_loss +
-                      landmark_loss + 0 * self.landmark_error.assign(landmark_loss))
+        total_loss = obj_loss + noobj_loss + cls_loss + xy_loss + wh_loss + landmark_loss + \
+            0 * self.landmark_error.assign(tf.reduce_sum(landmark_loss))
 
         return total_loss
 

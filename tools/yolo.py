@@ -443,7 +443,7 @@ class YOLOHelper(BaseHelper):
             raw_img = tf.image.decode_image(tf.io.read_file(img_path), channels=3, expand_animations=False)
             # resize image -> image augmenter -> normlize image
             raw_img, ann = tf.numpy_function(self.process_img,
-                                             [raw_img, ann, is_augment, True],
+                                             [raw_img, ann, is_augment, True, False],
                                              [tf.uint8, tf.float64])
             # make labels
             labels = tf.numpy_function(self.ann_to_label, [ann], [tf.float32] * len(self.anchors))

@@ -167,7 +167,7 @@ python3 ./make_anchor_list.py \
 ## Train
 
 ```sh
-python3 ./keras_train.py --config_file config/default_yoloalgin.yml
+make train CFG=config/default_yoloalgin.yml
 ```
 
 

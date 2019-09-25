@@ -117,22 +117,21 @@ def yolov2algin_mobilev1(input_shape: list, anchor_num: int, class_num: int, lan
     elif alpha == 1.:
         base_model.load_weights('data/mobilenet_v1_base_10.h5')
 
-    x = base_model.output
+    x1 = base_model.get_layer('conv_pw_11_relu').output  # [14,20,256]
+
+    x2 = base_model.output  # [7,10,512]
+
+    x1 = resblock_body(x1, 128, 2)  # 7,10,128
 
     if alpha == .5:
-        y = compose(
-            DarknetConv2D_BN_Leaky(192, (3, 3)),
-            DarknetConv2D_BN_Leaky(192, (3, 3)))(x)
-    elif alpha == .75:
-        y = compose(
-            DarknetConv2D_BN_Leaky(192, (3, 3)),
-            DarknetConv2D_BN_Leaky(128, (3, 3)))(x)
-    elif alpha == 1.:
-        y = compose(
-            DarknetConv2D_BN_Leaky(128, (3, 3)),
-            DarknetConv2D_BN_Leaky(128, (3, 3)))(x)
+        filter_num = 192
+    else:
+        filter_num = 128
 
-    y = DarknetConv2D(anchor_num * (5 + landmark_num * 2 + class_num), (1, 1))(y)
+    y = compose(
+        k.layers.Concatenate(),
+        DarknetConv2D_BN_Leaky(filter_num, (3, 3)),
+        DarknetConv2D(anchor_num * (5 + landmark_num * 2 + class_num), (1, 1)))([x1, x2])  # [7,10,48]
 
     y_reshape = kl.Reshape((7, 10, anchor_num, 5 + landmark_num * 2 + class_num), name='l1')(y)
 

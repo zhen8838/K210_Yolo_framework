@@ -20,8 +20,8 @@ model:
     - 224
     - 320
     - 3
-    anchor_num: 3
-    class_num: 20
+    anchor_num: 5
+    class_num: 1
     landmark_num: 5
     alpha: 0.75
   loss: YOLOAlign_Loss
