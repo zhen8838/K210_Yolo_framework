@@ -7,7 +7,6 @@ from tools.yoloalign import YOLOAlignHelper, YOLOAlign_Loss
 from tools.pfld import PFLDHelper, PFLD_Loss
 from tools.facerec import FaceAccuracy
 from tools.custom import Yolo_P_R, Lookahead, PFLDMetric, YOLO_LE
-from models.networks import yolo_mobilev2, pfld
 import os
 from pathlib import Path
 from datetime import datetime
@@ -176,10 +175,12 @@ def main(config_file, new_cfg, mode, model, train, prune):
         if train.modelcheckpoint == True:
             # find best auto saved model, and save best infer model
             auto_saved_list = list(log_dir.glob('auto_train_*.h5'))  # type:List[Path]
+            # use `int value`  for sort ~
+            auto_saved_list = list(zip(auto_saved_list, [int(p.stem.split('_')[-1]) for p in auto_saved_list]))
             if len(auto_saved_list) > 0:
-                auto_saved_list.sort()
-                train_model.load_weights(str(auto_saved_list[-1]))
-                infer_ckpt = str(auto_saved_list[-1]).replace('train', 'infer')
+                auto_saved_list.sort(key=lambda x: x[1])
+                train_model.load_weights(str(auto_saved_list[-1][0]))
+                infer_ckpt = str(auto_saved_list[-1][0]).replace('train', 'infer')
                 k.models.save_model(infer_model, infer_ckpt)
             print(INFO, f' Save Best Infer Model as {infer_ckpt}')
 

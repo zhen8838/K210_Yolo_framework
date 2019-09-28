@@ -2,7 +2,6 @@ import tensorflow as tf
 from tensorflow.python import keras
 from pathlib import Path
 from tools.base import INFO, ERROR, NOTE
-from models.networks import *
 import argparse
 import sys
 import numpy as np

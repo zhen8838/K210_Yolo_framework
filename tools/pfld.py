@@ -287,7 +287,7 @@ def pfld_infer(img_path: Path, infer_model: tf.keras.Model,
     result_path : Path
         by default None
 
-    h : YOLOHelper
+    h : PFLDHelper
 
     """
     print(INFO, f'Load Images from {str(img_path)}')

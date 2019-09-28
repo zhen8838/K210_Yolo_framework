@@ -8,7 +8,8 @@ from imgaug import BoundingBoxesOnImage
 from skimage.transform import AffineTransform, warp, resize
 from skimage.io import imshow, show
 from skimage.draw import rectangle_perimeter
-from tools.base import INFO
+from tools.base import INFO, ERROR, NOTE
+from pathlib import Path
 
 
 class CtdetHelper(BaseHelper):
@@ -128,21 +129,23 @@ class CtdetHelper(BaseHelper):
             [image src,box] after data augmenter
             image src dtype is uint8
         """
-        seq_det = self.iaaseq.to_deterministic()
-        p = ann[:, 0:1]
-        xywh_box = ann[:, 1:]
+        if ann is not None:
+            seq_det = self.iaaseq.to_deterministic()
+            p = ann[:, 0:1]
+            xywh_box = ann[:, 1:]
 
-        bbs = BoundingBoxesOnImage.from_xyxy_array(center_to_corner(xywh_box, in_hw=img.shape[0:2]), shape=img.shape)
+            bbs = BoundingBoxesOnImage.from_xyxy_array(center_to_corner(xywh_box, in_hw=img.shape[0:2]), shape=img.shape)
 
-        image_aug = seq_det.augment_images([img])[0]
-        bbs_aug = seq_det.augment_bounding_boxes([bbs])[0]
-        bbs_aug = bbs_aug.remove_out_of_image().clip_out_of_image()
+            image_aug = seq_det.augment_images([img])[0]
+            bbs_aug = seq_det.augment_bounding_boxes([bbs])[0]
+            bbs_aug = bbs_aug.remove_out_of_image().clip_out_of_image()
 
-        xyxy_box = bbs_aug.to_xyxy_array()
-        new_ann = corner_to_center(xyxy_box, in_hw=img.shape[0:2])
-        new_ann = np.hstack((p[0:new_ann.shape[0], :], new_ann))
-
-        return image_aug, new_ann
+            xyxy_box = bbs_aug.to_xyxy_array()
+            new_ann = corner_to_center(xyxy_box, in_hw=img.shape[0:2])
+            new_ann = np.hstack((p[0:new_ann.shape[0], :], new_ann))
+            return image_aug, new_ann
+        else:
+            return img, ann
 
     def resize_img(self, img: np.ndarray, ann: np.ndarray) -> [np.ndarray, np.ndarray]:
         """
@@ -170,8 +173,9 @@ class CtdetHelper(BaseHelper):
         translation = ((in_wh - img_wh * scale) / 2).astype(int)
 
         """ calculate the box transform matrix """
-        ann[:, 1:3] = (ann[:, 1:3] * img_wh * scale + translation) / in_wh
-        ann[:, 3:5] = (ann[:, 3:5] * img_wh * scale) / in_wh
+        if ann is not None:
+            ann[:, 1:3] = (ann[:, 1:3] * img_wh * scale + translation) / in_wh
+            ann[:, 3:5] = (ann[:, 3:5] * img_wh * scale) / in_wh
 
         """ apply Affine Transform """
         aff = AffineTransform(scale=scale, translation=translation)
@@ -193,7 +197,8 @@ class CtdetHelper(BaseHelper):
 
             colors image
         """
-        color = np.array([np.array(self.colormap, dtype=np.float32)[c][np.newaxis, np.newaxis, :] * heatmap[:, :, c:c + 1] for c in range(self.class_num)])
+        color = np.array([np.array(self.colormap, dtype=np.float32)[c][np.newaxis, np.newaxis, :] *
+                          heatmap[:, :, c:c + 1] for c in range(self.class_num)])
         return resize(np.sum(color, 0), self.in_hw, preserve_range=True).astype('uint8')
 
     def blend_img(self, raw_img: np.ndarray, colors_img: np.ndarray, factor: float = 0.6) -> np.ndarray:
@@ -278,7 +283,8 @@ class CtdetHelper(BaseHelper):
 
         return np.concatenate((clses, (ct_int + offset[idx]) / self.out_hw, obj_wh[idx] / self.out_hw), -1)
 
-    def _build_datapipe(self, image_ann_list: np.ndarray, batch_size: int, rand_seed: int, is_augment: bool, is_normlize: bool) -> tf.data.Dataset:
+    def _build_datapipe(self, image_ann_list: np.ndarray, batch_size: int, rand_seed: int,
+                        is_augment: bool, is_normlize: bool) -> tf.data.Dataset:
         print(INFO, 'data augment is ', str(is_augment))
 
         def parser(i: tf.Tensor):
@@ -362,8 +368,9 @@ class CtdetHelper(BaseHelper):
 
 
 class Ctdet_Loss(tf.keras.losses.Loss):
-    def __init__(self, h: CtdetHelper, obj_thresh: float, hm_weight: float, wh_weight: float, offset_weight: float,
-                 reduction=ReductionV2.SUM_OVER_BATCH_SIZE, name=None):
+    def __init__(self, h: CtdetHelper, obj_thresh: float, hm_weight: float,
+                 wh_weight: float, offset_weight: float,
+                 reduction=ReductionV2.AUTO, name=None):
         """ centernet detection loss obj
 
         Parameters
@@ -406,23 +413,21 @@ class Ctdet_Loss(tf.keras.losses.Loss):
         -------
         tf.Tensor
             heatmap loss
-            shape : [batch,]
+            shape : [1,]
         """
-        z = true_hm
-        x = pred_hm
-        x_s = tf.sigmoid(pred_hm)
+        pred_hm = tf.sigmoid(pred_hm)
+        pred_hm = tf.clip_by_value(pred_hm, 1e-4, 1.0 - 1e-4)
 
-        pos_inds = tf.cast(tf.equal(z, 1.), tf.float32)
+        pos_inds = tf.cast(tf.equal(true_hm, 1.), tf.float32)
         neg_inds = 1 - pos_inds
-        neg_weights = tf.pow(1 - z, 4)
+        neg_weights = tf.pow(1 - true_hm, 4)
 
         # neg entropy loss =  −log(sigmoid(x)) ∗ (1−sigmoid(x))^2 − log(1−sigmoid(x)) ∗ sigmoid(x)^2
-        loss = tf.add(tf.nn.softplus(-x) * tf.pow(1 - x_s, 2) * pos_inds, (x + tf.nn.softplus(-x)) * tf.pow(x_s, 2) * neg_weights * neg_inds)
+        loss = tf.add(- tf.log(pred_hm) * (1 - pred_hm) * (1 - pred_hm) * pos_inds,
+                      - tf.log(1 - pred_hm) * pred_hm * pred_hm * neg_weights * neg_inds)
+        loss = tf.reduce_sum(loss) / tf.reduce_sum(pos_inds)
 
-        num_pos = tf.reduce_sum(pos_inds, [1, 2, 3])
-        loss = tf.reduce_sum(loss, [1, 2, 3])
-
-        return tf.div_no_nan(loss, num_pos)
+        return loss
 
     def regl1_loss(self, gt: tf.Tensor, pred: tf.Tensor, mask: tf.Tensor, mask_sum: tf.Tensor) -> tf.Tensor:
         """[summary]
@@ -444,36 +449,9 @@ class Ctdet_Loss(tf.keras.losses.Loss):
         -------
         tf.Tensor
             total_loss 
-            shape : [batch,]
+            shape : [1,]
         """
-        return tf.div_no_nan(tf.reduce_sum(tf.abs((gt - pred) * mask), [1, 2, 3]), mask_sum)
-
-    def cross_entropy_loss(self, true_hm: tf.Tensor, pred_hm: tf.Tensor) -> tf.Tensor:
-        """ use cross entropy calc heatmap loss
-
-        Parameters
-        ----------
-        true_hm : tf.Tensor
-            shape : [batch, out_h , out_w, calss_num]
-        pred_hm : tf.Tensor
-            shape : [batch, out_h , out_w, calss_num]
-
-        Returns
-        -------
-        tf.Tensor
-            shape : [batch, ]
-        """
-        z = true_hm
-        x = pred_hm
-
-        pos_inds = tf.cast(tf.equal(z, 1.), tf.float32)
-        neg_inds = 1 - pos_inds
-        neg_weight = tf.pow(1 - z, 4)
-
-        loss = tf.add(neg_weight * (1 - z) * x, (neg_weight * (1 - z) + z) * (tf.log1p(tf.exp(-tf.abs(x))) + tf.nn.relu(-x)))
-        loss = tf.reduce_sum(loss, [1, 2, 3])
-        num_pos = tf.reduce_sum(pos_inds, [1, 2, 3])
-        return tf.div_no_nan(loss, num_pos)
+        return (tf.reduce_sum(tf.abs((gt - pred) * mask)) / mask_sum)
 
     def call(self, y_true: tf.Tensor, y_pred: tf.Tensor):
         """ split the label """
@@ -484,7 +462,67 @@ class Ctdet_Loss(tf.keras.losses.Loss):
         heatmap_loss = self.focal_loss(hm_true, hm_pred)
         wh_loss = self.regl1_loss(wh_true, wh_pred, mask, mask_sum)
         off_loss = self.regl1_loss(off_true, off_pred, mask, mask_sum)
-        # total_loss [batch, ]
+        # total_loss [1, ]
         total_loss = self.hm_weight * heatmap_loss + self.wh_weight * wh_loss + self.offset_weight * off_loss
 
-        return total_loss
+        return total_loss / self.h.batch_size
+
+
+def ctdet_infer(img_path: Path, infer_model: tf.keras.Model,
+                result_path: Path, h: CtdetHelper, radius: int = 1):
+    """
+        CenterNet Detection inference function
+
+    Parameters
+    ----------
+    img_path : Path
+
+        img path or img folder path
+
+    infer_model : tf.keras.Model
+
+        inference model object
+
+    result_path : Path
+
+        by default None
+
+    h : CtdetHelper
+
+    """
+    print(INFO, f'Load Images from {str(img_path)}')
+    if img_path.is_dir():
+        img_path_list = []
+        for suffix in ['bmp', 'jpg', 'jpeg', 'png']:
+            img_path_list += list(img_path.glob(f'*.{suffix}'))
+        raw_img = np.array([h.read_img(str(p)).numpy() for p in img_path_list])
+    elif img_path.is_file():
+        raw_img = tf.expand_dims(h.read_img(str(img_path)), 0).numpy()
+    else:
+        ValueError(f'{ERROR} img_path `{str(img_path)}` is invalid')
+    raw_img_hw = np.array([src.shape[0:2] for src in raw_img])
+
+    if result_path is not None:
+        print(INFO, f'Load Nncase Results from {str(result_path)}')
+        if result_path.is_dir():
+            ncc_result = np.array([np.fromfile(
+                str(result_path / (img_path_list[i].stem + '.bin')),
+                dtype='float32') for i in range(len(img_path_list))])  # type:np.ndarray
+        elif result_path.is_file():
+            ncc_result = np.expand_dims(np.fromfile(str(result_path), dtype='float32'), 0)  # type:np.ndarray
+        else:
+            ValueError(f'{ERROR} result_path `{str(result_path)}` is invalid')
+    else:
+        ncc_result = None
+    print(INFO, f'Infer Results')
+    resize_img = tf.stack([h.resize_img(src) for src in raw_img])
+
+    img = h.normlize_img(resize_img)
+    """ get output """
+    result = infer_model.predict(img)  # type:np.ndarray
+
+    """ show ctdet result """
+    if ncc_result is None:
+        pass
+    else:
+        pass

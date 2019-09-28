@@ -15,7 +15,7 @@ model:
     - - 14
       - 20
     validation_split: 0.1
-  network: yolo_mobilev2
+  network: yolo_mbv2_k210
   network_kwarg:
     input_shape:
     - 224
