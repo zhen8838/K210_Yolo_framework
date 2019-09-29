@@ -429,6 +429,37 @@ class Ctdet_Loss(tf.keras.losses.Loss):
 
         return loss
 
+    def softpuls_focal_loss(self, true_hm: tf.Tensor, pred_hm: tf.Tensor) -> tf.Tensor:
+        """ Modified focal loss. Exactly the same as CornerNet.
+            Runs faster and costs a little bit more memory
+
+        Parameters
+        ----------
+        true_hm : tf.Tensor
+            shape : [batch, out_h , out_w, calss_num]
+        pred_hm : tf.Tensor
+            shape : [batch, out_h , out_w, calss_num]
+
+        Returns
+        -------
+        tf.Tensor
+            heatmap loss
+            shape : [1,]
+        """
+        z = true_hm
+        x = pred_hm
+        x_s = tf.sigmoid(pred_hm)
+
+        pos_inds = tf.cast(tf.equal(z, 1.), tf.float32)
+        neg_inds = 1 - pos_inds
+        neg_weights = tf.pow(1 - z, 4)
+
+        # neg entropy loss =  −log(sigmoid(x)) ∗ (1−sigmoid(x))^2 − log(1−sigmoid(x)) ∗ sigmoid(x)^2
+        loss = tf.add(tf.nn.softplus(-x) * tf.pow(1 - x_s, 2) * pos_inds, (x + tf.nn.softplus(-x)) * tf.pow(x_s, 2) * neg_weights * neg_inds)        
+        loss = tf.reduce_sum(loss) / tf.reduce_sum(pos_inds)
+
+        return loss
+
     def regl1_loss(self, gt: tf.Tensor, pred: tf.Tensor, mask: tf.Tensor, mask_sum: tf.Tensor) -> tf.Tensor:
         """[summary]
 
@@ -459,7 +490,7 @@ class Ctdet_Loss(tf.keras.losses.Loss):
         hm_pred, wh_pred, off_pred = tf.split(y_pred, [self.h.class_num, 2, 2], -1)
         mask_sum = tf.reduce_sum(tf.cast(mask, tf.float32), [1, 2, 3])
 
-        heatmap_loss = self.focal_loss(hm_true, hm_pred)
+        heatmap_loss = self.softpuls_focal_loss(hm_true, hm_pred)
         wh_loss = self.regl1_loss(wh_true, wh_pred, mask, mask_sum)
         off_loss = self.regl1_loss(off_true, off_pred, mask, mask_sum)
         # total_loss [1, ]
