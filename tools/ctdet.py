@@ -429,7 +429,7 @@ class Ctdet_Loss(tf.keras.losses.Loss):
 
         return loss
 
-    def softpuls_focal_loss(self, true_hm: tf.Tensor, pred_hm: tf.Tensor) -> tf.Tensor:
+    def softpuls_focal_loss(self, true_hm: tf.Tensor, pred_hm: tf.Tensor, num_pos: tf.Tensor) -> tf.Tensor:
         """ Modified focal loss. Exactly the same as CornerNet.
             Runs faster and costs a little bit more memory
 
@@ -439,7 +439,10 @@ class Ctdet_Loss(tf.keras.losses.Loss):
             shape : [batch, out_h , out_w, calss_num]
         pred_hm : tf.Tensor
             shape : [batch, out_h , out_w, calss_num]
-
+        num_pos : tf.Tensor
+            valid mask sum
+            shape : [1, ]
+        
         Returns
         -------
         tf.Tensor
@@ -455,12 +458,13 @@ class Ctdet_Loss(tf.keras.losses.Loss):
         neg_weights = tf.pow(1 - z, 4)
 
         # neg entropy loss =  −log(sigmoid(x)) ∗ (1−sigmoid(x))^2 − log(1−sigmoid(x)) ∗ sigmoid(x)^2
-        loss = tf.add(tf.nn.softplus(-x) * tf.pow(1 - x_s, 2) * pos_inds, (x + tf.nn.softplus(-x)) * tf.pow(x_s, 2) * neg_weights * neg_inds)        
-        loss = tf.reduce_sum(loss) / tf.reduce_sum(pos_inds)
+        loss = tf.add(tf.nn.softplus(-x) * tf.pow(1 - x_s, 2) * pos_inds,
+                      (x + tf.nn.softplus(-x)) * tf.pow(x_s, 2) * neg_weights * neg_inds)
+        loss = tf.reduce_sum(loss) / num_pos
 
         return loss
 
-    def regl1_loss(self, gt: tf.Tensor, pred: tf.Tensor, mask: tf.Tensor, mask_sum: tf.Tensor) -> tf.Tensor:
+    def regl1_loss(self, gt: tf.Tensor, pred: tf.Tensor, mask: tf.Tensor, num_pos: tf.Tensor) -> tf.Tensor:
         """[summary]
 
         Parameters
@@ -471,10 +475,9 @@ class Ctdet_Loss(tf.keras.losses.Loss):
             shape : [batch, out_h, out_w, 2]
         mask : tf.Tensor
             shape : [batch, out_h, out_w, 1]
-        mask_sum : tf.Tensor
+        num_pos : tf.Tensor
             valid mask sum
-            shape : [batch, ]
-
+            shape : [1, ]
 
         Returns
         -------
@@ -482,15 +485,15 @@ class Ctdet_Loss(tf.keras.losses.Loss):
             total_loss 
             shape : [1,]
         """
-        return (tf.reduce_sum(tf.abs((gt - pred) * mask)) / mask_sum)
+        return (tf.reduce_sum(tf.abs((gt - pred) * mask)) / num_pos)
 
     def call(self, y_true: tf.Tensor, y_pred: tf.Tensor):
         """ split the label """
         hm_true, wh_true, off_true, mask = tf.split(y_true, [self.h.class_num, 2, 2, 1], -1)
         hm_pred, wh_pred, off_pred = tf.split(y_pred, [self.h.class_num, 2, 2], -1)
-        mask_sum = tf.reduce_sum(tf.cast(mask, tf.float32), [1, 2, 3])
+        mask_sum = tf.reduce_sum(tf.cast(mask, tf.float32))
 
-        heatmap_loss = self.softpuls_focal_loss(hm_true, hm_pred)
+        heatmap_loss = self.softpuls_focal_loss(hm_true, hm_pred, mask_sum)
         wh_loss = self.regl1_loss(wh_true, wh_pred, mask, mask_sum)
         off_loss = self.regl1_loss(off_true, off_pred, mask, mask_sum)
         # total_loss [1, ]

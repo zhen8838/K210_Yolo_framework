@@ -103,7 +103,7 @@ def main(config_file, new_cfg, mode, model, train, prune):
     elif model.name == 'feacrec':
         loss_obj = loss_register[model.loss](h=h, **model.loss_kwarg)
         losses = [loss_obj]
-        metrics = [FaceAccuracy(loss_obj.p_dist_var, loss_obj.alpha)]
+        metrics = [FaceAccuracy(loss_obj.dist_var, loss_obj.alpha)]
     else:
         loss_obj = loss_register[model.loss](h=h, **model.loss_kwarg)
         losses = [loss_obj]

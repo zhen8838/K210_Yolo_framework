@@ -376,14 +376,8 @@ def mbv1_facerec(input_shape: list, embedding_size: int,
     """ build dummy model body """
 
     base_model = MobileNet(input_tensor=in_a, input_shape=input_shape,
-                           include_top=False, weights=None, alpha=depth_multiplier)  # type: keras.Model
-
-    if depth_multiplier == .5:
-        base_model.load_weights('data/mobilenet_v1_base_5.h5')
-    elif depth_multiplier == .75:
-        base_model.load_weights('data/mobilenet_v1_base_7.h5')
-    elif depth_multiplier == 1.:
-        base_model.load_weights('data/mobilenet_v1_base_10.h5')
+                           include_top=False, weights='imagenet',
+                           alpha=depth_multiplier)  # type: keras.Model
 
     body_model = k.Sequential([
         kl.Flatten(),
@@ -393,7 +387,7 @@ def mbv1_facerec(input_shape: list, embedding_size: int,
         kl.Dense(512),
         kl.AlphaDropout(0.2),
         kl.LeakyReLU(),
-        kl.Dense(embedding_size, use_bias=False, kernel_constraint=k.constraints.UnitNorm())
+        kl.Dense(embedding_size, activation='relu', use_bias=False)
     ])
 
     out_a = body_model(base_model.output)

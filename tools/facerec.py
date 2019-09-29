@@ -92,21 +92,22 @@ class Triplet_Loss(kls.Loss):
         super().__init__(reduction=reduction, name=name)
         self.h = h
         self.alpha = alpha
-        self.p_dist_var = tf.get_variable('landmark_error', shape=(self.h.batch_size), dtype=tf.float32,
-                                          initializer=tf.zeros_initializer(), trainable=False)  # type:tf.Variable
+        self.dist_var = tf.get_variable('distance_diff', shape=(self.h.batch_size, 1), dtype=tf.float32,
+                                        initializer=tf.zeros_initializer(), trainable=False)  # type:tf.Variable
 
     def call(self, y_true, y_pred: tf.Tensor):
         a, p, n = tf.split(y_pred, 3, axis=-1)
-        p_dist = tf.reduce_sum(tf.square(a - p), axis=-1)  # [batch_size]
-        n_dist = tf.reduce_sum(tf.square(a - n), axis=-1)  # [batch_size]
-        total_loss = tf.reduce_sum(tf.maximum(p_dist - n_dist + self.alpha, 0), axis=0) / self.h.batch_size
-        return total_loss + 0 * self.p_dist_var.assign(p_dist)
+        p_dist = tf.reduce_sum(tf.square(a - p), axis=-1, keep_dims=True)  # [batch_size,1]
+        n_dist = tf.reduce_sum(tf.square(a - n), axis=-1, keep_dims=True)  # [batch_size,1]
+        dist_diff = p_dist - n_dist
+        total_loss = tf.reduce_sum(tf.nn.relu(dist_diff + self.alpha)) / self.h.batch_size
+        return total_loss + 0 * self.dist_var.assign(dist_diff)
 
 
 class FaceAccuracy(MeanMetricWrapper):
     """Calculates how often predictions matches labels."""
 
-    def __init__(self, p_dist: ResourceVariable, threshold: float, name='acc', dtype=None):
+    def __init__(self, dist: ResourceVariable, threshold: float, name='acc', dtype=None):
         super(FaceAccuracy, self).__init__(
-            lambda y_true, y_pred, p_dist, threshold: tf.reduce_sum(tf.cast(p_dist < threshold, tf.float32)),
-            name, dtype=dtype, p_dist=p_dist.read_value(), threshold=threshold)
+            lambda y_true, y_pred, dist, threshold: tf.cast(dist < -threshold, tf.float32),
+            name, dtype=dtype, dist=dist.read_value(), threshold=threshold)
