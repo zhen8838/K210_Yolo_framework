@@ -147,7 +147,7 @@ class CtdetHelper(BaseHelper):
         else:
             return img, ann
 
-    def resize_img(self, img: np.ndarray, ann: np.ndarray) -> [np.ndarray, np.ndarray]:
+    def resize_img(self, img: np.ndarray, ann: np.ndarray = None) -> [np.ndarray, np.ndarray]:
         """
         resize image and keep ratio
 
@@ -442,7 +442,7 @@ class Ctdet_Loss(tf.keras.losses.Loss):
         num_pos : tf.Tensor
             valid mask sum
             shape : [1, ]
-        
+
         Returns
         -------
         tf.Tensor
@@ -502,8 +502,54 @@ class Ctdet_Loss(tf.keras.losses.Loss):
         return total_loss / self.h.batch_size
 
 
+def _nms(pred_hm, kernel=3):
+    max_hm = tf.nn.max_pool2d(pred_hm, 3, 1, 'SAME')
+    keep = tf.cast(tf.equal(max_hm, pred_hm), tf.float32)
+    new_hm = pred_hm * keep
+    return new_hm
+
+
+def _parser(pred_hm: tf.Tensor, pred_wh: tf.Tensor, pred_offset: tf.Tensor, h, batch, K=100):
+    new_hm = tf.reshape(tf.transpose(pred_hm, [0, 3, 1, 2]), (batch, h.class_num, -1))
+    topks, topkids = tf.math.top_k(new_hm, k=K)
+    topkids.shape  # [1,20,100]
+
+    yids = topkids // 96  # [batch,class_num, K]
+    xids = topkids % 96  # [batch,class_num, K]
+
+    ctopks, ctopkids = tf.math.top_k(tf.reshape(topks, (batch, -1)), k=K)
+
+    clas = ctopkids // K
+
+    new_hm = new_hm.numpy()
+    topks, topkids = topks.numpy(), topkids.numpy()
+    yids, xids = yids.numpy(), xids.numpy()
+    ctopks, ctopkids, clas = ctopks.numpy(), ctopkids.numpy(), clas.numpy()
+
+    yids = yids.ravel()[ctopkids]
+    xids = xids.ravel()[ctopkids]
+
+    score = np.array([pred_hm[i, yids[i], xids[i], clas[i]] for i in range(batch)])  # [batch, K]
+
+    wh = np.array([pred_wh[i, yids[i], xids[i]] for i in range(batch)])  # [batch, K, 2]
+
+    offset = np.array([pred_offset[i, yids[i], xids[i]] for i in range(batch)])  # [batch, K, 2]
+    
+    bb, yy, xx = np.meshgrid(np.arange(batch), np.arange(h.out_hw[0]), np.arange(h.out_hw[1]), indexing='ij')
+
+    center = np.stack((yy, xx), -1)  # [batch, K, 2]
+    center = np.array([center[i, yids[i], xids[i]] for i in range(batch)])  # [batch, K, 2]
+    yx = center + offset
+
+    xy = (yx / h.out_hw)[..., [1, 0]]
+    wh = wh / h.out_hw
+
+    pred_anns = np.concatenate([clas[..., np.newaxis], xy, wh], -1)
+    return pred_anns  # [batch , K ,5]
+
+
 def ctdet_infer(img_path: Path, infer_model: tf.keras.Model,
-                result_path: Path, h: CtdetHelper, radius: int = 1):
+                result_path: Path, h: CtdetHelper, K: int = 3):
     """
         CenterNet Detection inference function
 
@@ -536,7 +582,7 @@ def ctdet_infer(img_path: Path, infer_model: tf.keras.Model,
         ValueError(f'{ERROR} img_path `{str(img_path)}` is invalid')
     raw_img_hw = np.array([src.shape[0:2] for src in raw_img])
 
-    if result_path is not None:
+    if result_path != None:
         print(INFO, f'Load Nncase Results from {str(result_path)}')
         if result_path.is_dir():
             ncc_result = np.array([np.fromfile(
@@ -549,12 +595,17 @@ def ctdet_infer(img_path: Path, infer_model: tf.keras.Model,
     else:
         ncc_result = None
     print(INFO, f'Infer Results')
-    resize_img = tf.stack([h.resize_img(src) for src in raw_img])
+    resize_img = np.stack([h.resize_img(src)[0] for src in raw_img])  # type:np.ndarray
 
     img = h.normlize_img(resize_img)
     """ get output """
-    result = infer_model.predict(img)  # type:np.ndarray
+    pred_hm, pred_wh, pred_offset = infer_model.predict(img)  # type:np.ndarray,np.ndarray,np.ndarray
 
+    pred_hm = tf.nn.sigmoid(pred_hm)
+    pred_hm = _nms(pred_hm)
+    pred_anns = _parser(pred_hm.numpy(), pred_wh, pred_offset, h, img.shape[0], K)
+    for i in range(img.shape[0]):
+        h.draw_image(resize_img[i], pred_anns[i])
     """ show ctdet result """
     if ncc_result is None:
         pass

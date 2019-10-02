@@ -11,7 +11,6 @@ import os
 from pathlib import Path
 from datetime import datetime
 import numpy as np
-import sys
 import argparse
 from termcolor import colored
 from tensorflow_model_optimization.python.core.api.sparsity import keras as sparsity
@@ -188,7 +187,7 @@ def main(config_file, new_cfg, mode, model, train, prune):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--config_file', type=str, help='config file path', default='config/default.yml')
-    args = parser.parse_args(sys.argv[1:])
+    args = parser.parse_args()
 
     with open(args.config_file, 'r') as f:
         new_cfg = safe_load(f)

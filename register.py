@@ -5,7 +5,7 @@ from tools.custom import RAdam
 from tools.yolo import YOLOHelper, YOLO_Loss, yolo_infer
 from tools.yoloalign import YOLOAlignHelper, YOLOAlign_Loss, yoloalgin_infer
 from tools.pfld import PFLDHelper, PFLD_Loss, pfld_infer
-from tools.ctdet import CtdetHelper, Ctdet_Loss
+from tools.ctdet import CtdetHelper, Ctdet_Loss, ctdet_infer
 from tools.facerec import FcaeRecHelper, Triplet_Loss
 from yaml import safe_dump
 
@@ -170,6 +170,7 @@ infer_register = {
     'yolo_infer': yolo_infer,
     'yoloalgin_infer': yoloalgin_infer,
     'pfld_infer': pfld_infer,
+    'ctdet_infer': ctdet_infer
 }
 
 if __name__ == "__main__":
