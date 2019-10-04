@@ -10,6 +10,7 @@ import imgaug.augmenters as iaa
 from imgaug import BoundingBoxesOnImage
 import tensorflow as tf
 import tensorflow.python.keras.backend as K
+import tensorflow.python.keras as k
 from tensorflow.contrib.data import assert_element_shape
 from tensorflow.python.keras.losses import Loss
 from tensorflow.python.keras.utils import losses_utils
@@ -529,8 +530,8 @@ def tf_xywh_to_all(grid_pred_xy: tf.Tensor, grid_pred_wh: tf.Tensor, layer: int,
         after process, [all_pred_xy, all_pred_wh]
     """
     with tf.name_scope('xywh_to_all_%d' % layer):
-        all_pred_xy = (tf.sigmoid(grid_pred_xy[..., :]) + h.xy_offset[layer]) / h.out_hw[layer][::-1]
-        all_pred_wh = tf.exp(grid_pred_wh[..., :]) * h.anchors[layer]
+        all_pred_xy = (tf.sigmoid(grid_pred_xy) + h.xy_offset[layer]) / h.out_hw[layer][::-1]
+        all_pred_wh = tf.exp(grid_pred_wh) * h.anchors[layer]
     return all_pred_xy, all_pred_wh
 
 
@@ -816,18 +817,21 @@ def correct_box(box_xy: tf.Tensor, box_wh: tf.Tensor, input_hw: list, image_hw: 
     return boxes
 
 
-def yolo_infer(img_path: Path, infer_model: tf.keras.Model,
+def yolo_infer(img_path: Path, infer_model: k.Model,
                result_path: Path, h: YOLOHelper,
                obj_thresh: float = .7, iou_thresh: float = .3):
     """ load images """
     orig_img = h.read_img(str(img_path))
     image_hw = orig_img.shape[0:2]
-    img, _ = h.process_img(orig_img, true_box=None, is_augment=False, is_resize=True)
+    img, _ = h.process_img(orig_img, None, False, True, True)
     img = tf.expand_dims(img, 0)
     """ get output """
     y_pred = infer_model.predict(img)
+    # NOTE because yolo train model and infer model is same,
+    #  In order to ensure the consistency of the framework code reshape here.
+    y_pred = np.reshape(y_pred, list(y_pred.shape[:-1]) + [h.anchor_number, 5 + h.class_num])
     """ parser output """
-    class_num = h.landmark_num
+    class_num = h.class_num
     in_hw = h.in_hw
     """ box list """
     _yxyx_box = []

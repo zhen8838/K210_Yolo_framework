@@ -230,8 +230,8 @@ def tf_grid_to_all(pred_grid_xy: tf.Tensor, pred_grid_wh: tf.Tensor, pred_bbox_l
         after process, [all_xy, all_wh, all_landmark]
     """
     with tf.name_scope('xywh_to_all_%d' % layer):
-        all_xy = (tf.sigmoid(pred_grid_xy[..., :]) + h.xy_offset[layer]) / h.out_hw[layer][::-1]
-        all_wh = tf.exp(pred_grid_wh[..., :]) * h.anchors[layer]
+        all_xy = (tf.sigmoid(pred_grid_xy) + h.xy_offset[layer]) / h.out_hw[layer][::-1]
+        all_wh = tf.exp(pred_grid_wh) * h.anchors[layer]
         all_landmark = (tf.sigmoid(pred_bbox_landmark) - .5) * tf.expand_dims(all_wh, -2) + tf.expand_dims(all_xy, -2)
     return all_xy, all_wh, all_landmark
 

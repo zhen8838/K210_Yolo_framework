@@ -121,7 +121,7 @@ Refer to `default.yml` in the `config` directory.
 ## Inference
 
 ```sh
-python3 ./keras_inference.py log/xxxxx/saved_model_xx.h5 xxxxx.jpg
+make infer CKPT=log/xxxxx/train_model_3.h5 IMG=xxxxx.jpg
 ```
 
 ## Freeze
