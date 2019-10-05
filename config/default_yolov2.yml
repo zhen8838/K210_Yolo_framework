@@ -1,0 +1,82 @@
+mode: train
+model:
+  name: yolo
+  helper: YOLOHelper
+  helper_kwarg:
+    image_ann: data/voc_img_ann.npy
+    class_num: 20
+    anchors: data/voc_anchor.npy
+    in_hw:
+    - 224
+    - 320
+    out_hw:
+    - - 7
+      - 10
+    validation_split: 0.1
+  network: yolo2_mbv1_k210
+  network_kwarg:
+    input_shape:
+    - 224
+    - 320
+    - 3
+    anchor_num: 5
+    class_num: 20
+    alpha: 0.75
+  loss: YOLO_Loss
+  loss_kwarg:
+    obj_thresh: 0.7
+    iou_thresh: 0.5
+    obj_weight: 1
+    noobj_weight: 1
+    wh_weight: 1
+train:
+  jit: true
+  augmenter: false
+  batch_size: 32
+  pre_ckpt: null
+  rand_seed: 10101
+  epochs: 10
+  log_dir: log
+  debug: false
+  verbose: 1
+  vali_step_factor: 0.5
+  optimizer: RAdam
+  optimizer_kwarg:
+    lr: 0.001
+    beta_1: 0.9
+    beta_2: 0.999
+    epsilon: null
+    decay: 0.0
+  Lookahead: true
+  Lookahead_kwarg:
+    k: 5
+    alpha: 0.5
+  earlystop: true
+  earlystop_kwarg:
+    monitor: val_loss
+    min_delta: 0
+    patience: 4
+    verbose: 0
+    mode: auto
+    baseline: null
+    restore_best_weights: false
+  modelcheckpoint: true
+  modelcheckpoint_kwarg:
+    monitor: val_loss
+    verbose: 0
+    save_best_only: true
+    save_weights_only: false
+    mode: auto
+    save_freq: epoch
+    load_weights_on_restart: false
+prune:
+  is_prune: false
+  init_sparsity: 0.5
+  final_sparsity: 0.9
+  end_epoch: 5
+  frequency: 100
+inference:
+  infer_fn: yolo_infer
+  infer_fn_kwarg:
+    obj_thresh: 0.7
+    iou_thresh: 0.3
