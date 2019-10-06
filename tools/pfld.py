@@ -69,13 +69,18 @@ class PFLDHelper(BaseHelper):
         return dataset_shapes
 
     def data_augmenter(self, img, ann):
-        pass
+        """ No implement """
+        return img, ann
 
-    def _build_datapipe(self, image_ann_list: np.ndarray, batch_size: int, rand_seed: int, is_augment: bool) -> tf.data.Dataset:
+    def build_datapipe(self, image_ann_list: np.ndarray, batch_size: int,
+                       rand_seed: int, is_augment: bool,
+                       is_normlize: bool, is_training: bool) -> tf.data.Dataset:
         print(INFO, 'data augment is ', str(is_augment))
 
         def _parser_wrapper(i: tf.Tensor) -> [tf.Tensor, tf.Tensor]:
-            img_path, label = tf.numpy_function(lambda idx: (image_ann_list[idx][0], image_ann_list[idx][1].astype('float32')), [i], [tf.dtypes.string, tf.float32])
+            img_path, label = tf.numpy_function(
+                lambda idx: (image_ann_list[idx][0], image_ann_list[idx][1].astype('float32')),
+                [i], [tf.dtypes.string, tf.float32])
 
             raw_img = self.read_img(img_path)
 
@@ -89,7 +94,8 @@ class PFLDHelper(BaseHelper):
 
         dataset_shapes = self._compute_dataset_shape()
 
-        def _batch_parser(img: tf.Tensor, label: tf.Tensor) -> [tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor]:
+        def _batch_parser(img: tf.Tensor, label: tf.Tensor) -> [
+                tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor]:
             """ 
                 process ann , calc the attribute weights 
 
@@ -97,31 +103,30 @@ class PFLDHelper(BaseHelper):
             """
             attr = label[:, self.landmark_num * 2:self.landmark_num * 2 + self.attribute_num]
             mat_ratio = tf.reduce_mean(attr, axis=0, keepdims=True)
-            mat_ratio = tf.where(mat_ratio > 0, 1. / mat_ratio, tf.ones([1, self.attribute_num]) * batch_size)
+            mat_ratio = tf.where(mat_ratio > 0, 1. / mat_ratio,
+                                 tf.ones([1, self.attribute_num]) * batch_size)
             attribute_weight = tf.matmul(attr, mat_ratio, transpose_b=True)  # [n,1]
 
-            return img, tf.concat((label[:, 0:self.landmark_num * 2], attribute_weight, label[:, self.landmark_num * 2 + self.attribute_num:]), 1)
+            return img, tf.concat((label[:, 0:self.landmark_num * 2], attribute_weight,
+                                   label[:, self.landmark_num * 2 + self.attribute_num:]), 1)
+        if is_training:
+            ds = (tf.data.Dataset.from_tensor_slices(tf.range(len(image_ann_list)))
+                  .shuffle(batch_size * 500, rand_seed)
+                  .repeat()
+                  .map(_parser_wrapper, -1)
+                  .batch(batch_size, True)
+                  .map(_batch_parser, -1)
+                  .prefetch(-1)
+                  .apply(assert_element_shape(dataset_shapes)))
+        else:
+            ds = (tf.data.Dataset.from_tensor_slices(tf.range(len(image_ann_list)))
+                  .map(_parser_wrapper, -1)
+                  .batch(batch_size, True)
+                  .map(_batch_parser, -1)
+                  .prefetch(-1)
+                  .apply(assert_element_shape(dataset_shapes)))
 
-        dataset = (
-            tf.data.Dataset.from_tensor_slices(tf.range(len(image_ann_list)))
-            .shuffle(batch_size * 500, rand_seed)
-            .repeat()
-            .map(_parser_wrapper, -1)
-            .batch(batch_size, True)
-            .map(_batch_parser, -1)
-            .prefetch(-1)
-            .apply(assert_element_shape(dataset_shapes))
-        )
-
-        return dataset
-
-    def set_dataset(self, batch_size, rand_seed, is_augment=True):
-        self.train_dataset = self._build_datapipe(self.train_list, batch_size, rand_seed, is_augment)
-        self.test_dataset = self._build_datapipe(self.test_list, batch_size, rand_seed, False)
-
-        self.batch_size = batch_size
-        self.train_epoch_step = self.train_total_data // self.batch_size
-        self.test_epoch_step = self.test_total_data // self.batch_size
+        return ds
 
     def draw_image(self, img: np.ndarray, ann: np.ndarray, is_show=True):
         """ draw img and show bbox , set ann = None will not show bbox
@@ -139,7 +144,9 @@ class PFLDHelper(BaseHelper):
             show image
         """
 
-        landmark, attribute, euler = np.split(ann, [self.landmark_num * 2, self.landmark_num * 2 + self.attribute_num])
+        landmark, attribute, euler = np.split(
+            ann, [self.landmark_num * 2,
+                  self.landmark_num * 2 + self.attribute_num])
 
         landmark = landmark.reshape(-1, 2) * img.shape[0:2]
         for (x, y) in landmark.astype('uint8'):
@@ -267,8 +274,10 @@ class PFLD_Loss(Loss):
 
         pred_landmark, pred_eular = tf.split(y_pred, [self.h.landmark_num * 2, 3], 1)
 
-        eular_loss = self.eular_weight * tf.reduce_sum(1. - tf.cos(tf.abs(true_eular - pred_eular)), axis=1)
-        landmark_loss = self.landmark_weight * tf.reduce_sum(tf.square(true_landmark - tf.sigmoid(pred_landmark)), 1)
+        eular_loss = self.eular_weight * tf.reduce_sum(
+            1. - tf.cos(tf.abs(true_eular - pred_eular)), axis=1)
+        landmark_loss = self.landmark_weight * tf.reduce_sum(
+            tf.square(true_landmark - tf.sigmoid(pred_landmark)), 1)
 
         loss = tf.reduce_mean(true_a_w * landmark_loss * eular_loss)
         return loss
@@ -310,7 +319,8 @@ def pfld_infer(img_path: Path, infer_model: tf.keras.Model,
                 str(result_path / (img_path_list[i].stem + '.bin')),
                 dtype='float32') for i in range(len(img_path_list))])  # type:np.ndarray
         elif result_path.is_file():
-            ncc_result = np.expand_dims(np.fromfile(str(result_path), dtype='float32'), 0)  # type:np.ndarray
+            ncc_result = np.expand_dims(np.fromfile(str(result_path),
+                                                    dtype='float32'), 0)  # type:np.ndarray
         else:
             ValueError(f'{ERROR} result_path `{str(result_path)}` is invalid')
     else:

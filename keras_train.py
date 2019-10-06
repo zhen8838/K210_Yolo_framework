@@ -1,18 +1,14 @@
 import tensorflow as tf
 import tensorflow.python.keras as k
 from tensorflow.python.keras.callbacks import TensorBoard, EarlyStopping, CSVLogger, ModelCheckpoint
-from tools.yolo import YOLOHelper, YOLO_Loss
 from tools.base import INFO, ERROR, NOTE
-from tools.yoloalign import YOLOAlignHelper, YOLOAlign_Loss
-from tools.pfld import PFLDHelper, PFLD_Loss
 from tools.facerec import FaceAccuracy
 from tools.custom import Yolo_P_R, Lookahead, PFLDMetric, YOLO_LE
-import os
+from tools.base import BaseHelper
 from pathlib import Path
 from datetime import datetime
 import numpy as np
 import argparse
-from termcolor import colored
 from tensorflow_model_optimization.python.core.api.sparsity import keras as sparsity
 from register import dict2obj, network_register, optimizer_register, helper_register, loss_register
 from yaml import safe_dump, safe_load
@@ -49,17 +45,17 @@ def main(config_file, new_cfg, mode, model, train, prune):
 
     """ Build Data Input PipeLine """
 
-    h = helper_register[model.helper](**model.helper_kwarg)  # type: YOLOHelper
-    h.set_dataset(train.batch_size, train.rand_seed, is_augment=train.augmenter)
+    h = helper_register[model.helper](**model.helper_kwarg)  # type:BaseHelper
+    h.set_dataset(train.batch_size, train.rand_seed, train.augmenter)
 
     train_ds = h.train_dataset
-    validation_ds = h.test_dataset
+    validation_ds = h.val_dataset
     train_epoch_step = h.train_epoch_step
-    vali_epoch_step = h.test_epoch_step * train.vali_step_factor
+    vali_epoch_step = h.val_epoch_step * train.vali_step_factor
 
     """ Build Network """
 
-    network = network_register[model.network]  # type:yolo_mobilev2
+    network = network_register[model.network]
     infer_model, train_model = network(**model.network_kwarg)
 
     """  Config Prune Model Paramter """
@@ -95,8 +91,10 @@ def main(config_file, new_cfg, mode, model, train, prune):
         loss_obj = loss_register[model.loss]  # type:PFLD_Loss
         losses = [loss_obj(h=h, **model.loss_kwarg)]
         # NOTE share the variable avoid more repeated calculation
-        le = PFLDMetric(False, model.helper_kwarg['landmark_num'], train.batch_size, name='LE', dtype=tf.float32)
-        fr = PFLDMetric(True, model.helper_kwarg['landmark_num'], train.batch_size, name='FR', dtype=tf.float32)
+        le = PFLDMetric(False, model.helper_kwarg['landmark_num'],
+                        train.batch_size, name='LE', dtype=tf.float32)
+        fr = PFLDMetric(True, model.helper_kwarg['landmark_num'],
+                        train.batch_size, name='FR', dtype=tf.float32)
         fr.failure_num, fr.total = le.failure_num, le.total
         metrics = [le, fr]
     elif model.name == 'feacrec':
@@ -139,7 +137,8 @@ def main(config_file, new_cfg, mode, model, train, prune):
         cbs.append(ModelCheckpoint(str(log_dir / 'auto_train_{epoch:d}.h5'),
                                    **train.modelcheckpoint_kwarg))
 
-    file_writer = tf.compat.v1.summary.FileWriter(str(log_dir), sess.graph)  # NOTE avoid can't write graph, I don't now why..
+    # NOTE avoid can't write graph, I don't now why..
+    file_writer = tf.compat.v1.summary.FileWriter(str(log_dir), sess.graph)
 
     """ Start Training """
     try:

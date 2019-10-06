@@ -42,7 +42,7 @@ ArgDict = {
             'anchors': 'data/voc_anchor.npy',
             'in_hw': [224, 320],
             'out_hw': [[7, 10], [14, 20]],
-            'validation_split': 0.1,  # vaildation_split
+            'validation_split': 0.3,  # vaildation_split
         },
 
         'network': 'yolo_mbv2_k210',

@@ -158,31 +158,13 @@ def corner_to_center(xyxy_ann: np.ndarray, from_all_scale=True, in_hw=None) -> n
 
 
 class YOLOHelper(BaseHelper):
-    def __init__(self, image_ann: str, class_num: int, anchors: str, in_hw: tuple, out_hw: tuple, validation_split=0.1):
-        super().__init__()
+    def __init__(self, image_ann: str, class_num: int, anchors: str,
+                 in_hw: tuple, out_hw: tuple, validation_split=0.1):
+        super().__init__(image_ann, validation_split)
         self.in_hw = np.array(in_hw)
         assert self.in_hw.ndim == 1
         self.out_hw = np.array(out_hw)
         assert self.out_hw.ndim == 2
-        self.validation_split = validation_split  # type:float
-        if image_ann == None:
-            self.train_list = None
-            self.test_list = None
-        else:
-            img_ann_list = np.load(image_ann, allow_pickle=True)
-
-            if isinstance(img_ann_list[()], dict):
-                # NOTE can use dict set trian and test dataset
-                self.train_list = img_ann_list[()]['train_data']  # type:np.ndarray
-                self.test_list = img_ann_list[()]['test_data']  # type:np.ndarray
-            elif isinstance(img_ann_list[()], np.ndarray):
-                num = int(len(img_ann_list) * self.validation_split)
-                self.train_list = img_ann_list[num:]  # type:np.ndarray
-                self.test_list = img_ann_list[:num]  # type:np.ndarray
-            else:
-                raise ValueError(f'{image_ann} data format error!')
-            self.train_total_data = len(self.train_list)  # type:int
-            self.test_total_data = len(self.test_list)  # type:int
         self.grid_wh = (1 / self.out_hw)[:, [1, 0]]  # hw 转 wh 需要交换两列
         if class_num:
             self.class_num = class_num  # type:int
@@ -350,7 +332,8 @@ class YOLOHelper(BaseHelper):
         p = ann[:, 0:1]
         xywh_box = ann[:, 1:]
 
-        bbs = BoundingBoxesOnImage.from_xyxy_array(center_to_corner(xywh_box, in_hw=img.shape[0:2]), shape=img.shape)
+        bbs = BoundingBoxesOnImage.from_xyxy_array(
+            center_to_corner(xywh_box, in_hw=img.shape[0:2]), shape=img.shape)
 
         image_aug = seq_det.augment_images([img])[0]
         bbs_aug = seq_det.augment_bounding_boxes([bbs])[0]
@@ -433,16 +416,18 @@ class YOLOHelper(BaseHelper):
         dataset_shapes = (tf.TensorShape([None] + list(self.in_hw) + [3]), tuple(output_shapes))
         return dataset_shapes
 
-    def _build_datapipe(self, image_ann_list: np.ndarray, batch_size: int, rand_seed: int, is_augment: bool) -> tf.data.Dataset:
+    def build_datapipe(self, image_ann_list: np.ndarray, batch_size: int,
+                       rand_seed: int, is_augment: bool,
+                       is_normlize: bool, is_training: bool) -> tf.data.Dataset:
         print(INFO, 'data augment is ', str(is_augment))
 
         def _parser_wrapper(i: tf.Tensor):
-            # TODO 使用ragged tensorflow来提高速度
+            # NOTE use wrapper function and dynamic list construct (x,(y_1,y_2,...))
             img_path, ann = tf.numpy_function(lambda idx: (image_ann_list[idx][0], image_ann_list[idx][1]),
                                               [i], [tf.dtypes.string, tf.float64])
             # load image
             raw_img = tf.image.decode_image(tf.io.read_file(img_path), channels=3, expand_animations=False)
-            # resize image -> image augmenter -> normlize image
+            # resize image -> image augmenter
             raw_img, ann = tf.numpy_function(self.process_img,
                                              [raw_img, ann, is_augment, True, False],
                                              [tf.uint8, tf.float64])
@@ -450,28 +435,29 @@ class YOLOHelper(BaseHelper):
             labels = tf.numpy_function(self.ann_to_label, [ann], [tf.float32] * len(self.anchors))
 
             # normlize image
-            img = self.normlize_img(raw_img)
+            if is_normlize:
+                img = self.normlize_img(raw_img)
+            else:
+                img = tf.cast(img, tf.float32)
 
-            # NOTE use wrapper function and dynamic list construct (x,(y_1,y_2,...))
             return img, tuple(labels)
 
         dataset_shapes = self._compute_dataset_shape()
-
-        dataset = (tf.data.Dataset.from_tensor_slices(tf.range(len(image_ann_list))).
-                   shuffle(batch_size * 500 if is_augment == True else batch_size * 50, rand_seed).repeat().
-                   map(_parser_wrapper, -1).
-                   batch(batch_size, True).prefetch(-1).
-                   apply(assert_element_shape(dataset_shapes)))
+        if is_training:
+            dataset = (tf.data.Dataset.from_tensor_slices(tf.range(len(image_ann_list))).
+                       shuffle(batch_size * 500 if is_augment == True else batch_size * 50, rand_seed).
+                       repeat().
+                       map(_parser_wrapper, -1).
+                       batch(batch_size, True).prefetch(-1).
+                       apply(assert_element_shape(dataset_shapes)))
+        else:
+            dataset = (tf.data.Dataset.from_tensor_slices(
+                tf.range(len(image_ann_list))).
+                map(_parser_wrapper, -1).
+                batch(batch_size, True).prefetch(-1).
+                apply(assert_element_shape(dataset_shapes)))
 
         return dataset
-
-    def set_dataset(self, batch_size, rand_seed, is_augment=True):
-        self.train_dataset = self._build_datapipe(self.train_list, batch_size, rand_seed, is_augment)
-        self.test_dataset = self._build_datapipe(self.test_list, batch_size, rand_seed, False)
-
-        self.batch_size = batch_size
-        self.train_epoch_step = self.train_total_data // self.batch_size
-        self.test_epoch_step = self.test_total_data // self.batch_size
 
     def draw_image(self, img: np.ndarray, ann: np.ndarray, is_show=True, scores=None):
         """ draw img and show bbox , set ann = None will not show bbox
@@ -500,16 +486,21 @@ class YOLOHelper(BaseHelper):
                        np.maximum(np.minimum(r_bottom[1], img.shape[0] - 12), 0))
                 cv2.rectangle(img, r_top, l_bottom, self.colormap[classes])
                 if isinstance(scores, np.ndarray):
-                    cv2.putText(img, f'{classes} {scores[i]:.2f}', org, cv2.FONT_HERSHEY_COMPLEX_SMALL, 0.5, self.colormap[classes], thickness=1)
+                    cv2.putText(img, f'{classes} {scores[i]:.2f}',
+                                org, cv2.FONT_HERSHEY_COMPLEX_SMALL,
+                                0.5, self.colormap[classes], thickness=1)
                 else:
-                    cv2.putText(img, f'{classes}', org, cv2.FONT_HERSHEY_COMPLEX_SMALL, 0.5, self.colormap[classes], thickness=1)
+                    cv2.putText(img, f'{classes}', org,
+                                cv2.FONT_HERSHEY_COMPLEX_SMALL, 0.5,
+                                self.colormap[classes], thickness=1)
 
         if is_show:
             imshow((img).astype('uint8'))
             show()
 
 
-def tf_xywh_to_all(grid_pred_xy: tf.Tensor, grid_pred_wh: tf.Tensor, layer: int, h: YOLOHelper) -> [tf.Tensor, tf.Tensor]:
+def tf_xywh_to_all(grid_pred_xy: tf.Tensor, grid_pred_wh: tf.Tensor,
+                   layer: int, h: YOLOHelper) -> [tf.Tensor, tf.Tensor]:
     """ rescale the pred raw [grid_pred_xy,grid_pred_wh] to [0~1]
 
     Parameters
@@ -560,7 +551,8 @@ def tf_xywh_to_grid(all_true_xy: tf.Tensor, all_true_wh: tf.Tensor, layer: int, 
     return grid_true_xy, grid_true_wh
 
 
-def tf_reshape_box(true_xy_A: tf.Tensor, true_wh_A: tf.Tensor, p_xy_A: tf.Tensor, p_wh_A: tf.Tensor, layer: int, helper: YOLOHelper) -> tuple:
+def tf_reshape_box(true_xy_A: tf.Tensor, true_wh_A: tf.Tensor, p_xy_A: tf.Tensor,
+                   p_wh_A: tf.Tensor, layer: int, helper: YOLOHelper) -> tuple:
     """ reshape the xywh to [?,h,w,anchor_nums,true_box_nums,2]
         NOTE  must use obj mask in atrue xywh !
     Parameters
@@ -591,8 +583,10 @@ def tf_reshape_box(true_xy_A: tf.Tensor, true_wh_A: tf.Tensor, p_xy_A: tf.Tensor
         true_cent = true_xy_A[tf.newaxis, tf.newaxis, tf.newaxis, tf.newaxis, ...]
         true_box_wh = true_wh_A[tf.newaxis, tf.newaxis, tf.newaxis, tf.newaxis, ...]
 
-        true_cent = tf.tile(true_cent, [helper.batch_size, helper.out_hw[layer][0], helper.out_hw[layer][1], helper.anchor_number, 1, 1])
-        true_box_wh = tf.tile(true_box_wh, [helper.batch_size, helper.out_hw[layer][0], helper.out_hw[layer][1], helper.anchor_number, 1, 1])
+        true_cent = tf.tile(true_cent, [helper.batch_size, helper.out_hw[layer][0],
+                                        helper.out_hw[layer][1], helper.anchor_number, 1, 1])
+        true_box_wh = tf.tile(true_box_wh, [helper.batch_size, helper.out_hw[layer][0],
+                                            helper.out_hw[layer][1], helper.anchor_number, 1, 1])
 
         pred_cent = p_xy_A[..., tf.newaxis, :]
         pred_box_wh = p_wh_A[..., tf.newaxis, :]
@@ -602,7 +596,8 @@ def tf_reshape_box(true_xy_A: tf.Tensor, true_wh_A: tf.Tensor, p_xy_A: tf.Tensor
     return true_cent, true_box_wh, pred_cent, pred_box_wh
 
 
-def tf_iou(pred_xy: tf.Tensor, pred_wh: tf.Tensor, vaild_xy: tf.Tensor, vaild_wh: tf.Tensor) -> tf.Tensor:
+def tf_iou(pred_xy: tf.Tensor, pred_wh: tf.Tensor,
+           vaild_xy: tf.Tensor, vaild_wh: tf.Tensor) -> tf.Tensor:
     """ calc the iou form pred box with vaild box
 
     Parameters
@@ -744,7 +739,8 @@ class YOLO_Loss(Loss):
 
         grid_true_xy, grid_true_wh = tf_xywh_to_grid(all_true_xy, all_true_wh, self.layer, self.h)
         # NOTE When wh=0 , tf.log(0) = -inf, so use K.switch to avoid it
-        grid_true_wh = tf.where(tf.tile(obj_mask_bool[..., tf.newaxis], [1, 1, 1, 1, 2]), grid_true_wh, tf.zeros_like(grid_true_wh))
+        grid_true_wh = tf.where(tf.tile(obj_mask_bool[..., tf.newaxis], [1, 1, 1, 1, 2]),
+                                grid_true_wh, tf.zeros_like(grid_true_wh))
 
         """ define loss """
         coord_weight = 2 - all_true_wh[..., 0:1] * all_true_wh[..., 1:2]
@@ -774,7 +770,8 @@ class YOLO_Loss(Loss):
         return total_loss
 
 
-def correct_box(box_xy: tf.Tensor, box_wh: tf.Tensor, input_hw: list, image_hw: list) -> tf.Tensor:
+def correct_box(box_xy: tf.Tensor, box_wh: tf.Tensor,
+                input_hw: list, image_hw: list) -> tf.Tensor:
     """rescae predict box to orginal image scale
 
     Parameters

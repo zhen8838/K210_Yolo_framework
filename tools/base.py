@@ -9,15 +9,58 @@ NOTE = colored('[ NOTE ]', 'green')  # type:str
 
 
 class BaseHelper(object):
-    def __init__(self):
-        self.train_dataset = None
-        self.test_dataset = None
-        self.train_epoch_step = None
-        self.test_epoch_step = None
+    def __init__(self, image_ann: str, validation_split: float):
+        self.train_dataset: tf.data.Dataset = None
+        self.val_dataset: tf.data.Dataset = None
+        self.test_dataset: tf.data.Dataset = None
+
+        self.train_epoch_step: int = None
+        self.val_epoch_step: int = None
+        self.test_epoch_step: int = None
+
+        self.validation_split = validation_split  # type:float
+        if image_ann == None:
+            self.train_list: np.ndarray = None
+            self.val_list: np.ndarray = None
+            self.test_list: np.ndarray = None
+        else:
+            img_ann_list = np.load(image_ann, allow_pickle=True)
+
+            if isinstance(img_ann_list[()], dict):
+                # NOTE can use dict set trian and test dataset
+                self.train_list = img_ann_list[()]['train_data']  # type:np.ndarray
+                self.val_list = img_ann_list[()]['val_data']  # type:np.ndarray
+                self.test_list = img_ann_list[()]['test_data']  # type:np.ndarray
+            elif isinstance(img_ann_list[()], np.ndarray):
+                self.train_list, self.val_list, self.test_list = np.split(
+                    img_ann_list,
+                    [int((1 - self.validation_split) * len(img_ann_list)),
+                     int((1 - self.validation_split / 2) * len(img_ann_list))])
+            else:
+                raise ValueError(f'{image_ann} data format error!')
+            self.train_total_data = len(self.train_list)
+            self.val_total_data = len(self.val_list)
+            self.test_total_data = len(self.test_list)
 
     @abc.abstractmethod
-    def set_dataset(self, batch_size, rand_seed, is_augment=True):
+    def build_datapipe(self, image_ann_list: np.ndarray, batch_size: int,
+                       rand_seed: int, is_augment: bool,
+                       is_normlize: bool, is_training: bool) -> tf.data.Dataset:
         NotImplementedError('Must be implemented in subclasses.')
+
+    def set_dataset(self, batch_size: int, rand_seed: int, is_augment: bool = True,
+                    is_normlize: bool = True, is_training: bool = True):
+        self.batch_size = batch_size
+        if is_training:
+            self.train_dataset = self.build_datapipe(self.train_list, batch_size, rand_seed, is_augment, is_normlize, is_training)
+            self.val_dataset = self.build_datapipe(self.val_list, batch_size, rand_seed, False, is_normlize, is_training)
+
+            self.train_epoch_step = self.train_total_data // self.batch_size
+            self.val_epoch_step = self.val_total_data // self.batch_size
+        else:
+            self.test_dataset = self.build_datapipe(self.val_list, batch_size,
+                                                    rand_seed, False, is_normlize, is_training)
+            self.test_epoch_step = self.test_total_data // self.batch_size
 
     def read_img(self, img_path: str) -> tf.Tensor:
         """ read image """

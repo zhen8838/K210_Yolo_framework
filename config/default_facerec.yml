@@ -29,7 +29,7 @@ train:
   log_dir: log
   debug: false
   verbose: 1
-  vali_step_factor: 0.1
+  vali_step_factor: 0.3
   optimizer: RAdam
   optimizer_kwarg:
     lr: 0.0005

@@ -13,7 +13,7 @@ model:
     out_hw:
       - - 7
         - 10
-    validation_split: 0.1
+    validation_split: 0.3
   network: yolov2algin_mbv1_k210
   network_kwarg:
     input_shape:

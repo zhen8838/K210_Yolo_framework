@@ -14,29 +14,11 @@ from pathlib import Path
 
 class CtdetHelper(BaseHelper):
     def __init__(self, image_ann: str, class_num: int, in_hw: tuple, out_hw: tuple, validation_split=0.1):
+        super().__init__(image_ann, validation_split)
         self.in_hw = np.array(in_hw)
         assert self.in_hw.ndim == 1
         self.out_hw = np.array(out_hw)
         assert self.out_hw.ndim == 1
-        self.validation_split = validation_split  # type:float
-        if image_ann == None:
-            self.train_list = None
-            self.test_list = None
-        else:
-            img_ann_list = np.load(image_ann, allow_pickle=True)
-
-            if isinstance(img_ann_list[()], dict):
-                # NOTE can use dict set trian and test dataset
-                self.train_list = img_ann_list[()]['train_data']  # type:np.ndarray
-                self.test_list = img_ann_list[()]['test_data']  # type:np.ndarray
-            elif isinstance(img_ann_list[()], np.ndarray):
-                num = int(len(img_ann_list) * self.validation_split)
-                self.train_list = img_ann_list[num:]  # type:np.ndarray
-                self.test_list = img_ann_list[:num]  # type:np.ndarray
-            else:
-                raise ValueError(f'{image_ann} data format error!')
-            self.train_total_data = len(self.train_list)  # type:int
-            self.test_total_data = len(self.test_list)  # type:int
         if class_num:
             self.class_num = class_num  # type:int
 
@@ -283,8 +265,9 @@ class CtdetHelper(BaseHelper):
 
         return np.concatenate((clses, (ct_int + offset[idx]) / self.out_hw, obj_wh[idx] / self.out_hw), -1)
 
-    def _build_datapipe(self, image_ann_list: np.ndarray, batch_size: int, rand_seed: int,
-                        is_augment: bool, is_normlize: bool) -> tf.data.Dataset:
+    def build_datapipe(self, image_ann_list: np.ndarray, batch_size: int,
+                       rand_seed: int, is_augment: bool,
+                       is_normlize: bool, is_training: bool) -> tf.data.Dataset:
         print(INFO, 'data augment is ', str(is_augment))
 
         def parser(i: tf.Tensor):
@@ -312,20 +295,17 @@ class CtdetHelper(BaseHelper):
 
             return img, labels
 
-        dataset = (tf.data.Dataset.from_tensor_slices(tf.range(len(image_ann_list))).
-                   shuffle(batch_size * 500 if is_augment == True else batch_size * 50, rand_seed).repeat().
-                   map(parser, -1).
-                   batch(batch_size, True).prefetch(-1))
+        if is_training:
+            ds = (tf.data.Dataset.from_tensor_slices(tf.range(len(image_ann_list))).
+                  shuffle(batch_size * 500 if is_augment == True else batch_size * 50, rand_seed).repeat().
+                  map(parser, -1).
+                  batch(batch_size, True).prefetch(-1))
+        else:
+            ds = (tf.data.Dataset.from_tensor_slices(tf.range(len(image_ann_list))).
+                  map(parser, -1).
+                  batch(batch_size, True).prefetch(-1))
 
-        return dataset
-
-    def set_dataset(self, batch_size, rand_seed, is_augment=True, is_normlize=True):
-        self.train_dataset = self._build_datapipe(self.train_list, batch_size, rand_seed, is_augment, is_normlize)
-        self.test_dataset = self._build_datapipe(self.test_list, batch_size, rand_seed, False, is_normlize)
-
-        self.batch_size = batch_size
-        self.train_epoch_step = self.train_total_data // self.batch_size
-        self.test_epoch_step = self.test_total_data // self.batch_size
+        return ds
 
     def draw_image(self, img: np.ndarray, ann: np.ndarray, heatmap: np.ndarray = None, is_show=True):
         """ draw img and show bbox , set ann = None will not show bbox
@@ -534,7 +514,7 @@ def _parser(pred_hm: tf.Tensor, pred_wh: tf.Tensor, pred_offset: tf.Tensor, h, b
     wh = np.array([pred_wh[i, yids[i], xids[i]] for i in range(batch)])  # [batch, K, 2]
 
     offset = np.array([pred_offset[i, yids[i], xids[i]] for i in range(batch)])  # [batch, K, 2]
-    
+
     bb, yy, xx = np.meshgrid(np.arange(batch), np.arange(h.out_hw[0]), np.arange(h.out_hw[1]), indexing='ij')
 
     center = np.stack((yy, xx), -1)  # [batch, K, 2]
