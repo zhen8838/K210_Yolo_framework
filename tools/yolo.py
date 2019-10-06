@@ -438,7 +438,7 @@ class YOLOHelper(BaseHelper):
             if is_normlize:
                 img = self.normlize_img(raw_img)
             else:
-                img = tf.cast(img, tf.float32)
+                img = tf.cast(raw_img, tf.float32)
 
             return img, tuple(labels)
 
@@ -747,23 +747,23 @@ class YOLO_Loss(Loss):
 
         xy_loss = tf.reduce_sum(
             obj_mask * coord_weight * tf.nn.sigmoid_cross_entropy_with_logits(
-                labels=grid_true_xy, logits=grid_pred_xy))
+                labels=grid_true_xy, logits=grid_pred_xy), [1, 2, 3, 4])
 
         wh_loss = tf.reduce_sum(
             obj_mask * coord_weight * self.wh_weight * tf.square(tf.subtract(
-                x=grid_true_wh, y=grid_pred_wh)))
+                x=grid_true_wh, y=grid_pred_wh)), [1, 2, 3, 4])
 
         obj_loss = self.obj_weight * tf.reduce_sum(
             obj_mask * tf.nn.sigmoid_cross_entropy_with_logits(
-                labels=true_confidence, logits=pred_confidence))
+                labels=true_confidence, logits=pred_confidence), [1, 2, 3, 4])
 
         noobj_loss = self.noobj_weight * tf.reduce_sum(
             (1 - obj_mask) * ignore_mask * tf.nn.sigmoid_cross_entropy_with_logits(
-                labels=true_confidence, logits=pred_confidence))
+                labels=true_confidence, logits=pred_confidence), [1, 2, 3, 4])
 
         cls_loss = tf.reduce_sum(
             obj_mask * tf.nn.sigmoid_cross_entropy_with_logits(
-                labels=true_cls, logits=pred_cls))
+                labels=true_cls, logits=pred_cls), [1, 2, 3, 4])
 
         total_loss = obj_loss + noobj_loss + cls_loss + xy_loss + wh_loss
 
