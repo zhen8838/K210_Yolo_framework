@@ -85,7 +85,8 @@ class BaseHelper(object):
         return (tf.cast(img, tf.float32) / 255. - 0.5) / 1
 
     def process_img(self, img: np.ndarray, ann: np.ndarray,
-                    is_augment: bool, is_resize: bool, is_normlize: bool) -> [np.ndarray, np.ndarray]:
+                    is_augment: bool, is_resize: bool,
+                    is_normlize: bool) -> [tf.Tensor, tf.Tensor]:
         """ process image and true box , if is training then use data augmenter
 
         Parameters
