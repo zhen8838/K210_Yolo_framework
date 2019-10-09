@@ -10,3 +10,6 @@ train:
 
 infer:
 	python3 ./keras_inference.py ${CKPT} ${IMG} --results_path ${RES}
+	
+eval:
+	python3 ./keras_eval.py ${CKPT}

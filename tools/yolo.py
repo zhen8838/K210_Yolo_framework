@@ -18,6 +18,8 @@ from matplotlib.pyplot import text
 from PIL import Image, ImageFont, ImageDraw
 from tools.base import BaseHelper, INFO, ERROR, NOTE
 from pathlib import Path
+from tqdm import trange
+from termcolor import colored
 
 
 def fake_iou(a: np.ndarray, b: np.ndarray) -> float:
@@ -771,7 +773,7 @@ class YOLO_Loss(Loss):
 
 
 def correct_box(box_xy: tf.Tensor, box_wh: tf.Tensor,
-                input_hw: list, image_hw: list) -> tf.Tensor:
+                input_hw: list, img_hw: list) -> tf.Tensor:
     """rescae predict box to orginal image scale
 
     Parameters
@@ -782,7 +784,7 @@ def correct_box(box_xy: tf.Tensor, box_wh: tf.Tensor,
         box wh
     input_hw : list
         input shape
-    image_hw : list
+    img_hw : list
         image shape
 
     Returns
@@ -793,8 +795,8 @@ def correct_box(box_xy: tf.Tensor, box_wh: tf.Tensor,
     box_yx = box_xy[..., ::-1]
     box_hw = box_wh[..., ::-1]
     input_hw = tf.cast(input_hw, tf.float32)
-    image_hw = tf.cast(image_hw, tf.float32)
-    new_shape = tf.round(image_hw * tf.reduce_min(input_hw / image_hw))
+    img_hw = tf.cast(img_hw, tf.float32)
+    new_shape = tf.round(img_hw * tf.reduce_min(input_hw / img_hw))
     offset = (input_hw - new_shape) / 2. / input_hw
     scale = input_hw / new_shape
     box_yx = (box_yx - offset) * scale
@@ -810,26 +812,45 @@ def correct_box(box_xy: tf.Tensor, box_wh: tf.Tensor,
     ], axis=-1)
 
     # Scale boxes back to original image shape.
-    boxes *= tf.concat([image_hw, image_hw], axis=-1)
+    boxes *= tf.concat([img_hw, img_hw], axis=-1)
     return boxes
 
 
-def yolo_infer(img_path: Path, infer_model: k.Model,
-               result_path: Path, h: YOLOHelper,
-               obj_thresh: float = .7, iou_thresh: float = .3):
-    """ load images """
-    orig_img = h.read_img(str(img_path))
-    image_hw = orig_img.shape[0:2]
-    img, _ = h.process_img(orig_img, None, False, True, True)
-    img = tf.expand_dims(img, 0)
-    """ get output """
+def yolo_parser_one(img: tf.Tensor, img_hw: np.ndarray, infer_model: k.Model, obj_thresh: float, iou_thresh: float, h: YOLOHelper) -> [np.ndarray, np.ndarray, np.ndarray]:
+    """ yolo parser one image output
+
+    Parameters
+    ----------
+    img : tf.Tensor
+
+        image src, shape = [1,in h,in w,3]
+
+    img_hw : np.ndarray
+
+        image orginal hw, shape = [2]
+
+    infer_model : k.Model
+
+        infer model
+
+    obj_thresh : float
+
+    iou_thresh : float
+
+    h : YOLOHelper
+
+    Returns
+    -------
+    [np.ndarray, np.ndarray, np.ndarray]
+
+        box : [y1, x1, y2, y2]
+        clss : [class]
+        score : [score]
+    """
     y_pred = infer_model.predict(img)
     # NOTE because yolo train model and infer model is same,
     #  In order to ensure the consistency of the framework code reshape here.
     y_pred = np.reshape(y_pred, list(y_pred.shape[:-1]) + [h.anchor_number, 5 + h.class_num])
-    """ parser output """
-    class_num = h.class_num
-    in_hw = h.in_hw
     """ box list """
     _yxyx_box = []
     _yxyx_box_scores = []
@@ -846,9 +867,9 @@ def yolo_infer(img_path: Path, infer_model: k.Model,
         """ reshape box  """
         # NOTE tf_xywh_to_all will auto use sigmoid function
         pred_xy_A, pred_wh_A = tf_xywh_to_all(pred_xy, pred_wh, l, h)
-        boxes = correct_box(pred_xy_A, pred_wh_A, in_hw, image_hw)
+        boxes = correct_box(pred_xy_A, pred_wh_A, h.in_hw, img_hw)
         boxes = tf.reshape(boxes, (-1, 4))
-        box_scores = tf.reshape(box_scores, (-1, class_num))
+        box_scores = tf.reshape(box_scores, (-1, h.class_num))
         """ append box and scores to global list """
         _yxyx_box.append(boxes)
         _yxyx_box_scores.append(box_scores)
@@ -862,7 +883,7 @@ def yolo_infer(img_path: Path, infer_model: k.Model,
     _boxes = []
     _scores = []
     _classes = []
-    for c in range(class_num):
+    for c in range(h.class_num):
         class_boxes = tf.boolean_mask(yxyx_box, mask[:, c])
         class_box_scores = tf.boolean_mask(yxyx_box_scores[:, c], mask[:, c])
         select = tf.image.non_max_suppression(
@@ -873,15 +894,55 @@ def yolo_infer(img_path: Path, infer_model: k.Model,
         _scores.append(class_box_scores)
         _classes.append(tf.ones_like(class_box_scores) * c)
 
-    boxes = tf.concat(_boxes, axis=0)
-    classes = tf.concat(_classes, axis=0)
-    scores = tf.concat(_scores, axis=0)
+    box = tf.concat(_boxes, axis=0)
+    clss = tf.concat(_classes, axis=0)
+    score = tf.concat(_scores, axis=0)
+    return box.numpy(), clss.numpy(), score.numpy()
 
+
+def yolo_infer(img_path: Path, infer_model: k.Model,
+               result_path: Path, h: YOLOHelper,
+               obj_thresh: float = .7, iou_thresh: float = .3):
+    """ yolo infer function
+
+    Parameters
+    ----------
+    img_path : Path
+
+        image path or image dir path
+
+    infer_model : k.Model
+
+        infer model
+
+    result_path : Path
+
+        result path dir
+
+    h : YOLOHelper
+
+    obj_thresh : float, optional
+
+        object detection thresh, by default .7
+
+    iou_thresh : float, optional
+
+        iou thresh , by default .3
+
+    """
+
+    """ load images """
+    orig_img = h.read_img(str(img_path))
+    img_hw = orig_img.shape[0:2]
+    img, _ = h.process_img(orig_img, None, False, True, True)
+    img = tf.expand_dims(img, 0)
+    """ get output """
+    boxes, classes, scores = yolo_parser_one(img, img_hw, infer_model, obj_thresh, iou_thresh, h)
     """ draw box  """
     font = ImageFont.truetype(font='asset/FiraMono-Medium.otf',
-                              size=tf.cast(tf.floor(3e-2 * image_hw[0] + 0.5), tf.int32).numpy())
+                              size=(np.floor(3e-2 * img_hw[0] + 0.5)).astype(np.int))
 
-    thickness = (image_hw[0] + image_hw[1]) // 300
+    thickness = (img_hw[0] + img_hw[1]) // 300
 
     """ show result """
     if len(classes) > 0:
@@ -895,15 +956,15 @@ def yolo_infer(img_path: Path, infer_model: k.Model,
             label_size = draw.textsize(label, font)
             top, left, bottom, right = box
             print(f'[{top:.1f}\t{left:.1f}\t{bottom:.1f}\t{right:.1f}\t{score:.2f}\t{int(c):2d}]')
-            top = max(0, tf.cast(tf.floor(top + 0.5), tf.int32))
-            left = max(0, tf.cast(tf.floor(left + 0.5), tf.int32))
-            bottom = min(image_hw[0], tf.cast(tf.floor(bottom + 0.5), tf.int32))
-            right = min(image_hw[1], tf.cast(tf.floor(right + 0.5), tf.int32))
+            top = max(0, (np.floor(top + 0.5)).astype(np.int))
+            left = max(0, (np.floor(left + 0.5)).astype(np.int))
+            bottom = min(img_hw[0], (np.floor(bottom + 0.5)).astype(np.int))
+            right = min(img_hw[1], (np.floor(right + 0.5)).astype(np.int))
 
-            if top - image_hw[0] >= 0:
-                text_origin = tf.convert_to_tensor([left, top - label_size[1]])
+            if top - img_hw[0] >= 0:
+                text_origin = np.array([left, top - label_size[1]])
             else:
-                text_origin = tf.convert_to_tensor([left, top + 1])
+                text_origin = np.array([left, top + 1])
 
             for j in range(thickness):
                 draw.rectangle(
@@ -917,3 +978,168 @@ def yolo_infer(img_path: Path, infer_model: k.Model,
         pil_img.show()
     else:
         print(NOTE, ' no boxes detected')
+
+
+def voc_ap(recall: np.ndarray, precision: np.ndarray) -> float:
+    """ 
+        Compute VOC AP given precision and recall
+
+    Parameters
+    ----------
+    recall : np.ndarray
+
+        recall, shape = [len(imgs)]
+
+    precision : np.ndarray
+
+        precison, shape = [len(imgs)]
+
+
+    Returns
+    -------
+
+    float
+
+        ap
+
+    """
+
+    mrec = np.concatenate(([0.], recall, [1.]))
+    mpre = np.concatenate(([0.], precision, [0.]))
+
+    # compute the precision envelope
+    for i in range(len(mpre) - 1, 0, -1):
+        mpre[i - 1] = np.maximum(mpre[i - 1], mpre[i])
+
+    # to calculate area under PR curve, look for points
+    #  where X axis (recall) changes value
+
+    i = np.where(mrec[1:] != mrec[:-1])[0]
+    # and sum (\Delta recall) * prec
+    Ap = np.sum((mrec[i + 1] - mrec[i]) * mpre[i + 1])
+    return Ap
+
+
+def yolo_eval(infer_model: k.Model, h: YOLOHelper, det_obj_thresh: float,
+              det_iou_thresh: float, mAp_iou_thresh: float):
+    """ calc yolo pre-class Ap and mAp
+
+    Parameters
+    ----------
+    infer_model : k.Model
+
+    h : YOLOHelper
+
+    det_obj_thresh : float
+
+        detection obj thresh
+
+    det_iou_thresh : float
+
+        detection iou thresh
+
+    mAp_iou_thresh : float
+
+        mAp iou thresh
+    """
+    p_img_ids = [[] for i in range(h.class_num)]
+    p_scores = [[] for i in range(h.class_num)]
+    p_bboxes = [[] for i in range(h.class_num)]
+    t_res = [{} for i in range(h.class_num)]  # type:list[dict]
+    t_npos = np.zeros((h.class_num, 1))
+    for i in trange(len(h.test_list)):
+        img_path, true_ann, img_hw = h.test_list[i]
+        img_name = Path(img_path).stem
+        raw_img = tf.image.decode_image(tf.io.read_file(img_path), channels=3)
+        img, _ = h.process_img(raw_img.numpy(), None, False, True, True)
+        img = img[tf.newaxis, ...]
+
+        p_yxyx, p_clas, p_score = yolo_parser_one(img, img_hw,
+                                                  infer_model, det_obj_thresh,
+                                                  det_iou_thresh, h)
+
+        for j, c in enumerate(p_clas.astype(np.int)):
+            p_img_ids[c].append(img_name)
+            p_scores[c].append(p_score[j])
+            p_bboxes[c].append(np.array(
+                [np.maximum(p_yxyx[j, 1], 0),
+                 np.maximum(p_yxyx[j, 0], 0),
+                 np.minimum(p_yxyx[j, 3], img_hw[1]),
+                 np.minimum(p_yxyx[j, 2], img_hw[0])]))
+
+        true_clas, true_box = np.split(true_ann, [1], -1)
+        true_xyxy = center_to_corner(true_box, in_hw=img_hw)
+        true_clas = np.ravel(true_clas)
+        for c in true_clas.astype(np.int):
+            t_res[c][img_name] = {
+                'bbox': true_xyxy,
+                'det': [False] * len(true_xyxy)}
+            t_npos[c] = t_npos[c] + 1
+
+    p_img_ids = np.array([np.array(i, dtype=np.str) for i in p_img_ids])
+    p_scores = np.array([np.array(i) for i in p_scores])
+    p_bboxes = np.array([np.stack(i) for i in p_bboxes])
+
+    """ sorted pre-classes by scores """
+    sorted_ind = np.array([np.argsort(-s) for s in p_scores])
+    sorted_scores = np.array([np.sort(-s) for s in p_scores])
+    p_bboxes = np.array([p_bboxes[i][sorted_ind[i]] for i, b in enumerate(p_bboxes)])
+    p_img_ids = np.array([p_img_ids[i][sorted_ind[i]] for i, b in enumerate(p_img_ids)])
+
+    """ calc pre-classes tp and fp """
+    nd = [len(i) for i in p_img_ids]
+    tp = np.array([np.zeros(nd[i]) for i in range(h.class_num)])
+    fp = np.array([np.zeros(nd[i]) for i in range(h.class_num)])
+    for c in range(h.class_num):
+        for d in range(nd[c]):
+            if p_img_ids[c][d] in t_res[c]:
+                gt = t_res[c].get(p_img_ids[c][d])  # type:dict
+            else:
+                continue
+            bb = p_bboxes[c][d]
+            gtbb = gt['bbox']
+            if len(gtbb) > 0:
+                ixmin = np.maximum(gtbb[:, 0], bb[0])
+                iymin = np.maximum(gtbb[:, 1], bb[1])
+                ixmax = np.minimum(gtbb[:, 2], bb[2])
+                iymax = np.minimum(gtbb[:, 3], bb[3])
+                iw = np.maximum(ixmax - ixmin + 1., 0.)
+                ih = np.maximum(iymax - iymin + 1., 0.)
+                inters = iw * ih
+
+                # union
+                uni = ((bb[2] - bb[0] + 1.) *
+                       (bb[3] - bb[1] + 1.) +
+                       (gtbb[:, 2] - gtbb[:, 0] + 1.) *
+                       (gtbb[:, 3] - gtbb[:, 1] + 1.) - inters)
+
+                overlaps = inters / uni
+                ovmax = np.max(overlaps)
+                jmax = np.argmax(overlaps)
+            else:
+                continue
+
+            if ovmax > mAp_iou_thresh:
+                if not gt['det'][jmax]:
+                    tp[c][d] = 1.  # tp + 1
+                    gt['det'][jmax] = True  # detectioned = true
+                else:
+                    fp[c][d] = 1.
+            else:
+                fp[c][d] = 1.
+
+    Ap = np.zeros(20)
+    for c in range(h.class_num):
+        fpint = np.cumsum(fp[c])
+        tpint = np.cumsum(tp[c])
+        recall = fpint / t_npos[c]
+        precision = tpint / np.maximum(tpint + fpint,
+                                       np.finfo(np.float64).eps)
+        Ap[c] = voc_ap(recall, precision)
+
+    mAp = np.mean(Ap)
+    print('~~~~~~~~')
+    for c in range(len(Ap)):
+        print(f'AP for Class {c} =', colored(f'{Ap[c]:.4f}', 'blue'))
+    print(f'mAP =', colored(f'{mAp:.4f}', 'red'))
+    print('~~~~~~~~')

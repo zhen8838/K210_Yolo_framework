@@ -2,7 +2,7 @@ from models.networks import mbv1_facerec, mbv2_ctdet, yolo, tiny_yolo, pfld, shu
 from models.networks4k210 import yolo_mbv1_k210, yolo_mbv2_k210, yolo2_mbv1_k210, yolov2algin_mbv1_k210, pfld_k210
 from tensorflow.python.keras.optimizers import Adam, SGD, RMSprop
 from tools.custom import RAdam
-from tools.yolo import YOLOHelper, YOLO_Loss, yolo_infer
+from tools.yolo import YOLOHelper, YOLO_Loss, yolo_infer, yolo_eval
 from tools.yoloalign import YOLOAlignHelper, YOLOAlign_Loss, yoloalgin_infer
 from tools.pfld import PFLDHelper, PFLD_Loss, pfld_infer
 from tools.ctdet import CtdetHelper, Ctdet_Loss, ctdet_infer
@@ -125,6 +125,14 @@ ArgDict = {
             'iou_thresh': .3
         },
     },
+    'evaluate': {
+        'eval_fn': 'yolo_eval',
+        'eval_fn_kwarg': {
+            'det_obj_thresh': 0.1,
+            'det_iou_thresh': 0.3,
+            'mAp_iou_thresh': 0.3
+        },
+    }
 }
 
 
@@ -172,6 +180,10 @@ infer_register = {
     'yoloalgin_infer': yoloalgin_infer,
     'pfld_infer': pfld_infer,
     'ctdet_infer': ctdet_infer
+}
+
+eval_register = {
+    'yolo_eval': yolo_eval
 }
 
 if __name__ == "__main__":

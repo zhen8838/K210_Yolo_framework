@@ -121,7 +121,13 @@ Refer to `default.yml` in the `config` directory.
 ## Inference
 
 ```sh
-make infer CKPT=log/xxxxx/train_model_3.h5 IMG=xxxxx.jpg
+make infer CKPT=log/xxxxx/train_mode_xx.h5 IMG=xxxxx.jpg
+```
+
+## Evaluate
+
+```sh
+make eval CKPT=log/xxxxx/auto_infer_xx.h5
 ```
 
 ## Freeze
