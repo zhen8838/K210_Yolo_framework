@@ -8,6 +8,7 @@ from models.dcn import DCN, DeconvLayer
 from toolz import pipe
 from models.darknet import DarknetConv2D, darknet_body, DarknetConv2D_BN_Leaky, compose, make_last_layers
 from models.shufflenet import conv_bn_relu, shufflenet_block, deconv_bn_relu
+from models.yolo_nano import yolo3_nano
 
 
 def pfld(input_shape: list, landmark_num: int, alpha=1., weight_decay=5e-5) -> [k.Model, k.Model]:

@@ -69,6 +69,8 @@ def coordinate_offset(anchors: np.ndarray, out_hw: np.ndarray) -> np.array:
     np.array
         scale shape = [n,] = [n x [h_n,w_n,m,2]]
     """
+    if len(anchors) != len(out_hw):
+        raise ValueError(ERROR, f'anchors len {len(anchors)} is not equal out_hw len {len(out_hw)}')
     grid = []
     for l in range(len(anchors)):
         grid_y = np.tile(np.reshape(np.arange(0, stop=out_hw[l][0]), [-1, 1, 1, 1]), [1, out_hw[l][1], 1, 1])

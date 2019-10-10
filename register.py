@@ -1,4 +1,4 @@
-from models.networks import mbv1_facerec, mbv2_ctdet, yolo, tiny_yolo, pfld, shuffle_ctdet
+from models.networks import mbv1_facerec, mbv2_ctdet, yolo, tiny_yolo, pfld, shuffle_ctdet, yolo3_nano
 from models.networks4k210 import yolo_mbv1_k210, yolo_mbv2_k210, yolo2_mbv1_k210, yolov2algin_mbv1_k210, pfld_k210
 from tensorflow.python.keras.optimizers import Adam, SGD, RMSprop
 from tools.custom import RAdam
@@ -150,6 +150,7 @@ network_register = {
     'mbv2_ctdet': mbv2_ctdet,
     'yolo': yolo,
     'tiny_yolo': tiny_yolo,
+    'yolo3_nano': yolo3_nano,
     'pfld': pfld,
     'shuffle_ctdet': shuffle_ctdet,
     'yolo_mbv1_k210': yolo_mbv1_k210,
