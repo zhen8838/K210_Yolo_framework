@@ -688,14 +688,21 @@ def calc_ignore_mask(t_xy_A: tf.Tensor, t_wh_A: tf.Tensor, p_xy: tf.Tensor, p_wh
     with tf.name_scope('calc_mask_%d' % layer):
         pred_xy, pred_wh = tf_xywh_to_all(p_xy, p_wh, layer, helper)
 
-        def lmba(bc):
+        # def lmba(bc):
+        #     vaild_xy = tf.boolean_mask(t_xy_A[bc], obj_mask[bc])
+        #     vaild_wh = tf.boolean_mask(t_wh_A[bc], obj_mask[bc])
+        #     iou_score = tf_iou(pred_xy[bc], pred_wh[bc], vaild_xy, vaild_wh)
+        #     best_iou = tf.reduce_max(iou_score, axis=-1, keepdims=True)
+        #     return tf.cast(best_iou < iou_thresh, tf.float32)
+        # return map_fn(lmba, tf.range(helper.batch_size), dtype=tf.float32)
+        ignore_mask = []
+        for bc in range(helper.batch_size):
             vaild_xy = tf.boolean_mask(t_xy_A[bc], obj_mask[bc])
             vaild_wh = tf.boolean_mask(t_wh_A[bc], obj_mask[bc])
             iou_score = tf_iou(pred_xy[bc], pred_wh[bc], vaild_xy, vaild_wh)
             best_iou = tf.reduce_max(iou_score, axis=-1, keepdims=True)
-            return tf.cast(best_iou < iou_thresh, tf.float32)
-
-    return map_fn(lmba, tf.range(helper.batch_size), dtype=tf.float32)
+            ignore_mask.append(tf.cast(best_iou < iou_thresh, tf.float32))
+    return tf.stack(ignore_mask)
 
 
 def create_loss_fn(h: Helper, obj_thresh: float, iou_thresh: float, obj_weight: float,
