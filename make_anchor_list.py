@@ -1,6 +1,6 @@
 import numpy as np
 from tools.yolo import YOLOHelper
-from tools.base import  INFO, ERROR, NOTE
+from tools.base import INFO, ERROR, NOTE
 import matplotlib.pyplot as plt
 from scipy.spatial.distance import cdist
 import sys
@@ -178,9 +178,13 @@ def runkMeans(X: np.ndarray, initial_centroids: np.ndarray, max_iters: int,
     return new_centrois, idx_
 
 
-def main(train_set: str, max_iters: int, in_hw: tuple, out_hw: tuple,
-         anchor_num: int, is_random: bool, is_plot: bool, low: list, high: list):
-    X = np.load(f'data/{train_set}_img_ann.npy', allow_pickle=True)
+def main(ann_list_file: str, anchor_file: str, max_iters: int,
+         in_hw: tuple, out_hw: tuple, anchor_num: int, is_random: bool,
+         is_plot: bool, low: list, high: list):
+    data_dict = np.load(ann_list_file, allow_pickle=True)
+    data_dict = data_dict[()]  # type:dict
+    X = np.concatenate(list(data_dict.values()))
+
     in_wh = np.array(in_hw[::-1])
     low = np.array(low)
     high = np.array(high)
@@ -206,7 +210,8 @@ def main(train_set: str, max_iters: int, in_hw: tuple, out_hw: tuple,
         initial_centroids = np.hstack((np.random.uniform(low[0], high[0], (layers * anchor_num, 1)),
                                        np.random.uniform(low[1], high[1], (layers * anchor_num, 1))))
     else:
-        initial_centroids = np.vstack((np.linspace(0.05, 0.3, num=layers * anchor_num), np.linspace(0.05, 0.5, num=layers * anchor_num)))
+        initial_centroids = np.vstack((np.linspace(0.05, 0.3, num=layers * anchor_num),
+                                       np.linspace(0.05, 0.5, num=layers * anchor_num)))
         initial_centroids = initial_centroids.T
     centroids, idx = runkMeans(x, initial_centroids, 10, is_plot)
     # NOTE : sort by descending , bigger value for layer 0 .
@@ -218,13 +223,14 @@ def main(train_set: str, max_iters: int, in_hw: tuple, out_hw: tuple,
         print(ERROR, 'Result have NaN value please Rerun!')
     else:
         print(NOTE, f'Now anchors are :\n{centroids}')
-        np.save(f'data/{train_set}_anchor.npy', centroids)
+        np.save(anchor_file, centroids)
 
 
 def parse_arguments(argv):
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('train_set', type=str, help=NOTE + 'this is train dataset name , the output *.npy file will be {train_set}_anchors.list')
+    parser.add_argument('--ann_list_file', type=str, help='this is train dataset ann list .npy file', default='data/voc_anchor.npy')
+    parser.add_argument('--anchor_file', type=str, help=NOTE + 'anchor file name default data/voc_anchor.npy', default='data/voc_anchor.npy')
     parser.add_argument('--max_iters', type=int, help='kmeans max iters', default=10)
     parser.add_argument('--is_random', type=str, help='wether random generate the center', choices=['True', 'False'], default='True')
     parser.add_argument('--is_plot', type=str, help='wether show the figure', choices=['True', 'False'], default='True')
@@ -239,4 +245,6 @@ def parse_arguments(argv):
 
 if __name__ == '__main__':
     args = parse_arguments(sys.argv[1:])
-    main(args.train_set, args.max_iters, args.in_hw, args.out_hw, args.anchor_num, args.is_random, args.is_plot, args.low, args.high)
+    main(args.ann_list_file, args.anchor_file, args.max_iters,
+         args.in_hw, args.out_hw, args.anchor_num, args.is_random,
+         args.is_plot, args.low, args.high)

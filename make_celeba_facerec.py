@@ -9,7 +9,18 @@ import argparse
 from tqdm import tqdm
 
 
-def main(input_shape: list, align_data: str, org_root: str, new_root: str, identity_file: str, partition_file: str, ann_file: str, is_crop: bool, is_save: bool):
+def main(input_shape: list, align_data: str, org_root: str, new_root: str,
+         identity_file: str, partition_file: str,
+         ann_file: str, is_crop: bool, is_save: bool):
+    # input_shape = 96
+    # align_data = 'data/landmarks.dat'
+    # org_root = '/home/zqh/workspace/img_align_celeba'
+    # new_root = '/home/zqh/workspace/img_cropped_celeba'
+    # identity_file = 'data/identity_CelebA.txt'
+    # partition_file = 'data/list_eval_partition.txt'
+    # ann_file = 'data/celeba_facerec_img_ann.npy'
+    # is_crop = False
+    # is_save = True
     aligner = AlignDlib(align_data)
     org_root = Path(org_root)
     new_root = Path(new_root)
@@ -45,7 +56,8 @@ def main(input_shape: list, align_data: str, org_root: str, new_root: str, ident
 
         """ filter only one identity """
         print(INFO, 'Start Find identity')
-        mult_id_idx = np.where(np.array([np.count_nonzero(new_img_id == new_img_id[i]) for i in tqdm(range(len(new_img_id)))]) != 1)
+        mult_id_idx = np.where(np.array([np.count_nonzero(new_img_id == new_img_id[i])
+                                         for i in tqdm(range(len(new_img_id)))]) != 1)
         new_img_id = new_img_id[mult_id_idx]
         new_mask = new_mask[mult_id_idx]
         new_img_paths = new_img_paths[mult_id_idx]
@@ -61,9 +73,15 @@ def main(input_shape: list, align_data: str, org_root: str, new_root: str, ident
         assert len(new_img_paths) == len(new_identity)
         print(INFO, 'Finish Find identity')
 
-        metadata = np.array([new_img_paths,
-                             new_identity,
-                             new_mask])
+        metadata = {}
+        for name, i in [('train_data', 0),
+                        ('val_data', 1),
+                        ('test_data', 2)]:
+            idxs = np.where(new_mask == i)[0]
+            metadata[name] = np.array([
+                np.array([new_img_paths[idx], new_identity[idx],
+                          new_img_id[idx]]) for idx in idxs])
+
         np.save(ann_file, metadata)
         print(INFO, f"Save Metadata in {ann_file}")
 

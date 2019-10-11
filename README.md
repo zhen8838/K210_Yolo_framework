@@ -29,13 +29,15 @@ tar xf VOCtrainval_06-Nov-2007.tar
 tar xf VOCtest_06-Nov-2007.tar
 wget https://pjreddie.com/media/files/voc_label.py
 python3 voc_label.py
-cat 2007_train.txt 2007_val.txt 2012_*.txt > train.txt
+cat *_train.txt  > train.txt
+cat *_val.txt  > val.txt
+cat *_test.txt  > test.txt
 ```
 
 now you have `train.txt`, then merge img path and annotation to one npy file:
 
 ```sh
-python3 make_voc_list.py xxxx/train.txt data/voc_img_ann.npy
+python3 make_voc_list.py xxxxx/train.txt xxxxx/val.txt xxxxx/test.txt data/voc_img_ann.npy
 ```
 
 
@@ -44,7 +46,8 @@ python3 make_voc_list.py xxxx/train.txt data/voc_img_ann.npy
 Load the annotations generate anchors (`LOW` and `HIGH` depending on the distribution of dataset):
 ```sh
 python3 ./make_anchor_list.py \
-    voc \
+    --ann_list_file data/voc_img_ann.npy \
+    --anchor_file data/voc_anchor.npy \
     --max_iters 10 \
     --is_random True \
     --in_hw 224 320 \

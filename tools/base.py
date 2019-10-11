@@ -52,8 +52,10 @@ class BaseHelper(object):
                     is_normlize: bool = True, is_training: bool = True):
         self.batch_size = batch_size
         if is_training:
-            self.train_dataset = self.build_datapipe(self.train_list, batch_size, rand_seed, is_augment, is_normlize, is_training)
-            self.val_dataset = self.build_datapipe(self.val_list, batch_size, rand_seed, False, is_normlize, is_training)
+            self.train_dataset = self.build_datapipe(self.train_list, batch_size, rand_seed,
+                                                     is_augment, is_normlize, is_training)
+            self.val_dataset = self.build_datapipe(self.val_list, batch_size, rand_seed,
+                                                   False, is_normlize, is_training)
 
             self.train_epoch_step = self.train_total_data // self.batch_size
             self.val_epoch_step = self.val_total_data // self.batch_size
