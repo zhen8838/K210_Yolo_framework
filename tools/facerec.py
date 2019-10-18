@@ -203,10 +203,10 @@ class Sparse_Asoftmax_Loss(kls.Loss):
         return - y_true_pred_margin * scale + logZ
 
 
-class FaceAccuracy(MeanMetricWrapper):
-    """Calculates how often predictions matches labels."""
+class TripletAccuracy(MeanMetricWrapper):
+    """ Triplet loss Calculates how often predictions matches labels. """
 
     def __init__(self, dist: ResourceVariable, threshold: float, name='acc', dtype=None):
-        super(FaceAccuracy, self).__init__(
+        super(TripletAccuracy, self).__init__(
             lambda y_true, y_pred, dist, threshold: tf.cast(dist < -threshold, tf.float32),
             name, dtype=dtype, dist=dist.read_value(), threshold=threshold)
