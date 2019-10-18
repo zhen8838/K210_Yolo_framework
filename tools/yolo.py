@@ -428,7 +428,7 @@ class YOLOHelper(BaseHelper):
 
         def _parser_wrapper(i: tf.Tensor):
             # NOTE use wrapper function and dynamic list construct (x,(y_1,y_2,...))
-            img_path, ann = tf.numpy_function(lambda idx: (image_ann_list[idx][0], image_ann_list[idx][1]),
+            img_path, ann = tf.numpy_function(lambda idx: (image_ann_list[idx][0].copy(), image_ann_list[idx][1].copy()),
                                               [i], [tf.dtypes.string, tf.float64])
             # load image
             raw_img = tf.image.decode_image(tf.io.read_file(img_path), channels=3, expand_animations=False)

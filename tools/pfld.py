@@ -79,7 +79,7 @@ class PFLDHelper(BaseHelper):
 
         def _parser_wrapper(i: tf.Tensor) -> [tf.Tensor, tf.Tensor]:
             img_path, label = tf.numpy_function(
-                lambda idx: (image_ann_list[idx][0], image_ann_list[idx][1].astype('float32')),
+                lambda idx: (image_ann_list[idx][0].copy(), image_ann_list[idx][1].copy().astype('float32')),
                 [i], [tf.dtypes.string, tf.float32])
 
             raw_img = self.read_img(img_path)
