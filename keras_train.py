@@ -1,6 +1,6 @@
 import tensorflow as tf
 import tensorflow.python.keras as k
-from tensorflow.python.keras.callbacks import TensorBoard, EarlyStopping, CSVLogger, ModelCheckpoint
+from tensorflow.python.keras.callbacks import TensorBoard, EarlyStopping, CSVLogger, ModelCheckpoint, TerminateOnNaN
 from tools.base import INFO, ERROR, NOTE
 from tools.facerec import FaceAccuracy
 from tools.custom import Yolo_P_R, Lookahead, PFLDMetric, YOLO_LE
@@ -136,6 +136,7 @@ def main(config_file, new_cfg, mode, model, train, prune):
     if train.modelcheckpoint == True:
         cbs.append(ModelCheckpoint(str(log_dir / 'auto_train_{epoch:d}.h5'),
                                    **train.modelcheckpoint_kwarg))
+        cbs.append(TerminateOnNaN())
 
     # NOTE avoid can't write graph, I don't now why..
     file_writer = tf.compat.v1.summary.FileWriter(str(log_dir), sess.graph)

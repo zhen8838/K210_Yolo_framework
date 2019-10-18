@@ -70,7 +70,7 @@ def coordinate_offset(anchors: np.ndarray, out_hw: np.ndarray) -> np.array:
         scale shape = [n,] = [n x [h_n,w_n,m,2]]
     """
     if len(anchors) != len(out_hw):
-        raise ValueError(ERROR, f'anchors len {len(anchors)} is not equal out_hw len {len(out_hw)}')
+        raise ValueError(f'anchors len {len(anchors)} is not equal out_hw len {len(out_hw)}')
     grid = []
     for l in range(len(anchors)):
         grid_y = np.tile(np.reshape(np.arange(0, stop=out_hw[l][0]), [-1, 1, 1, 1]), [1, out_hw[l][1], 1, 1])
@@ -274,7 +274,8 @@ class YOLOHelper(BaseHelper):
             # NOTE box [x y w h] are relative to the size of the entire image [0~1]
             l, n = self._get_anchor_index(box[3:5])  # [layer index, anchor index]
             idx, idy = self._xy_grid_index(box[1:3], l)  # [x index , y index]
-            labels[l][idy, idx, n, 0:4] = box[1:5]
+            # Note clip box in [1e-8,1.] avoid width or heigh == 0 ====> loss = inf
+            labels[l][idy, idx, n, 0:4] = np.clip(box[1:5], 1e-8, 1.)
             labels[l][idy, idx, n, 4] = 1.
             labels[l][idy, idx, n, 5 + int(box[0])] = 1.
 
@@ -329,7 +330,7 @@ class YOLOHelper(BaseHelper):
         Returns
         -------
         tuple
-            [image src,box] after data augmenter 
+            [image src,box] after data augmenter
             image src dtype is uint8
         """
         seq_det = self.iaaseq.to_deterministic()
@@ -551,7 +552,7 @@ def tf_xywh_to_grid(all_true_xy: tf.Tensor, all_true_wh: tf.Tensor, layer: int, 
     """
     with tf.name_scope('xywh_to_grid_%d' % layer):
         grid_true_xy = (all_true_xy * h.out_hw[layer][::-1]) - h.xy_offset[layer]
-        grid_true_wh = tf.log(all_true_wh / h.anchors[layer])
+        grid_true_wh = tf.math.log(all_true_wh / h.anchors[layer])
     return grid_true_xy, grid_true_wh
 
 
@@ -742,7 +743,7 @@ class YOLO_Loss(Loss):
                                        self.iou_thresh, self.layer, self.h)
 
         grid_true_xy, grid_true_wh = tf_xywh_to_grid(all_true_xy, all_true_wh, self.layer, self.h)
-        # NOTE When wh=0 , tf.log(0) = -inf, so use K.switch to avoid it
+        # NOTE When wh=0 , tf.log(0) = -inf, so use tf.where to avoid it
         grid_true_wh = tf.where(tf.tile(obj_mask_bool[..., tf.newaxis], [1, 1, 1, 1, 2]),
                                 grid_true_wh, tf.zeros_like(grid_true_wh))
 
@@ -818,7 +819,9 @@ def correct_box(box_xy: tf.Tensor, box_wh: tf.Tensor,
     return boxes
 
 
-def yolo_parser_one(img: tf.Tensor, img_hw: np.ndarray, infer_model: k.Model, obj_thresh: float, iou_thresh: float, h: YOLOHelper) -> [np.ndarray, np.ndarray, np.ndarray]:
+def yolo_parser_one(img: tf.Tensor, img_hw: np.ndarray, infer_model: k.Model,
+                    obj_thresh: float, iou_thresh: float, h: YOLOHelper
+                    ) -> [np.ndarray, np.ndarray, np.ndarray]:
     """ yolo parser one image output
 
     Parameters
