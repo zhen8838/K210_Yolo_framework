@@ -223,7 +223,7 @@ class Helper(object):
             # NOTE box [x y w h] are relative to the size of the entire image [0~1]
             l, n = self._get_anchor_index(box[3:5])  # [layer index, anchor index]
             idx, idy = self._xy_grid_index(box[1:3], l)  # [x index , y index]
-            labels[l][idy, idx, n, 0:4] = box[1:5]
+            labels[l][idy, idx, n, 0:4] = np.clip(box[1:5], 1e-8, 1.)
             labels[l][idy, idx, n, 4] = 1.
             labels[l][idy, idx, n, 5 + int(box[0])] = 1.
 
