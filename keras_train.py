@@ -2,7 +2,7 @@ import tensorflow as tf
 import tensorflow.python.keras as k
 from tensorflow.python.keras.callbacks import TensorBoard, EarlyStopping, CSVLogger, ModelCheckpoint, TerminateOnNaN
 from tools.base import INFO, ERROR, NOTE
-from tools.facerec import FaceAccuracy
+from tools.facerec import TripletAccuracy
 from tools.custom import Yolo_P_R, Lookahead, PFLDMetric, YOLO_LE
 from tools.base import BaseHelper
 from pathlib import Path
@@ -100,7 +100,7 @@ def main(config_file, new_cfg, mode, model, train, prune):
     elif model.name == 'feacrec':
         loss_obj = loss_register[model.loss](h=h, **model.loss_kwarg)
         losses = [loss_obj]
-        metrics = [FaceAccuracy(loss_obj.dist_var, loss_obj.alpha)]
+        metrics = [TripletAccuracy(loss_obj.dist_var, loss_obj.alpha)]
     else:
         loss_obj = loss_register[model.loss](h=h, **model.loss_kwarg)
         losses = [loss_obj]
