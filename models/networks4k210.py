@@ -16,7 +16,7 @@ def yolo_mbv1_k210(input_shape: list, anchor_num: int, class_num: int, alpha: fl
                            include_top=False, weights=None, alpha=alpha)  # type: k.Model
 
     if alpha == 0.25:
-        pass
+        base_model.load_weights('data/mobilenet_v1_base_2.h5')
     elif alpha == .5:
         base_model.load_weights('data/mobilenet_v1_base_5.h5')
     elif alpha == .75:
@@ -86,8 +86,8 @@ def yolo_mbv2_k210(input_shape: list, anchor_num: int, class_num: int, alpha: fl
         input_shape=input_shape,
         pooling=None)  # type: k.Model
 
-    if alpha == .25:
-        pass
+    if alpha == .35:
+        base_model.load_weights('data/mobilenet_v2_base_3.h5')
     elif alpha == .5:
         base_model.load_weights('data/mobilenet_v2_base_5.h5')
     elif alpha == .75:
@@ -98,7 +98,7 @@ def yolo_mbv2_k210(input_shape: list, anchor_num: int, class_num: int, alpha: fl
     x1 = base_model.get_layer('block_13_expand_relu').output
     x2 = base_model.output
 
-    if alpha == 0.25:
+    if alpha == 0.35:
         filters = 128
     elif alpha == 0.5:
         filters = 128
@@ -149,7 +149,7 @@ def yolo2_mbv1_k210(input_shape: list, anchor_num: int, class_num: int, alpha: f
     base_model = MobileNet(input_tensor=inputs, input_shape=input_shape, include_top=False, weights=None, alpha=alpha)  # type: keras.Model
 
     if alpha == .25:
-        pass
+        base_model.load_weights('data/mobilenet_v1_base_2.h5')
     elif alpha == .5:
         base_model.load_weights('data/mobilenet_v1_base_5.h5')
     elif alpha == .75:

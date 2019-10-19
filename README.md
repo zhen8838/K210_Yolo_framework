@@ -74,9 +74,11 @@ You **must** download the model weights you want to train because I load the pre
 
 | `MODEL`       | `DEPTHMUL` | Url                                                                                | Url                                        |
 | ------------- | ---------- | ---------------------------------------------------------------------------------- | ------------------------------------------ |
+| yolo_mobilev1 | 0.25        | [google drive](https://drive.google.com/open?id=1WBR3KMvPPVDRXtrYJ_x0npF50DF_pkIM) | [weiyun](https://share.weiyun.com/5NPP9bL) |
 | yolo_mobilev1 | 0.5        | [google drive](https://drive.google.com/open?id=1SmuqIU1uCLRgaePve9HgCj-SvXJB7U-I) | [weiyun](https://share.weiyun.com/59nnvtW) |
 | yolo_mobilev1 | 0.75       | [google drive](https://drive.google.com/open?id=1BlH6va_plAEUnWBER6vij_Q_Gp8TFFaP) | [weiyun](https://share.weiyun.com/5FgNE0b) |
 | yolo_mobilev1 | 1.0        | [google drive](https://drive.google.com/open?id=1vIuylSVshJ47aJV3gmoYyqxQ5Rz9FAkA) | [weiyun](https://share.weiyun.com/516LqR7) |
+| yolo_mobilev2 | 0.35        | [google drive](https://drive.google.com/open?id=1z532Q2-pj7bpMl4qXr5E8CUPCASJRpKj) | [weiyun](https://share.weiyun.com/5h6GOxp) |
 | yolo_mobilev2 | 0.5        | [google drive](https://drive.google.com/open?id=1qjpexl4dZLMtd0dX3QtoIHxXtidj993N) | [weiyun](https://share.weiyun.com/5BwaRTu) |
 | yolo_mobilev2 | 0.75       | [google drive](https://drive.google.com/open?id=1qSM5iQDicscSg0MYfZfiIEFGkc3Xtlt1) | [weiyun](https://share.weiyun.com/5RRMwob) |
 | yolo_mobilev2 | 1.0        | [google drive](https://drive.google.com/open?id=1Qms1BMVtT8DcXvBUFBTgTBtVxQc9r4BQ) | [weiyun](https://share.weiyun.com/5dUelqn) |
