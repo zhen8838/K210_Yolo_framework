@@ -1,7 +1,7 @@
 from pathlib import Path
 import numpy as np
 from tools.aligndlib import AlignDlib
-from tools.base import INFO, ERROR, NOTE
+from tools.base import INFO, ERROR, NOTE, colored
 from skimage.io import imread, imshow, imsave
 from yaml import safe_load, safe_dump
 import sys
@@ -62,28 +62,36 @@ def main(input_shape: list, align_data: str, org_root: str, new_root: str,
         new_mask = new_mask[mult_id_idx]
         new_img_paths = new_img_paths[mult_id_idx]
 
-        """ filter no same identity image """
-        new_identity = []
-        for i in tqdm(range(len(new_img_paths))):
-            same_idx = np.flatnonzero(new_img_id == new_img_id[i])
-            same_idx = np.delete(same_idx, np.where(same_idx == i))
-            new_identity.append(same_idx)
-
-        assert len(new_img_paths) == len(new_mask)
-        assert len(new_img_paths) == len(new_identity)
-        print(INFO, 'Finish Find identity')
-
+        """ filter no same identity image and make metadata"""
+        print(INFO, 'Start Make Metadata')
         metadata = {}
-        for name, i in [('train_data', 0),
-                        ('val_data', 1),
+        idlist = []
+        for name, i in [('train_data', 0), ('val_data', 1),
                         ('test_data', 2)]:
-            idxs = np.where(new_mask == i)[0]
+            masked_identity = []
+            masked_id = np.where(new_mask == i)
+            masked_img_id = new_img_id[masked_id]
+            masked_img_path = new_img_paths[masked_id]
+            for j in tqdm(range(len(masked_img_path))):
+                same_idx = np.flatnonzero(masked_img_id == masked_img_id[j])
+                same_idx = np.delete(same_idx, np.where(same_idx == j))
+                masked_identity.append(same_idx)
+
+            assert len(masked_img_path) == len(masked_img_id)
+            assert len(masked_img_path) == len(masked_identity)
+
+            idlist.extend(masked_img_id)  # count face class num
+
             metadata[name] = np.array([
-                np.array([new_img_paths[idx], new_identity[idx],
-                          new_img_id[idx]]) for idx in idxs])
+                np.array([masked_img_path[k],
+                          masked_identity[k],
+                          masked_img_id[k]]) for k in range(len(masked_img_path))])
 
         np.save(ann_file, metadata)
         print(INFO, f"Save Metadata in {ann_file}")
+        idlist = list(set(idlist))
+        class_num = max(idlist) + 1
+        print(NOTE, f"Face Class Num is {colored(str(class_num),'red')}")
 
 
 if __name__ == "__main__":

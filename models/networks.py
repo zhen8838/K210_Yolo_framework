@@ -368,8 +368,8 @@ def mbv2_ctdet(input_shape: list, class_num: int, filter_num: list, kernel_num: 
     return infer_model, train_model
 
 
-def mbv1_facerec(input_shape: list, embedding_size: int,
-                 depth_multiplier: float = 1.0) -> [k.Model, k.Model]:
+def mbv1_triplet_facerec(input_shape: list, embedding_size: int,
+                         depth_multiplier: float = 1.0) -> [k.Model, k.Model]:
     in_a = k.Input(input_shape, name='in_a')
     in_p = k.Input(input_shape, name='in_p')
     in_n = k.Input(input_shape, name='in_n')
@@ -401,6 +401,102 @@ def mbv1_facerec(input_shape: list, embedding_size: int,
     """ build train model """
     train_model = k.Model([in_a, in_p, in_n], kl.Concatenate()([out_a, out_p, out_n]))
 
+    return infer_model, train_model
+
+
+def mbv1_softmax_facerec(input_shape: list, class_num: int,
+                         embedding_size: int, depth_multiplier: float = 1.0) -> [k.Model, k.Model]:
+    """ mobilenet v1 face recognition model for softmax loss
+
+    Parameters
+    ----------
+    input_shape : list
+
+    class_num : int
+
+        all class num
+
+    embedding_size : int
+
+    depth_multiplier : float, optional
+
+        by default 1.0
+
+    Returns
+    -------
+
+    [k.Model, k.Model]
+
+       encoder,train_model 
+
+    """
+    inputs = k.Input(input_shape)
+    base_model = MobileNet(input_tensor=inputs, input_shape=input_shape,
+                           include_top=False, weights='imagenet',
+                           alpha=depth_multiplier)  # type: keras.Model
+    embedds = compose(
+        kl.Flatten(),
+        kl.Dense(2048),
+        kl.AlphaDropout(0.2),
+        kl.LeakyReLU(),
+        kl.Dense(512),
+        kl.AlphaDropout(0.2),
+        kl.Dense(embedding_size))(base_model.output)
+
+    outputs = kl.Dense(class_num, use_bias=False)(embedds)
+    infer_model = k.Model(inputs, embedds)  # encoder to infer
+    train_model = k.Model(inputs, outputs)  # full model to train
+    return infer_model, train_model
+
+
+def mbv1_amsoftmax_facerec(input_shape: list, class_num: int,
+                           embedding_size: int, depth_multiplier: float = 1.0) -> [k.Model, k.Model]:
+    """ mobilenet v1 face recognition model for Additve Margin Softmax loss
+
+    Parameters
+    ----------
+    input_shape : list
+
+    class_num : int
+
+        all class num
+
+    embedding_size : int
+
+    depth_multiplier : float, optional
+
+        by default 1.0
+
+    Returns
+    -------
+
+    [k.Model, k.Model]
+
+       encoder,train_model 
+
+    """
+    inputs = k.Input(input_shape)
+    base_model = MobileNet(input_tensor=inputs, input_shape=input_shape,
+                           include_top=False, weights='imagenet',
+                           alpha=depth_multiplier)  # type: keras.Model
+    embedds = compose(
+        kl.Flatten(),
+        kl.Dense(2048),
+        kl.AlphaDropout(0.2),
+        kl.LeakyReLU(),
+        kl.Dense(512),
+        kl.AlphaDropout(0.2),
+        kl.Dense(embedding_size),
+        # normalize Classification vector len = 1
+        kl.Lambda(lambda x: tf.math.l2_normalize(x, 1))
+    )(base_model.output)
+
+    outputs = kl.Dense(class_num, use_bias=False,
+                       # normalize Classification Matrix len = 1
+                       # f·W = (f·W)/(‖f‖×‖W‖) = (f·W)/(1×1) = cos(θ)
+                       kernel_constraint=k.constraints.unit_norm())(embedds)
+    infer_model = k.Model(inputs, embedds)  # encoder to infer
+    train_model = k.Model(inputs, outputs)  # full model to train
     return infer_model, train_model
 
 

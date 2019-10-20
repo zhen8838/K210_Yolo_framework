@@ -1,5 +1,6 @@
 import tensorflow as tf
 import tensorflow.python.keras as k
+from tensorflow.python.keras.metrics import SparseCategoricalAccuracy
 from tensorflow.python.keras.callbacks import TensorBoard, EarlyStopping, CSVLogger, ModelCheckpoint, TerminateOnNaN
 from tools.base import INFO, ERROR, NOTE
 from tools.facerec import TripletAccuracy
@@ -19,7 +20,6 @@ from typing import List
 def main(config_file, new_cfg, mode, model, train, prune):
     """ config tensorflow backend """
     tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
-    tf.compat.v1.reset_default_graph()
     tfcfg = tf.compat.v1.ConfigProto()
     tfcfg.gpu_options.allow_growth = True
     if train.jit is True:
@@ -98,9 +98,12 @@ def main(config_file, new_cfg, mode, model, train, prune):
         fr.failure_num, fr.total = le.failure_num, le.total
         metrics = [le, fr]
     elif model.name == 'feacrec':
-        loss_obj = loss_register[model.loss](h=h, **model.loss_kwarg)
+        loss_obj = loss_register[model.loss](**model.loss_kwarg)
         losses = [loss_obj]
-        metrics = [TripletAccuracy(loss_obj.dist_var, loss_obj.alpha)]
+        if model.helper_kwarg['use_softmax'] == True:
+            metrics = [SparseCategoricalAccuracy(name='acc')]
+        else:
+            metrics = [TripletAccuracy(loss_obj.dist_var, loss_obj.alpha)]
     else:
         loss_obj = loss_register[model.loss](h=h, **model.loss_kwarg)
         losses = [loss_obj]
@@ -138,7 +141,7 @@ def main(config_file, new_cfg, mode, model, train, prune):
                                    **train.modelcheckpoint_kwarg))
         cbs.append(TerminateOnNaN())
 
-    # NOTE avoid can't write graph, I don't now why..
+    # NOTE avoid can't write graph, I don't know why..
     file_writer = tf.compat.v1.summary.FileWriter(str(log_dir), sess.graph)
 
     """ Start Training """

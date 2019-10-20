@@ -56,8 +56,10 @@ class FcaeRecHelper(BaseHelper):
         img_shape = list(self.in_hw) + [3]
         if self.use_softmax:
             def _parser(i: tf.Tensor):
-                img_path, identity = tf.numpy_function(lambda ii: image_ann_list[ii][[0, 2]], [i],
-                                                       [tf.string, tf.int32], 'get_idx')
+                img_path, identity = tf.numpy_function(
+                    lambda ii: (image_ann_list[ii][0],
+                                image_ann_list[ii][2].astype(np.int32)),
+                    [i], [tf.string, tf.int32], 'get_idx')
                 # load image
                 raw_img = self.read_img(img_path)
 
@@ -68,13 +70,15 @@ class FcaeRecHelper(BaseHelper):
                     img = tf.cast(raw_img, tf.float32)
 
                 img.set_shape(img_shape)
-                # Note y_true shape will be [? ,1]
-                return img, [identity]
+                identity.set_shape([])
+                # Note y_true shape will be [batch,1]
+                return (img), ([identity])
         else:
+            idx_range = np.arange(len(image_ann_list))
             def _get_idx(i: int):
                 a_path, identitys, _ = image_ann_list[i]
-                p_path = self.img_paths[np.random.choice(identitys)]
-                n_path = self.img_paths[np.random.choice(np.delete(self.idx_range, identitys))]
+                p_path = image_ann_list[np.random.choice(identitys)][0]
+                n_path = image_ann_list[np.random.choice(np.delete(idx_range, identitys))][0]
                 return a_path, p_path, n_path
 
             def _parser(i: tf.Tensor):
@@ -115,12 +119,12 @@ class FcaeRecHelper(BaseHelper):
 
 
 class Triplet_Loss(kls.Loss):
-    def __init__(self, h: FcaeRecHelper, alpha: float,
+    def __init__(self, batch_size: int, alpha: float,
                  reduction=ReductionV2.AUTO, name=None):
         super().__init__(reduction=reduction, name=name)
-        self.h = h
+        self.batch_size = batch_size
         self.alpha = alpha
-        self.dist_var = tf.get_variable('distance_diff', shape=(self.h.batch_size, 1), dtype=tf.float32,
+        self.dist_var = tf.get_variable('distance_diff', shape=(self.batch_size, 1), dtype=tf.float32,
                                         initializer=tf.zeros_initializer(), trainable=False)  # type:tf.Variable
 
     def call(self, y_true: tf.Tensor, y_pred: tf.Tensor):
@@ -128,8 +132,34 @@ class Triplet_Loss(kls.Loss):
         p_dist = tf.reduce_sum(tf.square(a - p), axis=-1, keep_dims=True)  # [batch_size,1]
         n_dist = tf.reduce_sum(tf.square(a - n), axis=-1, keep_dims=True)  # [batch_size,1]
         dist_diff = p_dist - n_dist
-        total_loss = tf.reduce_sum(tf.nn.relu(dist_diff + self.alpha)) / self.h.batch_size
+        total_loss = tf.reduce_sum(tf.nn.relu(dist_diff + self.alpha)) / self.batch_size
         return total_loss + 0 * self.dist_var.assign(dist_diff)
+
+
+class Sparse_Softmax_Loss(kls.Loss):
+    def __init__(self, scale=30, reduction=ReductionV2.AUTO, name=None):
+        """ sparse softmax loss with scale
+
+        Parameters
+        ----------
+        scale : int, optional
+
+            loss scale, by default 30
+
+        reduction : [type], optional
+
+            by default ReductionV2.AUTO
+
+        name : str, optional
+
+            by default None
+
+        """
+        super().__init__(reduction=reduction, name=name)
+        self.scale = scale
+
+    def call(self, y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
+        return k.backend.sparse_categorical_crossentropy(y_true, self.scale * y_pred, True)
 
 
 class Sparse_Amsoftmax_Loss(kls.Loss):
@@ -152,18 +182,36 @@ class Sparse_Amsoftmax_Loss(kls.Loss):
         super().__init__(reduction=reduction, name=name)
         self.scale = scale
         self.margin = margin
-        self.batch_idxs = tf.expand_dims(tf.arange(0, batch_size), 1)
+        self.batch_idxs = tf.expand_dims(tf.range(0, batch_size, dtype=tf.int32), 1)  # shape [batch,1]
 
-    def call(self, y_true: tf.Tensor, y_pred: tf.Tensor):
-        # y_true shape = [None, 1] dtype=int32
-        idxs = tf.concatenate([self.batch_idxs, y_true], 1)
+    def call(self, y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
+        """ loss calc
+
+        Parameters
+        ----------
+        y_true : tf.Tensor
+
+            shape = [batch,1] type = tf.int32
+
+        y_pred : tf.Tensor
+
+            shape = [batch,class num] type = tf.float32
+
+        Returns
+        -------
+
+        tf.Tensor
+
+            loss
+        """
+        idxs = tf.concat([self.batch_idxs, tf.cast(y_true, tf.int32)], 1)
         y_true_pred = tf.gather_nd(y_pred, idxs)
         y_true_pred = tf.expand_dims(y_true_pred, 1)
         y_true_pred_margin = y_true_pred - self.margin
-        _Z = tf.concatenate([y_pred, y_true_pred_margin], 1)
-        _Z = _Z * scale
-        logZ = tf.reduce_logsumexp(_Z, 1, keep_dims=True)
-        logZ = logZ + tf.log(1 - tf.exp(self.scale * y_true_pred - logZ))
+        _Z = tf.concat([y_pred, y_true_pred_margin], 1)
+        _Z = _Z * self.scale
+        logZ = tf.math.reduce_logsumexp(_Z, 1, keep_dims=True)
+        logZ = logZ + tf.math.log(1 - tf.math.exp(self.scale * y_true_pred - logZ))
         return - y_true_pred_margin * self.scale + logZ
 
 
@@ -186,21 +234,20 @@ class Sparse_Asoftmax_Loss(kls.Loss):
         """
         super().__init__(reduction=reduction, name=name)
         self.scale = scale
-        self.batch_idxs = tf.expand_dims(tf.arange(0, batch_size), 1)
+        self.batch_idxs = tf.expand_dims(tf.range(0, batch_size, dtype=tf.int32), 1)
 
     def call(self, y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
-        # y_true shape = [None, 1] dtype=int32
-        idxs = tf.concatenate([self.batch_idxs, y_true], 1)
+        idxs = tf.concat([self.batch_idxs, tf.cast(y_true, tf.int32)], 1)
         y_true_pred = tf.gather_nd(y_pred, idxs)  # find the y_pred
         y_true_pred = tf.expand_dims(y_true_pred, 1)
         y_true_pred_margin = 1 - 8 * tf.square(y_true_pred) + 8 * tf.square(tf.square(y_true_pred))
         # min(y_true_pred, y_true_pred_margin)
         y_true_pred_margin = y_true_pred_margin - tf.nn.relu(y_true_pred_margin - y_true_pred)
-        _Z = tf.concatenate([y_pred, y_true_pred_margin], 1)
-        _Z = _Z * scale  # use scale expand value range
-        logZ = tf.logsumexp(_Z, 1, keep_dims=True)  # 用logsumexp，保证梯度不消失
-        logZ = logZ + tf.log(1 - tf.exp(scale * y_true_pred - logZ))  # Z - exp(scale * y_true_pred)
-        return - y_true_pred_margin * scale + logZ
+        _Z = tf.concat([y_pred, y_true_pred_margin], 1)
+        _Z = _Z * self.scale  # use scale expand value range
+        logZ = tf.math.reduce_logsumexp(_Z, 1, keep_dims=True)
+        logZ = logZ + tf.log(1 - tf.exp(self.scale * y_true_pred - logZ))  # Z - exp(scale * y_true_pred)
+        return - y_true_pred_margin * self.scale + logZ
 
 
 class TripletAccuracy(MeanMetricWrapper):

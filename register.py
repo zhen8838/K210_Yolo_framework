@@ -1,12 +1,14 @@
-from models.networks import mbv1_facerec, mbv2_ctdet, yolo, tiny_yolo, pfld, shuffle_ctdet, yolo3_nano
-from models.networks4k210 import yolo_mbv1_k210, yolo_mbv2_k210, yolo2_mbv1_k210, yolov2algin_mbv1_k210, pfld_k210
+from models.networks import mbv1_softmax_facerec, mbv1_triplet_facerec, mbv1_amsoftmax_facerec,\
+    mbv2_ctdet, yolo, tiny_yolo, pfld, shuffle_ctdet, yolo3_nano
+from models.networks4k210 import yolo_mbv1_k210, yolo_mbv2_k210, yolo2_mbv1_k210, yolov2algin_mbv1_k210, pfld_k210,\
+    mbv1_softmax_facerec_k210, mbv1_triplet_facerec_k210, mbv1_amsoftmax_facerec_k210
 from tensorflow.python.keras.optimizers import Adam, SGD, RMSprop
 from tools.custom import RAdam
 from tools.yolo import YOLOHelper, YOLO_Loss, yolo_infer, yolo_eval
 from tools.yoloalign import YOLOAlignHelper, YOLOAlign_Loss, yoloalgin_infer
 from tools.pfld import PFLDHelper, PFLD_Loss, pfld_infer
 from tools.ctdet import CtdetHelper, Ctdet_Loss, ctdet_infer
-from tools.facerec import FcaeRecHelper, Triplet_Loss
+from tools.facerec import FcaeRecHelper, Triplet_Loss, Sparse_Softmax_Loss, Sparse_Amsoftmax_Loss, Sparse_Asoftmax_Loss
 from yaml import safe_dump
 
 
@@ -146,7 +148,12 @@ helper_register = {
 
 
 network_register = {
-    'mbv1_facerec': mbv1_facerec,
+    'mbv1_amsoftmax_facerec_k210': mbv1_amsoftmax_facerec_k210,
+    'mbv1_softmax_facerec_k210': mbv1_softmax_facerec_k210,
+    'mbv1_triplet_facerec_k210': mbv1_triplet_facerec_k210,
+    'mbv1_amsoftmax_facerec': mbv1_amsoftmax_facerec,
+    'mbv1_softmax_facerec': mbv1_softmax_facerec,
+    'mbv1_triplet_facerec': mbv1_triplet_facerec,
     'mbv2_ctdet': mbv2_ctdet,
     'yolo': yolo,
     'tiny_yolo': tiny_yolo,
@@ -165,7 +172,10 @@ loss_register = {
     'YOLOAlign_Loss': YOLOAlign_Loss,
     'PFLD_Loss': PFLD_Loss,
     'Ctdet_Loss': Ctdet_Loss,
-    'Triplet_Loss': Triplet_Loss
+    'Triplet_Loss': Triplet_Loss,
+    'Sparse_Softmax_Loss': Sparse_Softmax_Loss,
+    'Sparse_Amsoftmax_Loss': Sparse_Amsoftmax_Loss,
+    'Sparse_Asoftmax_Loss': Sparse_Asoftmax_Loss
 }
 
 

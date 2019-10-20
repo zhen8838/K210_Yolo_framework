@@ -146,7 +146,8 @@ def yolo2_mbv1_k210(input_shape: list, anchor_num: int, class_num: int, alpha: f
         yolo_model,yolo_model_warpper
     """
     inputs = k.Input(input_shape)
-    base_model = MobileNet(input_tensor=inputs, input_shape=input_shape, include_top=False, weights=None, alpha=alpha)  # type: keras.Model
+    base_model = MobileNet(input_tensor=inputs, input_shape=input_shape,
+                           include_top=False, weights=None, alpha=alpha)  # type: keras.Model
 
     if alpha == .25:
         base_model.load_weights('data/mobilenet_v1_base_2.h5')
@@ -186,9 +187,11 @@ def yolo2_mbv1_k210(input_shape: list, anchor_num: int, class_num: int, alpha: f
     return yolo_model, yolo_model_warpper
 
 
-def yolov2algin_mbv1_k210(input_shape: list, anchor_num: int, class_num: int, landmark_num: int, alpha: float) -> [k.Model, k.Model]:
+def yolov2algin_mbv1_k210(input_shape: list, anchor_num: int,
+                          class_num: int, landmark_num: int, alpha: float) -> [k.Model, k.Model]:
     inputs = k.Input(input_shape)
-    base_model = MobileNet(input_tensor=inputs, input_shape=input_shape, include_top=False, weights=None, alpha=alpha)  # type: k.Model
+    base_model = MobileNet(input_tensor=inputs, input_shape=input_shape,
+                           include_top=False, weights=None, alpha=alpha)  # type: k.Model
 
     if alpha == .5:
         base_model.load_weights('data/mobilenet_v1_base_5.h5')
@@ -471,3 +474,151 @@ def pfld_k210(input_shape: list, landmark_num: int,
     train_model = k.Model(inputs, y_pred)
 
     return pflp_infer_model, train_model
+
+
+def mbv1_triplet_facerec_k210(input_shape: list, embedding_size: int,
+                              depth_multiplier: float = 1.0) -> [k.Model, k.Model]:
+    in_a = k.Input(input_shape, name='in_a')
+    in_p = k.Input(input_shape, name='in_p')
+    in_n = k.Input(input_shape, name='in_n')
+
+    """ build dummy model body """
+
+    base_model = MobileNet(input_tensor=in_a, input_shape=input_shape,
+                           include_top=False, alpha=depth_multiplier)  # type: keras.Model
+    if depth_multiplier == .25:
+        base_model.load_weights('data/mobilenet_v1_base_2.h5')
+    elif depth_multiplier == .5:
+        base_model.load_weights('data/mobilenet_v1_base_5.h5')
+    elif depth_multiplier == .75:
+        base_model.load_weights('data/mobilenet_v1_base_7.h5')
+    elif depth_multiplier == 1.:
+        base_model.load_weights('data/mobilenet_v1_base_10.h5')
+
+    w = base_model.output.shape.as_list()[1]
+
+    embedd = kl.Conv2D(128 // (w * w), 1, use_bias=False)(base_model.output)
+    out_a = compose(kl.Permute([3, 1, 2]),
+                    kl.Flatten())(embedd)
+
+    encoder_model = k.Model(in_a, embedd)
+    infer_model = k.Model(in_a, out_a)
+
+    out_p = infer_model(in_p)
+    out_n = infer_model(in_n)
+
+    """ build train model """
+    train_model = k.Model([in_a, in_p, in_n], kl.Concatenate()([out_a, out_p, out_n]))
+
+    return encoder_model, train_model
+
+
+def mbv1_softmax_facerec_k210(input_shape: list, class_num: int,
+                              embedding_size: int, depth_multiplier: float = 1.0) -> [k.Model, k.Model]:
+    """ mobilenet v1 face recognition model for softmax loss
+
+    Parameters
+    ----------
+    input_shape : list
+
+    class_num : int
+
+        all class num
+
+    embedding_size : int
+
+    depth_multiplier : float, optional
+
+        by default 1.0
+
+    Returns
+    -------
+
+    [k.Model, k.Model]
+
+       encoder,train_model 
+
+    """
+    inputs = k.Input(input_shape)
+    base_model = MobileNet(input_tensor=inputs, input_shape=input_shape,
+                           include_top=False, weights=None,
+                           alpha=depth_multiplier)  # type: keras.Model
+
+    if depth_multiplier == .25:
+        base_model.load_weights('data/mobilenet_v1_base_2.h5')
+    elif depth_multiplier == .5:
+        base_model.load_weights('data/mobilenet_v1_base_5.h5')
+    elif depth_multiplier == .75:
+        base_model.load_weights('data/mobilenet_v1_base_7.h5')
+    elif depth_multiplier == 1.:
+        base_model.load_weights('data/mobilenet_v1_base_10.h5')
+
+    w = base_model.output.shape.as_list()[1]
+
+    embedds = kl.Conv2D(128 // (w * w), 1, use_bias=False)(base_model.output)
+    outputs = compose(
+        kl.Permute([3, 1, 2]),
+        kl.Flatten(),
+        kl.Dense(class_num, use_bias=False))(embedds)
+
+    infer_model = k.Model(inputs, embedds)  # encoder to infer
+    train_model = k.Model(inputs, outputs)  # full model to train
+    return infer_model, train_model
+
+
+def mbv1_amsoftmax_facerec_k210(input_shape: list, class_num: int,
+                                embedding_size: int, depth_multiplier: float = 1.0) -> [k.Model, k.Model]:
+    """ mobilenet v1 face recognition model for Additve Margin Softmax loss
+
+    Parameters
+    ----------
+    input_shape : list
+
+    class_num : int
+
+        all class num
+
+    embedding_size : int
+
+    depth_multiplier : float, optional
+
+        by default 1.0
+
+    Returns
+    -------
+
+    [k.Model, k.Model]
+
+       encoder,train_model 
+
+    """
+    inputs = k.Input(input_shape)
+    base_model = MobileNet(input_tensor=inputs, input_shape=input_shape,
+                           include_top=False, weights=None,
+                           alpha=depth_multiplier)  # type: keras.Model
+
+    if depth_multiplier == .25:
+        base_model.load_weights('data/mobilenet_v1_base_2.h5')
+    elif depth_multiplier == .5:
+        base_model.load_weights('data/mobilenet_v1_base_5.h5')
+    elif depth_multiplier == .75:
+        base_model.load_weights('data/mobilenet_v1_base_7.h5')
+    elif depth_multiplier == 1.:
+        base_model.load_weights('data/mobilenet_v1_base_10.h5')
+
+    w = base_model.output.shape.as_list()[1]
+    embedds = kl.Conv2D(128 // (w * w), 1, use_bias=False)(base_model.output)
+
+    outputs = compose(
+        kl.Permute([3, 1, 2]),
+        kl.Flatten(),
+        # normalize Classification vector len = 1
+        kl.Lambda(lambda x: tf.math.l2_normalize(x, 1)),
+        kl.Dense(class_num, use_bias=False,
+                 # normalize Classification Matrix len = 1
+                 # f·W = (f·W)/(‖f‖×‖W‖) = (f·W)/(1×1) = cos(θ)
+                 kernel_constraint=k.constraints.unit_norm()))(embedds)
+
+    infer_model = k.Model(inputs, embedds)  # encoder to infer
+    train_model = k.Model(inputs, outputs)  # full model to train
+    return infer_model, train_model

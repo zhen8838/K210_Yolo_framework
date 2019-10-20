@@ -1,0 +1,78 @@
+BATCH_SIZE_REF: &BATCH_SIZE_REF 64
+WIDTH_REF: &WIDTH_REF 128
+
+mode: train
+model:
+  name: feacrec
+  helper: FcaeRecHelper
+  helper_kwarg:
+    image_ann: data/celeba_facerec_img_ann.npy
+    in_hw:
+      - *WIDTH_REF
+      - *WIDTH_REF
+    embedding_size: 128
+    use_softmax: true
+  network: mbv1_softmax_facerec
+  network_kwarg:
+    input_shape:
+      - *WIDTH_REF
+      - *WIDTH_REF
+      - 3
+    class_num: 10178
+    embedding_size: 128
+    depth_multiplier: 1.0
+  loss: Sparse_Asoftmax_Loss
+  loss_kwarg:
+    batch_size: *BATCH_SIZE_REF
+    scale: 30
+    margin: 0.35
+train:
+  jit: true
+  augmenter: false
+  batch_size: *BATCH_SIZE_REF
+  pre_ckpt: null
+  rand_seed: 10101
+  epochs: 30
+  log_dir: log
+  debug: false
+  verbose: 1
+  vali_step_factor: 0.3
+  optimizer: RAdam
+  optimizer_kwarg:
+    lr: 0.0005
+    beta_1: 0.9
+    beta_2: 0.999
+    epsilon: null
+    decay: 0.0
+  Lookahead: true
+  Lookahead_kwarg:
+    k: 5
+    alpha: 0.5
+  earlystop: false
+  earlystop_kwarg:
+    monitor: val_loss
+    min_delta: 0
+    patience: 4
+    verbose: 0
+    mode: auto
+    baseline: null
+    restore_best_weights: false
+  modelcheckpoint: true
+  modelcheckpoint_kwarg:
+    monitor: val_loss
+    verbose: 0
+    save_best_only: true
+    save_weights_only: false
+    mode: auto
+    save_freq: epoch
+    load_weights_on_restart: false
+prune:
+  is_prune: false
+  init_sparsity: 0.5
+  final_sparsity: 0.9
+  end_epoch: 5
+  frequency: 100
+inference:
+  infer_fn: pfld_infer
+  infer_fn_kwarg:
+    radius: 1
