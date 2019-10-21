@@ -35,7 +35,9 @@ def main(config_file, new_cfg, mode, model, train, prune):
     tf.set_random_seed(train.rand_seed)
     np.random.seed(train.rand_seed)
     initial_epoch = 0
-    log_dir = (Path(train.log_dir) / datetime.strftime(datetime.now(), r'%Y%m%d-%H%M%S'))  # type: Path
+    print('-----------------------', train.sub_log_dir)
+    log_dir = (Path(train.log_dir) / (datetime.strftime(datetime.now(), r'%Y%m%d-%H%M%S')
+                                      if train.sub_log_dir is None else train.sub_log_dir))  # type: Path
 
     if not log_dir.exists():
         log_dir.mkdir(parents=True)
@@ -111,7 +113,7 @@ def main(config_file, new_cfg, mode, model, train, prune):
 
     sess.run([tf.compat.v1.global_variables_initializer()])
     train_model.compile(optimizer, loss=losses, metrics=metrics)
-    
+
     """ Load Pre-Train Model Weights """
     if train.pre_ckpt != None and train.pre_ckpt != 'None' and train.pre_ckpt != '':
         if 'h5' in train.pre_ckpt:

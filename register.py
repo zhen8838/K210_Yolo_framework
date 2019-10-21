@@ -74,6 +74,7 @@ ArgDict = {
         'rand_seed': 10101,
         'epochs': 10,
         'log_dir': 'log',
+        'sub_log_dir': None,
         'debug': False,
         'verbose': 1,
         'vali_step_factor': 0.5,

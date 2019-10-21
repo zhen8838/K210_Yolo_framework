@@ -75,6 +75,7 @@ class FcaeRecHelper(BaseHelper):
                 return (img), ([identity])
         else:
             idx_range = np.arange(len(image_ann_list))
+
             def _get_idx(i: int):
                 a_path, identitys, _ = image_ann_list[i]
                 p_path = image_ann_list[np.random.choice(identitys)][0]
@@ -210,7 +211,7 @@ class Sparse_Amsoftmax_Loss(kls.Loss):
         y_true_pred_margin = y_true_pred - self.margin
         _Z = tf.concat([y_pred, y_true_pred_margin], 1)
         _Z = _Z * self.scale
-        logZ = tf.math.reduce_logsumexp(_Z, 1, keep_dims=True)
+        logZ = tf.math.reduce_logsumexp(_Z, 1, keepdims=True)
         logZ = logZ + tf.math.log(1 - tf.math.exp(self.scale * y_true_pred - logZ))
         return - y_true_pred_margin * self.scale + logZ
 
@@ -245,8 +246,8 @@ class Sparse_Asoftmax_Loss(kls.Loss):
         y_true_pred_margin = y_true_pred_margin - tf.nn.relu(y_true_pred_margin - y_true_pred)
         _Z = tf.concat([y_pred, y_true_pred_margin], 1)
         _Z = _Z * self.scale  # use scale expand value range
-        logZ = tf.math.reduce_logsumexp(_Z, 1, keep_dims=True)
-        logZ = logZ + tf.log(1 - tf.exp(self.scale * y_true_pred - logZ))  # Z - exp(scale * y_true_pred)
+        logZ = tf.math.reduce_logsumexp(_Z, 1, keepdims=True)
+        logZ = logZ + tf.math.log(1 - tf.math.exp(self.scale * y_true_pred - logZ))  # Z - exp(scale * y_true_pred)
         return - y_true_pred_margin * self.scale + logZ
 
 
