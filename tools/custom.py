@@ -209,37 +209,33 @@ class Lookahead(object):
         self.count = 0
 
     def inject(self, model: keras.models.Model):
-        """Inject the Lookahead algorithm for the given model.
-        The following code is modified from keras's _make_train_function method.
-        See: https://github.com/keras-team/keras/blob/master/keras/engine/training.py#L497
-        """
-        if not hasattr(model, 'train_function'):
-            raise RuntimeError('You must compile your model before using it.')
-
-        model._check_trainable_weights_consistency()
+        has_recompiled = model._recompile_weights_loss_and_weighted_metrics()
         metrics_tensors = [
             model._all_metrics_tensors[m] for m in model.metrics_names[1:]
         ]
-        if model.train_function is None:
+        model._check_trainable_weights_consistency()
+        if getattr(model, 'train_function') is None or has_recompiled:
             inputs = (model._feed_inputs +
                       model._feed_targets +
                       model._feed_sample_weights)
             if not isinstance(K.symbolic_learning_phase(), int):
                 inputs += [K.symbolic_learning_phase()]
-            fast_params = model._collected_trainable_weights
-
-            with K.name_scope('training'):
-                with K.name_scope(model.optimizer.__class__.__name__):
+            
+            with K.get_graph().as_default():
+                with K.name_scope('training'):
+                    # Training updates
+                    fast_params = model._collected_trainable_weights
                     training_updates = model.optimizer.get_updates(
-                        params=fast_params,
-                        loss=model.total_loss)
+                        params=fast_params, loss=model.total_loss)
                     slow_params = [K.variable(p) for p in fast_params]
 
-                fast_updates = (model.updates +
-                                training_updates +
-                                model.get_updates_for(None) +
-                                model.get_updates_for(model.inputs))
+                    fast_updates = (
+                        training_updates +
+                        model.get_updates_for(None) +
+                        model.get_updates_for(model.inputs)
+                    )
 
+            with K.name_scope('training'):
                 slow_updates, copy_updates = [], []
                 for p, q in zip(fast_params, slow_params):
                     slow_updates.append(K.update(q, q + self.alpha * (p - q)))
@@ -260,7 +256,7 @@ class Lookahead(object):
                         K.batch_get_value(copy_updates)
                     return R
 
-                model.train_function = F
+                setattr(model, 'train_function', F)
 
 
 class PFLDMetric(Metric):

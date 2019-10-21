@@ -19,7 +19,7 @@ from typing import List
 
 def main(config_file, new_cfg, mode, model, train, prune):
     """ config tensorflow backend """
-    tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
+    # tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
     tfcfg = tf.compat.v1.ConfigProto()
     tfcfg.gpu_options.allow_growth = True
     if train.jit is True:
@@ -109,10 +109,9 @@ def main(config_file, new_cfg, mode, model, train, prune):
         losses = [loss_obj]
         metrics = []
 
-    sess.run([tf.compat.v1.global_variables_initializer(),
-              tf.compat.v1.local_variables_initializer()])
+    sess.run([tf.compat.v1.global_variables_initializer()])
     train_model.compile(optimizer, loss=losses, metrics=metrics)
-
+    
     """ Load Pre-Train Model Weights """
     if train.pre_ckpt != None and train.pre_ckpt != 'None' and train.pre_ckpt != '':
         if 'h5' in train.pre_ckpt:
