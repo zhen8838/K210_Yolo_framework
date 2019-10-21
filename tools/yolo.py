@@ -954,13 +954,14 @@ def yolo_infer(img_path: Path, infer_model: k.Model,
         pil_img = Image.fromarray(orig_img)
         print(f'[top\tleft\tbottom\tright\tscore\tclass]')
         for i, c in enumerate(classes):
+            c = int(c)
             box = boxes[i]
             score = scores[i]
-            label = '{:2d} {:.2f}'.format(int(c.numpy()), score.numpy())
+            label = '{:2d} {:.2f}'.format(c, score)
             draw = ImageDraw.Draw(pil_img)
             label_size = draw.textsize(label, font)
             top, left, bottom, right = box
-            print(f'[{top:.1f}\t{left:.1f}\t{bottom:.1f}\t{right:.1f}\t{score:.2f}\t{int(c):2d}]')
+            print(f'[{top:.1f}\t{left:.1f}\t{bottom:.1f}\t{right:.1f}\t{score:.2f}\t{c:2d}]')
             top = max(0, (np.floor(top + 0.5)).astype(np.int))
             left = max(0, (np.floor(left + 0.5)).astype(np.int))
             bottom = min(img_hw[0], (np.floor(bottom + 0.5)).astype(np.int))
