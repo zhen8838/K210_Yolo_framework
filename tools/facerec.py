@@ -109,7 +109,7 @@ class FcaeRecHelper(BaseHelper):
 
         if is_training:
             ds = (tf.data.Dataset.from_tensor_slices(tf.range(len(image_ann_list)))
-                  .shuffle(batch_size * 500 if is_augment == True else batch_size * 50, rand_seed).repeat()
+                  .shuffle(batch_size * 500 if is_training == True else batch_size * 50, rand_seed).repeat()
                   .map(_parser, -1)
                   .batch(batch_size, True).prefetch(-1))
         else:

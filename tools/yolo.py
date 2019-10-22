@@ -339,9 +339,10 @@ class YOLOHelper(BaseHelper):
 
         bbs = BoundingBoxesOnImage.from_xyxy_array(
             center_to_corner(xywh_box, in_hw=img.shape[0:2]), shape=img.shape)
-
-        image_aug = seq_det.augment_images([img])[0]
-        bbs_aug = seq_det.augment_bounding_boxes([bbs])[0]
+        
+        image_aug, bbs_aug = self.iaaseq(image=img, bounding_boxes=bbs)
+        # image_aug = seq_det.augment_images([img])[0]
+        # bbs_aug = seq_det.augment_bounding_boxes([bbs])[0]
         bbs_aug = bbs_aug.remove_out_of_image().clip_out_of_image()
 
         xyxy_box = bbs_aug.to_xyxy_array()
@@ -450,7 +451,7 @@ class YOLOHelper(BaseHelper):
         dataset_shapes = self._compute_dataset_shape()
         if is_training:
             dataset = (tf.data.Dataset.from_tensor_slices(tf.range(len(image_ann_list))).
-                       shuffle(batch_size * 500 if is_augment == True else batch_size * 50, rand_seed).
+                       shuffle(batch_size * 500 if is_training == True else batch_size * 50, rand_seed).
                        repeat().
                        map(_parser_wrapper, -1).
                        batch(batch_size, True).prefetch(-1).
