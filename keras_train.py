@@ -95,7 +95,7 @@ def main(args, train_set, class_num, pre_ckpt, model_def,
     try:
         train_model.fit(h.train_dataset, epochs=max_nrof_epochs,
                         steps_per_epoch=h.train_epoch_step, callbacks=cbs,
-                        validation_data=h.train_dataset, validation_steps=int(h.train_epoch_step * h.validation_split))
+                        validation_data=h.test_dataset, validation_steps=int(h.test_epoch_step * h.validation_split))
     except KeyboardInterrupt as e:
         pass
 
