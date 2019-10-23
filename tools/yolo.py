@@ -183,7 +183,7 @@ class YOLOHelper(BaseHelper):
             iaa.Fliplr(0.5),  # 50% 镜像
             iaa.Affine(rotate=(-10, 10)),  # 随机旋转
             iaa.Affine(translate_percent={"x": (-0.1, 0.1), "y": (-0.1, 0.1)})  # 随机平移
-        ])  # type: iaa.meta.Augmenter
+        ])  # type: iaa.meta.OneOf
 
         self.colormap = [
             (255, 82, 0), (0, 255, 245), (0, 61, 255), (0, 255, 112), (0, 255, 133),
@@ -333,16 +333,13 @@ class YOLOHelper(BaseHelper):
             [image src,box] after data augmenter
             image src dtype is uint8
         """
-        seq_det = self.iaaseq.to_deterministic()
         p = ann[:, 0:1]
         xywh_box = ann[:, 1:]
 
         bbs = BoundingBoxesOnImage.from_xyxy_array(
             center_to_corner(xywh_box, in_hw=img.shape[0:2]), shape=img.shape)
-        
+
         image_aug, bbs_aug = self.iaaseq(image=img, bounding_boxes=bbs)
-        # image_aug = seq_det.augment_images([img])[0]
-        # bbs_aug = seq_det.augment_bounding_boxes([bbs])[0]
         bbs_aug = bbs_aug.remove_out_of_image().clip_out_of_image()
 
         xyxy_box = bbs_aug.to_xyxy_array()

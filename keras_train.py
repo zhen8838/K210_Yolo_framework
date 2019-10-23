@@ -32,10 +32,9 @@ def main(config_file, new_cfg, mode, model, train, prune):
     k.backend.set_session(sess)
 
     """ Set Golbal Paramter """
-    tf.set_random_seed(train.rand_seed)
+    tf.compat.v1.set_random_seed(train.rand_seed)
     np.random.seed(train.rand_seed)
     initial_epoch = 0
-    print('-----------------------', train.sub_log_dir)
     log_dir = (Path(train.log_dir) / (datetime.strftime(datetime.now(), r'%Y%m%d-%H%M%S')
                                       if train.sub_log_dir is None else train.sub_log_dir))  # type: Path
 

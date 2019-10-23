@@ -166,17 +166,14 @@ class YOLOAlignHelper(YOLOHelper):
             [image src,box] after data augmenter
             image src dtype is uint8
         """
-        seq_det = self.iaaseq.to_deterministic()  # type: iaa.meta.Augmenter
         p = ann[:, 0:1]
         xywh_box = ann[:, 1:5]
         landmarks = ann[:, 5:].reshape((len(ann) * self.landmark_num, 2))
 
         bbs = BoundingBoxesOnImage.from_xyxy_array(center_to_corner(xywh_box, in_hw=img.shape[0:2]), shape=img.shape)
         kps = KeypointsOnImage.from_xy_array(landmarks * img.shape[1::-1], shape=img.shape)
-
-        image_aug = seq_det.augment_images([img])[0]
-        bbs_aug = seq_det.augment_bounding_boxes([bbs])[0].remove_out_of_image().clip_out_of_image()
-        kps_aug = seq_det.augment_keypoints([kps])[0]  # type:KeypointsOnImage
+        image_aug, bbs_aug, kps_aug = self.iaaseq(image=img, bounding_boxes=bbs, keypoints=kps)
+        bbs_aug = bbs_aug.remove_out_of_image().clip_out_of_image()
 
         xyxy_ann = bbs_aug.to_xyxy_array()
         xywh_ann = corner_to_center(xyxy_ann, in_hw=img.shape[0:2])
