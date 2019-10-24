@@ -32,11 +32,11 @@ model:
     iou_thresh: 0.5
     obj_weight: 1
     noobj_weight: 1
-    wh_weight: 1
+    wh_weight: 0.5
 train:
   jit: false
   augmenter: false
-  batch_size: 6
+  batch_size: 16
   pre_ckpt: null
   rand_seed: 10101
   epochs: 100
@@ -47,7 +47,7 @@ train:
   vali_step_factor: 0.5
   optimizer: RAdam
   optimizer_kwarg:
-    lr: 0.001
+    lr: 0.0001
     beta_1: 0.9
     beta_2: 0.999
     epsilon: null

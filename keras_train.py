@@ -1,7 +1,8 @@
 import tensorflow as tf
 import tensorflow.python.keras as k
 from tensorflow.python.keras.metrics import SparseCategoricalAccuracy
-from tensorflow.python.keras.callbacks import TensorBoard, EarlyStopping, CSVLogger, ModelCheckpoint, TerminateOnNaN
+from tensorflow.python.keras.callbacks import EarlyStopping, CSVLogger, ModelCheckpoint, TerminateOnNaN
+from tensorflow.python.keras.callbacks_v1 import TensorBoard
 from tools.base import INFO, ERROR, NOTE
 from tools.facerec import TripletAccuracy
 from tools.custom import Yolo_P_R, Lookahead, PFLDMetric, YOLO_LE
@@ -142,7 +143,7 @@ def main(config_file, new_cfg, mode, model, train, prune):
         cbs.append(TerminateOnNaN())
 
     # NOTE avoid can't write graph, I don't know why..
-    file_writer = tf.compat.v1.summary.FileWriter(str(log_dir), sess.graph)
+    # file_writer = tf.compat.v1.summary.FileWriter(str(log_dir), sess.graph)
 
     """ Start Training """
     try:
