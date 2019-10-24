@@ -6,7 +6,8 @@ import tensorflow.python.keras.layers as kl
 from tensorflow.python.keras.applications import MobileNet, MobileNetV2
 from models.dcn import DCN, DeconvLayer
 from toolz import pipe
-from models.darknet import DarknetConv2D, darknet_body, DarknetConv2D_BN_Leaky, compose, make_last_layers
+from models.darknet import DarknetConv2D, darknet_body, DarknetConv2D_BN_Leaky, compose, \
+    make_last_layers, make_last_layers_mobilenet, MobilenetConv2D
 from models.shufflenet import conv_bn_relu, shufflenet_block, deconv_bn_relu
 from models.yolo_nano import yolo3_nano
 
@@ -572,4 +573,40 @@ def shuffle_ctdet(input_shape: list, class_num: int,
 
     train_model = k.Model(inputs, outputs)
 
+    return infer_model, train_model
+
+
+def yolo_mbv1(input_shape: list, anchor_num: int, class_num: int, alpha: float) -> [k.Model, k.Model]:
+    inputs = k.Input(input_shape)
+    base_model = MobileNet(input_tensor=inputs, input_shape=input_shape,
+                           include_top=False, weights='imagenet', alpha=alpha)  # type: k.Model
+
+    x, y1 = make_last_layers_mobilenet(base_model.output, 17, 512, anchor_num * (class_num + 5))
+
+    x = compose(kl.Conv2D(256, kernel_size=1,
+                          padding='same', use_bias=False,
+                          name='block_20_conv'),
+                kl.BatchNormalization(momentum=0.9, name='block_20_BN'),
+                kl.ReLU(6., name='block_20_relu6'),
+                kl.UpSampling2D(2))(x)
+
+    x = kl.Concatenate()([x, MobilenetConv2D((1, 1), alpha, 384)(base_model.get_layer('conv_pw_11_relu').output)])
+
+    x, y2 = make_last_layers_mobilenet(x, 21, 256, anchor_num * (class_num + 5))
+
+    x = compose(
+        kl.Conv2D(128, kernel_size=1, padding='same', use_bias=False, name='block_24_conv'),
+        kl.BatchNormalization(momentum=0.9, name='block_24_BN'),
+        kl.ReLU(6., name='block_24_relu6'),
+        kl.UpSampling2D(2))(x)
+
+    x = kl.Concatenate()([x, MobilenetConv2D((1, 1), alpha, 128)(base_model.get_layer('conv_pw_5_relu').output)])
+    x, y3 = make_last_layers_mobilenet(x, 25, 128, anchor_num * (class_num + 5))
+
+    y1_reshape = kl.Reshape((13, 13, anchor_num, 5 + class_num), name='y1')(y1)
+    y2_reshape = kl.Reshape((26, 26, anchor_num, 5 + class_num), name='y2')(y2)
+    y3_reshape = kl.Reshape((52, 52, anchor_num, 5 + class_num), name='y3')(y3)
+
+    infer_model = k.Model(inputs, [y1, y2, y3])
+    train_model = k.Model(inputs=inputs, outputs=[y1_reshape, y2_reshape, y3_reshape])
     return infer_model, train_model

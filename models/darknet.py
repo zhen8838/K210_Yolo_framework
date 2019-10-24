@@ -2,6 +2,7 @@ import tensorflow.python.keras.layers as kl
 import tensorflow.python.keras.regularizers as kr
 from functools import reduce, wraps
 
+
 def resblock_body(x, num_filters, num_blocks):
     '''A series of resblocks starting with a downsampling Convolution2D'''
     # Darknet uses left and top padding instead of 'same' mode
@@ -69,3 +70,60 @@ def DarknetConv2D_BN_Leaky(*args, **kwargs):
         DarknetConv2D(*args, **no_bias_kwargs),
         kl.BatchNormalization(),
         kl.LeakyReLU(alpha=0.1))
+
+
+def _make_divisible(v, divisor, min_value=None):
+    if min_value is None:
+        min_value = divisor
+    new_v = max(min_value, int(v + divisor / 2) // divisor * divisor)
+    # Make sure that round down does not go down by more than 10%.
+    if new_v < 0.9 * v:
+        new_v += divisor
+    return new_v
+
+
+def MobilenetConv2D(kernel, alpha, filters):
+    last_block_filters = _make_divisible(filters * alpha, 8)
+    return compose(kl.Conv2D(last_block_filters, kernel, padding='same', use_bias=False),
+                   kl.BatchNormalization(),
+                   kl.LeakyReLU())
+
+
+def MobilenetSeparableConv2D(filters, kernel_size, strides=(1, 1),
+                             padding='valid', use_bias=True):
+    return compose(kl.DepthwiseConv2D(kernel_size, padding=padding,
+                                      use_bias=use_bias, strides=strides),
+                   kl.BatchNormalization(),
+                   kl.LeakyReLU(),
+                   kl.Conv2D(filters, 1, padding='same',
+                             use_bias=use_bias, strides=1),
+                   kl.BatchNormalization(),
+                   kl.LeakyReLU())
+
+
+def make_last_layers_mobilenet(x, id, num_filters, out_filters):
+    x = compose(kl.Conv2D(num_filters, kernel_size=1, padding='same',
+                          use_bias=False, name='block_' + str(id) + '_conv'),
+                kl.BatchNormalization(momentum=0.9, name='block_' + str(id) + '_BN'),
+                kl.LeakyReLU(name='block_' + str(id) + '_relu6'),
+                MobilenetSeparableConv2D(2 * num_filters, kernel_size=(3, 3),
+                                         use_bias=False, padding='same'),
+                kl.Conv2D(num_filters, kernel_size=1,
+                          padding='same', use_bias=False,
+                          name='block_' + str(id + 1) + '_conv'),
+                kl.BatchNormalization(momentum=0.9, name='block_' + str(id + 1) + '_BN'),
+                kl.LeakyReLU(name='block_' + str(id + 1) + '_relu6'),
+                MobilenetSeparableConv2D(2 * num_filters, kernel_size=(3, 3),
+                                         use_bias=False, padding='same'),
+                kl.Conv2D(num_filters, kernel_size=1,
+                          padding='same', use_bias=False,
+                          name='block_' + str(id + 2) + '_conv'),
+                kl.BatchNormalization(momentum=0.9, name='block_' + str(id + 2) + '_BN'),
+                kl.LeakyReLU(name='block_' + str(id + 2) + '_relu6'))(x)
+
+    y = compose(
+        MobilenetSeparableConv2D(2 * num_filters, kernel_size=(3, 3),
+                                 use_bias=False, padding='same'),
+        kl.Conv2D(out_filters, kernel_size=1,
+                  padding='same', use_bias=False))(x)
+    return x, y

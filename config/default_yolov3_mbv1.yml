@@ -17,7 +17,7 @@ model:
       - - 52
         - 52
     validation_split: 0.3
-  network: yolo
+  network: yolo_mbv1
   network_kwarg:
     input_shape:
       - 416
@@ -25,6 +25,7 @@ model:
       - 3
     anchor_num: 3
     class_num: 20
+    alpha: 1.0
   loss: YOLO_Loss
   loss_kwarg:
     obj_thresh: 0.7

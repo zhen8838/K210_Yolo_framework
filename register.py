@@ -1,5 +1,5 @@
 from models.networks import mbv1_softmax_facerec, mbv1_triplet_facerec, mbv1_amsoftmax_facerec,\
-    mbv2_ctdet, yolo, tiny_yolo, pfld, shuffle_ctdet, yolo3_nano
+    mbv2_ctdet, yolo, tiny_yolo, pfld, shuffle_ctdet, yolo3_nano, yolo_mbv1
 from models.networks4k210 import yolo_mbv1_k210, yolo_mbv2_k210, yolo2_mbv1_k210, yolov2algin_mbv1_k210, pfld_k210,\
     mbv1_softmax_facerec_k210, mbv1_triplet_facerec_k210, mbv1_amsoftmax_facerec_k210
 from tensorflow.python.keras.optimizers import Adam, SGD, RMSprop
@@ -159,6 +159,7 @@ network_register = {
     'yolo': yolo,
     'tiny_yolo': tiny_yolo,
     'yolo3_nano': yolo3_nano,
+    'yolo_mbv1': yolo_mbv1,
     'pfld': pfld,
     'shuffle_ctdet': shuffle_ctdet,
     'yolo_mbv1_k210': yolo_mbv1_k210,
