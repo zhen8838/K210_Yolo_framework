@@ -217,6 +217,8 @@ def main(ann_list_file: str, anchor_file: str, max_iters: int,
     # NOTE : sort by descending , bigger value for layer 0 .
     centroids = np.array(sorted(centroids, key=lambda x: (-x[0])))
     centroids = np.reshape(centroids, (layers, anchor_num, 2))
+    # centroids between layers [large -> small] , in layers [small -> large]
+    centroids=np.array([np.array(sorted(centroid, key=lambda x: (x[0]))) for centroid in centroids]) 
     for l in range(layers):
         centroids[l] = centroids[l]  # grid_wh[l]  # NOTE centroids是相对于全局的0-1
     if np.any(np.isnan(centroids)):

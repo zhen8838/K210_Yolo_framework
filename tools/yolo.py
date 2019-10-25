@@ -28,14 +28,15 @@ def fake_iou(a: np.ndarray, b: np.ndarray) -> float:
     Parameters
     ----------
     a : np.ndarray
-        array value = [w,h]
+        shape = [n,1,2]
     b : np.ndarray
-        array value = [w,h]
+        shape = [m,2]
 
     Returns
     -------
     float
         iou value
+        shape = [n,m]
     """
     a_maxes = a / 2.
     a_mins = -a_maxes
@@ -176,6 +177,7 @@ class YOLOHelper(BaseHelper):
             self.anchors = np.load(anchors)  # type:np.ndarray
             self.anchor_number = len(self.anchors[0])
             self.output_number = len(self.anchors)
+            self.__flatten_anchors = np.reshape(self.anchors, (-1, 2))
             self.xy_offset = coordinate_offset(self.anchors, self.out_hw)  # type:np.ndarray
             self.wh_scale = anchor_scale(self.anchors, self.grid_wh)  # type:np.ndarray
 
@@ -238,22 +240,25 @@ class YOLOHelper(BaseHelper):
         """
         return np.floor(box_xy * self.out_hw[layer][::-1]).astype('int')
 
-    def _get_anchor_index(self, wh: np.ndarray) -> np.ndarray:
+    def _get_anchor_index(self, wh: np.ndarray) -> [np.ndarray, np.ndarray]:
         """get the max iou anchor index
 
         Parameters
         ----------
         wh : np.ndarray
+            shape = [num_box,2]
             value = [w,h]
 
         Returns
         -------
-        np.ndarray
+        np.ndarray, np.ndarray
             max iou anchor index
-            value  = [layer index , anchor index]
+            layer_idx shape = [num_box,1]
+            anchor_idx shape = [num_box,1]
         """
-        iou = fake_iou(wh, self.anchors)
-        return np.unravel_index(np.argmax(iou), iou.shape)
+        iou = fake_iou(np.expand_dims(wh, -2), self.__flatten_anchors)
+        best_anchor = np.argmax(iou, -1)
+        return np.divmod(best_anchor, self.anchor_number)
 
     def ann_to_label(self, ann: np.ndarray) -> tuple:
         """convert the annotaion to yolo v3 label~
@@ -270,9 +275,10 @@ class YOLOHelper(BaseHelper):
         """
         labels = [np.zeros((self.out_hw[i][0], self.out_hw[i][1], len(self.anchors[i]),
                             5 + self.class_num), dtype='float32') for i in range(self.output_number)]
-        for box in ann:
+
+        layer_idx, anchor_idx = self._get_anchor_index(ann[:, 3:5])
+        for box, l, n in zip(ann, layer_idx, anchor_idx):
             # NOTE box [x y w h] are relative to the size of the entire image [0~1]
-            l, n = self._get_anchor_index(box[3:5])  # [layer index, anchor index]
             idx, idy = self._xy_grid_index(box[1:3], l)  # [x index , y index]
             # Note clip box in [1e-8,1.] avoid width or heigh == 0 ====> loss = inf
             labels[l][idy, idx, n, 0:4] = np.clip(box[1:5], 1e-8, 1.)
@@ -552,51 +558,6 @@ def tf_xywh_to_grid(all_true_xy: tf.Tensor, all_true_wh: tf.Tensor, layer: int, 
         grid_true_xy = (all_true_xy * h.out_hw[layer][::-1]) - h.xy_offset[layer]
         grid_true_wh = tf.math.log(all_true_wh / h.anchors[layer])
     return grid_true_xy, grid_true_wh
-
-
-def tf_reshape_box(true_xy_A: tf.Tensor, true_wh_A: tf.Tensor, p_xy_A: tf.Tensor,
-                   p_wh_A: tf.Tensor, layer: int, helper: YOLOHelper) -> tuple:
-    """ reshape the xywh to [?,h,w,anchor_nums,true_box_nums,2]
-        NOTE  must use obj mask in atrue xywh !
-    Parameters
-    ----------
-    true_xy_A : tf.Tensor
-        shape will be [true_box_nums,2]
-
-    true_wh_A : tf.Tensor
-        shape will be [true_box_nums,2]
-
-    p_xy_A : tf.Tensor
-        shape will be [?,h,w,anhor_nums,2]
-
-    p_wh_A : tf.Tensor
-        shape will be [?,h,w,anhor_nums,2]
-
-    layer : int
-
-    helper : YOLOHelper
-
-
-    Returns
-    -------
-    tuple
-        true_cent, true_box_wh, pred_cent, pred_box_wh
-    """
-    with tf.name_scope('reshape_box_%d' % layer):
-        true_cent = true_xy_A[tf.newaxis, tf.newaxis, tf.newaxis, tf.newaxis, ...]
-        true_box_wh = true_wh_A[tf.newaxis, tf.newaxis, tf.newaxis, tf.newaxis, ...]
-
-        true_cent = tf.tile(true_cent, [helper.batch_size, helper.out_hw[layer][0],
-                                        helper.out_hw[layer][1], helper.anchor_number, 1, 1])
-        true_box_wh = tf.tile(true_box_wh, [helper.batch_size, helper.out_hw[layer][0],
-                                            helper.out_hw[layer][1], helper.anchor_number, 1, 1])
-
-        pred_cent = p_xy_A[..., tf.newaxis, :]
-        pred_box_wh = p_wh_A[..., tf.newaxis, :]
-        pred_cent = tf.tile(pred_cent, [1, 1, 1, 1, tf.shape(true_xy_A)[0], 1])
-        pred_box_wh = tf.tile(pred_box_wh, [1, 1, 1, 1, tf.shape(true_wh_A)[0], 1])
-
-    return true_cent, true_box_wh, pred_cent, pred_box_wh
 
 
 def tf_iou(pred_xy: tf.Tensor, pred_wh: tf.Tensor,
@@ -1132,7 +1093,7 @@ def yolo_eval(infer_model: k.Model, h: YOLOHelper, det_obj_thresh: float,
             else:
                 fp[c][d] = 1.
 
-    Ap = np.zeros(20)
+    Ap = np.zeros(h.class_num)
     for c in range(h.class_num):
         fpint = np.cumsum(fp[c])
         tpint = np.cumsum(tp[c])
