@@ -987,7 +987,7 @@ def voc_ap(recall: np.ndarray, precision: np.ndarray) -> float:
 
 
 def yolo_eval(infer_model: k.Model, h: YOLOHelper, det_obj_thresh: float,
-              det_iou_thresh: float, mAp_iou_thresh: float):
+              det_iou_thresh: float, mAp_iou_thresh: float, class_name: list):
     """ calc yolo pre-class Ap and mAp
 
     Parameters
@@ -1105,7 +1105,7 @@ def yolo_eval(infer_model: k.Model, h: YOLOHelper, det_obj_thresh: float,
 
     mAp = np.mean(Ap)
     print('~~~~~~~~')
-    for c in range(len(Ap)):
-        print(f'AP for Class {c} =', colored(f'{Ap[c]:.4f}', 'blue'))
+    for c, name in enumerate(class_name):
+        print(f'AP for {name} =', colored(f'{Ap[c]:.4f}', 'blue'))
     print(f'mAP =', colored(f'{mAp:.4f}', 'red'))
     print('~~~~~~~~')

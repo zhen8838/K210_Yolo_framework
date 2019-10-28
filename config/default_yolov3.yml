@@ -90,3 +90,24 @@ evaluate:
     det_obj_thresh: 0.1
     det_iou_thresh: 0.3
     mAp_iou_thresh: 0.3
+    class_name:
+      - aeroplane
+      - bicycle
+      - bird
+      - boat
+      - bottle
+      - bus
+      - car
+      - cat
+      - chair
+      - cow
+      - diningtable
+      - dog
+      - horse
+      - motorbike
+      - person
+      - pottedplant
+      - sheep
+      - sofa
+      - train
+      - tvmonitor
