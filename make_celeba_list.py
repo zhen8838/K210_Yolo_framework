@@ -4,7 +4,7 @@ import sys
 import argparse
 from skimage.io import imread, imshow, show, imsave
 from skimage.util import crop
-from tools.base import  INFO, ERROR, NOTE
+from tools.base import INFO, ERROR, NOTE
 from tqdm import tqdm
 import shutil
 
@@ -71,7 +71,7 @@ def main(args: dict):
                  valid_croped_landmark=valid_croped_landmark,
                  valid_croped_hw=valid_croped_hw)
 
-    tmp = np.load(str(croped_img_root / 'tmp.npz'))
+    tmp = np.load(str(croped_img_root / 'tmp.npz'), allow_pickle=True)
     valid_croped_img_paths = tmp['valid_croped_img_paths']
     valid_croped_bbox = tmp['valid_croped_bbox']
     valid_croped_landmark = tmp['valid_croped_landmark']

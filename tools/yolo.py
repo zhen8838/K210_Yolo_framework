@@ -813,8 +813,9 @@ def yolo_parser_one(img: tf.Tensor, img_hw: np.ndarray, infer_model: k.Model,
     """
     y_pred = infer_model.predict(img)
     # NOTE because yolo train model and infer model is same,
-    #  In order to ensure the consistency of the framework code reshape here.
-    y_pred = np.reshape(y_pred, list(y_pred.shape[:-1]) + [h.anchor_number, 5 + h.class_num])
+    # In order to ensure the consistency of the framework code reshape here.
+    y_pred = [np.reshape(pred, list(pred.shape[:-1]) + [h.anchor_number, 5 + h.class_num])
+              for pred in y_pred]
     """ box list """
     _yxyx_box = []
     _yxyx_box_scores = []
