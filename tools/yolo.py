@@ -281,12 +281,12 @@ class YOLOHelper(BaseHelper):
         for box, l, n in zip(ann, layer_idx, anchor_idx):
             for i in range(len(l)):
                 # NOTE box [x y w h] are relative to the size of the entire image [0~1]
-                x, y = self._xy_grid_index(box[1:3], l[i])  # [x index , y index]
+                # clip box avoid width or heigh == 0 ====> loss = inf
+                bb = np.clip(box[1:5], 1e-8, 0.99999999)
+                x, y = self._xy_grid_index(bb[0:2], l[i])  # [x index , y index]
                 if labels[l[i]][y, x, n[i], 4] == 1.:
-                    # when this grid already being assigned, skip to next
-                    continue
-                # Note clip box avoid width or heigh == 0 ====> loss = inf
-                labels[l[i]][y, x, n[i], 0:4] = np.clip(box[1:5], 1e-8, 1.)
+                    continue  # when this grid already being assigned, skip to next
+                labels[l[i]][y, x, n[i], 0:4] = bb
                 labels[l[i]][y, x, n[i], 4] = 1.
                 labels[l[i]][y, x, n[i], 5 + int(box[0])] = 1.
                 break
