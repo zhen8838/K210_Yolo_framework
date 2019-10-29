@@ -253,11 +253,12 @@ class YOLOHelper(BaseHelper):
         -------
         np.ndarray, np.ndarray
             max iou anchor index
-            layer_idx shape = [num_box,1]
-            anchor_idx shape = [num_box,1]
+            layer_idx shape = [num_box, num_anchor]
+            anchor_idx shape = [num_box, num_anchor]
         """
         iou = fake_iou(np.expand_dims(wh, -2), self.__flatten_anchors)
-        best_anchor = np.argmax(iou, -1)
+        # sort iou score in decreasing order
+        best_anchor = np.argsort(-iou, -1)  # shape = [num_box, num_anchor]
         return np.divmod(best_anchor, self.anchor_number)
 
     def ann_to_label(self, ann: np.ndarray) -> tuple:
@@ -278,13 +279,17 @@ class YOLOHelper(BaseHelper):
 
         layer_idx, anchor_idx = self._get_anchor_index(ann[:, 3:5])
         for box, l, n in zip(ann, layer_idx, anchor_idx):
-            # NOTE box [x y w h] are relative to the size of the entire image [0~1]
-            idx, idy = self._xy_grid_index(box[1:3], l)  # [x index , y index]
-            # Note clip box in [1e-8,1.] avoid width or heigh == 0 ====> loss = inf
-            labels[l][idy, idx, n, 0:4] = np.clip(box[1:5], 1e-8, 1.)
-            labels[l][idy, idx, n, 4] = 1.
-            labels[l][idy, idx, n, 5 + int(box[0])] = 1.
-
+            for i in range(len(l)):
+                # NOTE box [x y w h] are relative to the size of the entire image [0~1]
+                x, y = self._xy_grid_index(box[1:3], l[i])  # [x index , y index]
+                if labels[l[i]][y, x, n[i], 4] == 1.:
+                    # when this grid already being assigned, skip to next
+                    continue
+                # Note clip box avoid width or heigh == 0 ====> loss = inf
+                labels[l[i]][y, x, n[i], 0:4] = np.clip(box[1:5], 1e-8, 1.)
+                labels[l[i]][y, x, n[i], 4] = 1.
+                labels[l[i]][y, x, n[i], 5 + int(box[0])] = 1.
+                break
         return labels
 
     def _xy_to_all(self, labels: tuple):
@@ -380,14 +385,8 @@ class YOLOHelper(BaseHelper):
         translation = ((in_wh - img_wh * scale) / 2).astype(int)
 
         """ calculate the box transform matrix """
-        if isinstance(ann, np.ndarray):
-            ann[:, 1:3] = (ann[:, 1:3] * img_wh * scale + translation) / in_wh
-            ann[:, 3:5] = (ann[:, 3:5] * img_wh * scale) / in_wh
-        elif isinstance(ann, tf.Tensor):
-            # NOTE use concat replace item assign
-            ann = tf.concat((ann[:, 0:1],
-                             (ann[:, 1:3] * img_wh * scale + translation) / in_wh,
-                             (ann[:, 3:5] * img_wh * scale) / in_wh), axis=1)
+        ann[:, 1:3] = (ann[:, 1:3] * img_wh * scale + translation) / in_wh
+        ann[:, 3:5] = (ann[:, 3:5] * img_wh * scale) / in_wh
 
         """ apply Affine Transform """
         aff = AffineTransform(scale=scale, translation=translation)
@@ -434,6 +433,7 @@ class YOLOHelper(BaseHelper):
             # NOTE use wrapper function and dynamic list construct (x,(y_1,y_2,...))
             img_path, ann = tf.numpy_function(lambda idx: (image_ann_list[idx][0].copy(), image_ann_list[idx][1].copy()),
                                               [i], [tf.dtypes.string, tf.float64])
+            # tf.numpy_function(lambda x: print('img id:', x), [i],[])
             # load image
             raw_img = tf.image.decode_image(tf.io.read_file(img_path), channels=3, expand_animations=False)
             # resize image -> image augmenter
