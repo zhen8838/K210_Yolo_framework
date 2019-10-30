@@ -385,8 +385,9 @@ class YOLOHelper(BaseHelper):
         translation = ((in_wh - img_wh * scale) / 2).astype(int)
 
         """ calculate the box transform matrix """
-        ann[:, 1:3] = (ann[:, 1:3] * img_wh * scale + translation) / in_wh
-        ann[:, 3:5] = (ann[:, 3:5] * img_wh * scale) / in_wh
+        if isinstance(ann, np.ndarray):
+            ann[:, 1:3] = (ann[:, 1:3] * img_wh * scale + translation) / in_wh
+            ann[:, 3:5] = (ann[:, 3:5] * img_wh * scale) / in_wh
 
         """ apply Affine Transform """
         aff = AffineTransform(scale=scale, translation=translation)
