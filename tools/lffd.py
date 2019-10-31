@@ -11,6 +11,34 @@ import matplotlib.pyplot as plt
 class LFFDHelper(BaseHelper):
     def __init__(self, image_ann: str, featuremap_size: np.ndarray, in_hw: np.ndarray,
                  neg_resize_factor: np.ndarray, validation_split: float, neg_sample_ratio: float):
+        """ LFFD model helper
+
+        Parameters
+        ----------
+        image_ann : str
+
+            image annotation `.npy` file path
+
+        featuremap_size : np.ndarray
+
+            featruemap size array
+
+        in_hw : np.ndarray
+
+            network input image height and weight
+
+        neg_resize_factor : np.ndarray
+
+            negative sample random resize factor
+
+        validation_split : float
+
+
+        neg_sample_ratio : float
+
+            negative sample in training ratio
+
+        """
         self.train_dataset: tf.data.Dataset = None
         self.val_dataset: tf.data.Dataset = None
         self.test_dataset: tf.data.Dataset = None
@@ -47,15 +75,15 @@ class LFFDHelper(BaseHelper):
         ])  # type: iaa.meta.Augmenter
 
         # set paramter
-        self.featuremap_size: np.ndarray = featuremap_size
+        self.featuremap_size: np.ndarray = np.array(featuremap_size)
         self.scale_num: int = self.featuremap_size.size
-        self.neg_resize_factor: np.ndarray = neg_resize_factor
-        self.in_hw: np.ndarray = in_hw
+        self.neg_resize_factor: np.ndarray = np.array(neg_resize_factor)
+        self.in_hw: np.ndarray = np.array(in_hw)
         self.small_list: np.ndarray = np.flip(featuremap_size) + 1
         self.large_list: np.ndarray = self.small_list * 2
         self.small_weak_list: np.ndarray = np.floor(self.small_list * 0.9).astype(np.int)
         self.large_weak_list: np.ndarray = np.ceil(self.large_list * 1.1).astype(np.int)
-        self.stride_list: np.ndarray = in_hw[0] // (featuremap_size + 1)
+        self.stride_list: np.ndarray = in_hw[0] // (self.featuremap_size + 1)
         self.center_list: np.ndarray = self.stride_list - 1
         self.out_channels = 6
         self.normal_para = self.large_list // 2  # Normalization parameters
@@ -427,7 +455,7 @@ class LFFDHelper(BaseHelper):
             self._pos_ann_to_label(labels, prob_axis, bbox_axis, *boxes)
         return labels
 
-    def build_datapipe(self, pos_list: np.ndarray, neg_list: np.ndarray,
+    def build_datapipe(self, pos_list: tf.Tensor, neg_list: tf.Tensor,
                        batch_size: int, rand_seed: int, is_augment: bool,
                        is_normlize: bool, is_training: bool) -> tf.data.Dataset:
 
@@ -452,7 +480,7 @@ class LFFDHelper(BaseHelper):
             # load image -> resize image -> image augmenter -> make labels
             raw_img, *labels = tf.numpy_function(
                 _wapper, [filename, is_augment, True, False],
-                [tf.uint8] + [tf.float32] * self.scale_num)
+                [tf.uint8] + [tf.float32] * self.scale_num, name='process_img')
 
             # normlize image
             if is_normlize:
@@ -467,17 +495,17 @@ class LFFDHelper(BaseHelper):
             return img, tuple(labels)
 
         if is_training:
-            pos_ds = (tf.data.Dataset.range(len(pos_list)).
-                      shuffle(batch_size * 500, rand_seed).repeat())
-            neg_ds = (tf.data.Dataset.range(len(neg_list)).
-                      shuffle(batch_size * 500, rand_seed).repeat())
+            pos_ds = (tf.data.Dataset.range(tf.size(pos_list, out_type=tf.int64)).
+                      shuffle(batch_size * 200, rand_seed).repeat())
+            neg_ds = (tf.data.Dataset.range(tf.size(neg_list, out_type=tf.int64)).
+                      shuffle(batch_size * 200, rand_seed).repeat())
             ds = (tf.data.Dataset.zip((pos_ds, neg_ds)).
-                  map(_parser, -1).
+                  map(_parser, 4).
                   batch(batch_size, True).
                   prefetch(-1))
         else:
-            pos_ds = tf.data.Dataset.range(len(pos_list))
-            neg_ds = tf.data.Dataset.range(len(pos_list))
+            pos_ds = tf.data.Dataset.range(tf.size(pos_list, out_type=tf.int64))
+            neg_ds = tf.data.Dataset.range(tf.size(pos_list, out_type=tf.int64))
             ds = (tf.data.Dataset.from_tensor_slices(
                 (tf.range(len(pos_list)), tf.range(len(pos_list)))).
                 map(_parser, -1).
@@ -490,6 +518,10 @@ class LFFDHelper(BaseHelper):
                     is_normlize: bool = True, is_training: bool = True):
         self.batch_size = batch_size
         if is_training:
+            self.train_pos_list = tf.convert_to_tensor(self.train_pos_list, tf.string)
+            self.train_neg_list = tf.convert_to_tensor(self.train_neg_list, tf.string)
+            self.val_pos_list = tf.convert_to_tensor(self.val_pos_list, tf.string)
+            self.val_neg_list = tf.convert_to_tensor(self.val_neg_list, tf.string)
             self.train_dataset = self.build_datapipe(
                 self.train_pos_list, self.train_neg_list,
                 batch_size, rand_seed, is_augment,
@@ -502,6 +534,8 @@ class LFFDHelper(BaseHelper):
             self.train_epoch_step = self.train_total_data // self.batch_size
             self.val_epoch_step = self.val_total_data // self.batch_size
         else:
+            self.test_pos_list = tf.convert_to_tensor(self.test_pos_list, tf.string)
+            self.test_neg_list = tf.convert_to_tensor(self.test_neg_list, tf.string)
             self.test_dataset = self.build_datapipe(
                 self.val_list, batch_size, rand_seed,
                 False, is_normlize, is_training)
@@ -547,6 +581,15 @@ class LFFDHelper(BaseHelper):
 
 class LFFD_Loss(tf.keras.losses.Loss):
     def __init__(self, h: LFFDHelper, hnm_ratio: int, reduction='auto', name=None):
+        """ LFFD loss obj
+
+        Parameters
+        ----------
+        h : LFFDHelper
+
+        hnm_ratio : int
+
+        """
         super().__init__(reduction=reduction, name=name)
         self.hnm_ratio = hnm_ratio
 
@@ -560,9 +603,9 @@ class LFFD_Loss(tf.keras.losses.Loss):
         pos_num = tf.reduce_sum(tf.cast(pos_flag, tf.float32))  # pos sample num
 
         def pos_fn():
-            neg_flag = y_true_score[..., 1] > 0.5
-            neg_num = tf.reduce_sum(tf.cast(neg_flag, tf.float32))  # neg sample num
-            neg_num_selected = tf.cast(tf.minimum((hnm_ratio * pos_num), neg_num), tf.int32)
+            neg_flag = tf.cast(y_true_score[..., 1] > 0.5, tf.float32)
+            neg_num = tf.reduce_sum(neg_flag)  # neg sample num
+            neg_num_selected = tf.cast(tf.minimum((self.hnm_ratio * pos_num), neg_num), tf.int32)
             neg_prob = pred_softmax[..., 1] * neg_flag  # 过滤掉不需要的点
             neg_prob_sorted = tf.nn.top_k(tf.reshape(neg_prob, (1, -1)), neg_num_selected)[0]
             prob_threshold = neg_prob_sorted[0, -1]  # 这里的意思是,以neg_num_selected这个地方作为分界线,然后往上取
@@ -579,13 +622,13 @@ class LFFD_Loss(tf.keras.losses.Loss):
             prob_threshold = neg_prob_sorted[0, -1]
             return tf.less_equal(neg_prob, prob_threshold)  # loss mask
 
-        loss_mask = tf.cond(pos_num > 0, pos_fn, neg_fn)
-        loss = loss * tf.cast(loss_mask, tf.float32) * mask_score
-        return tf.reduce_sum(loss, [1, 2])
+        loss_mask = tf.cast(tf.cond(pos_num > 0, pos_fn, neg_fn), tf.float32)
+        loss = loss * loss_mask * tf.squeeze(mask_score, -1)
+        return tf.reduce_sum(tf.math.divide(loss, tf.reduce_sum(loss_mask)), [1, 2])
 
     def regress_loss(self, y_true_bbox: tf.Tensor,
                      y_pred_bbox: tf.Tensor, mask_bbox: tf.Tensor):
-        return tf.div_no_nan(tf.reduce_sum(
+        return tf.math.divide_no_nan(tf.reduce_sum(
             tf.math.squared_difference(y_true_bbox, y_pred_bbox) * mask_bbox,
             [1, 2, 3]), tf.reduce_sum(mask_bbox, [1, 2, 3]))
 

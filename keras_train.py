@@ -106,6 +106,10 @@ def main(config_file, new_cfg, mode, model, train, prune):
             metrics = [SparseCategoricalAccuracy(name='acc')]
         else:
             metrics = [TripletAccuracy(loss_obj.dist_var, loss_obj.alpha)]
+    elif model.name == 'lffd':
+        loss_fn = loss_register[model.loss]
+        losses = [loss_fn(h=h, **model.loss_kwarg) for i in range(h.scale_num)]
+        metrics = []
     else:
         loss_obj = loss_register[model.loss](h=h, **model.loss_kwarg)
         losses = [loss_obj]

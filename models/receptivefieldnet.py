@@ -66,7 +66,7 @@ def rffacedetnet(input_shape: list, num_filters: list = [64, 128]) -> [k.Model, 
         infer model , train model
 
     """
-    inputs = kl.Input(input_shape, batch_size=16)
+    inputs = kl.Input(input_shape)
 
     conv1 = kl.Conv2D(num_filters[0], 3, 2, 'valid', name='conv1')(inputs)
     relu1 = kl.ReLU(name='relu_conv1')(conv1)
@@ -147,9 +147,9 @@ def rffacedetnet(input_shape: list, num_filters: list = [64, 128]) -> [k.Model, 
     # loss 5 RF:655 scale [160,320]
     pred_score_5, pred_bbox_5 = rffeatbranch(relu20, 'conv20', num_filters[1])
 
-    net = k.Model(inputs, [kl.Concatenate()([pred_score_1, pred_bbox_1]),
-                           kl.Concatenate()([pred_score_2, pred_bbox_2]),
-                           kl.Concatenate()([pred_score_3, pred_bbox_3]),
-                           kl.Concatenate()([pred_score_4, pred_bbox_4]),
-                           kl.Concatenate()([pred_score_5, pred_bbox_5])])
+    net = k.Model(inputs, [kl.Concatenate(name='l1')([pred_score_1, pred_bbox_1]),
+                           kl.Concatenate(name='l2')([pred_score_2, pred_bbox_2]),
+                           kl.Concatenate(name='l3')([pred_score_3, pred_bbox_3]),
+                           kl.Concatenate(name='l4')([pred_score_4, pred_bbox_4]),
+                           kl.Concatenate(name='l5')([pred_score_5, pred_bbox_5])])
     return net, net

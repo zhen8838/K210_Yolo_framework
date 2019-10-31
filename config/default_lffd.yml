@@ -1,0 +1,83 @@
+mode: train
+model:
+  name: lffd
+  helper: LFFDHelper
+  helper_kwarg:
+    image_ann: data/lffd_img_ann.npy
+    featuremap_size:
+      - 159
+      - 79
+      - 39
+      - 19
+      - 9
+    in_hw:
+      - 640
+      - 640
+    neg_resize_factor:
+      - 0.5
+      - 3.5
+    validation_split: 0.1
+    neg_sample_ratio: 0.1
+  network: rffacedetnet
+  network_kwarg:
+    input_shape:
+      - 640
+      - 640
+      - 3
+    num_filters:
+      - 64
+      - 128
+  loss: LFFD_Loss
+  loss_kwarg:
+    hnm_ratio: 5
+train:
+  jit: false
+  augmenter: false
+  batch_size: 16
+  pre_ckpt: null
+  rand_seed: 10101
+  epochs: 100
+  log_dir: log
+  sub_log_dir: lffd_exp
+  debug: false
+  verbose: 1
+  vali_step_factor: 0.2
+  optimizer: RAdam
+  optimizer_kwarg:
+    lr: 0.001
+    beta_1: 0.9
+    beta_2: 0.999
+    epsilon: null
+    decay: 0.0
+  Lookahead: true
+  Lookahead_kwarg:
+    k: 5
+    alpha: 0.5
+  earlystop: true
+  earlystop_kwarg:
+    monitor: val_loss
+    min_delta: 0
+    patience: 4
+    verbose: 0
+    mode: auto
+    baseline: null
+    restore_best_weights: false
+  modelcheckpoint: true
+  modelcheckpoint_kwarg:
+    monitor: val_loss
+    verbose: 0
+    save_best_only: true
+    save_weights_only: false
+    mode: auto
+    save_freq: epoch
+    load_weights_on_restart: false
+prune:
+  is_prune: false
+  init_sparsity: 0.5
+  final_sparsity: 0.9
+  end_epoch: 5
+  frequency: 100
+inference:
+  infer_fn: null
+evaluate:
+  eval_fn: null
