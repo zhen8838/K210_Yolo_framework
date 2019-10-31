@@ -27,19 +27,8 @@ class LFFDHelper(BaseHelper):
         self.val_epoch_step: int = None
         self.test_epoch_step: int = None
 
-        self.data: dict = None
         # load dataset
-        self.data = np.load(open(image_ann, 'rb'), allow_pickle=True)  # type:dict
-        _positive_index = []
-        _negative_index = []
-        for k, v in self.data.items():
-            if v[1] == 0:  # negative
-                _negative_index.append(k)
-            else:  # positive
-                _positive_index.append(k)
-        _positive_index = np.array(_positive_index)
-        _negative_index = np.array(_negative_index)
-
+        _positive_index, _negative_index = np.load(image_ann, allow_pickle=True)
         # split dataset
         self.train_pos_list, self.val_pos_list, self.test_pos_list = np.split(
             _positive_index,
@@ -76,23 +65,22 @@ class LFFDHelper(BaseHelper):
         self.val_total_data = len(self.val_pos_list)
         self.test_total_data = len(self.test_pos_list)
 
-    def read_img(self, stream: np.ndarray) -> tf.Tensor:
-        """ read img from raw stream
+    def read_img(self, name: str) -> [np.ndarray, np.ndarray]:
+        """ read img and annotation from filename
 
         Parameters
         ----------
-        stream : np.ndarray
+        name: str
 
         Returns
         -------
 
-        tf.Tensor
+        np.ndarray, np.ndarray
 
-            image source dtype = tf.uint8
-
+            [image source , annotation]
+                uint8       None or int
         """
-        return tf.image.decode_image(stream, channels=3,
-                                     dtype=tf.uint8, expand_animations=False)
+        return np.load(name, allow_pickle=True)
 
     def _resize_neg_img(self, im_in: np.ndarray, img: np.ndarray):
         """ resize negative image
@@ -104,34 +92,36 @@ class LFFDHelper(BaseHelper):
         img : np.ndarray
 
         """
-        im_h, im_w = img.shape[0], img.shape[1]
         in_h, in_w = self.in_hw[0], self.in_hw[1]
         # random resize neg image
         resize_factor = np.random.uniform(self.neg_resize_factor[0],
                                           self.neg_resize_factor[1])
-        img = resize(img, [int(im_h * resize_factor),
-                           int(im_w * resize_factor)],
+        img = resize(img, [int(img.shape[0] * resize_factor),
+                           int(img.shape[1] * resize_factor)],
                      preserve_range=True).astype(np.uint8)
+
+        im_h, im_w = img.shape[0], img.shape[1]  # new h,w
+
         # put neg image into the placeholder
         h_gap = im_h - in_h
         w_gap = im_w - in_w
-        if h_gap > 0:
-            y_top = np.random.randint(0, h_gap)
+        if h_gap >= 0:
+            y_top = np.random.randint(0, h_gap + 1)
         else:
             y_pad = int(-h_gap / 2)
-        if w_gap > 0:
-            x_left = np.random.randint(0, w_gap)
+        if w_gap >= 0:
+            x_left = np.random.randint(0, w_gap + 1)
         else:
             x_pad = int(-w_gap / 2)
 
         if h_gap >= 0 and w_gap >= 0:
-            im_in = img[y_top:y_top + in_h, x_left:x_left + in_w, :]
+            im_in[...] = img[y_top:y_top + in_h, x_left:x_left + in_w]
         elif h_gap >= 0 and w_gap < 0:
-            im_in[:, x_pad:x_pad + im_w, :] = img[y_top:y_top + in_h]
+            im_in[:, x_pad:x_pad + im_w] = img[y_top:y_top + in_h]
         elif h_gap < 0 and w_gap >= 0:
-            im_in[y_pad:y_pad + im_h] = img[:, x_left:x_left + in_w, :]
+            im_in[y_pad:y_pad + im_h] = img[:, x_left:x_left + in_w]
         else:
-            im_in[y_pad:y_pad + im_h, x_pad:x_pad + im_w, :] = img
+            im_in[y_pad:y_pad + im_h, x_pad:x_pad + im_w] = img
 
     def _resize_pos_img(self, im_in: np.ndarray, img: np.ndarray,
                         boxes: np.ndarray) -> [np.ndarray, np.ndarray,
@@ -224,7 +214,7 @@ class LFFDHelper(BaseHelper):
 
         img = img[top:bottom, left:right]
         im_in[top_pad:top_pad + img.shape[0],
-              left_pad:left_pad + img.shape[1]] = img
+              left_pad:left_pad + img.shape[1]] = img[...]
         # adjust boxes
         boxes[:, 0] = boxes[:, 0] + left_pad - left
         boxes[:, 1] = boxes[:, 1] + top_pad - top
@@ -443,27 +433,27 @@ class LFFDHelper(BaseHelper):
 
         print(INFO, 'data augment is ', str(is_augment))
 
-        def _wapper(img, ann, is_augment: bool, is_resize: bool,
+        def _wapper(filename: str, is_augment: bool, is_resize: bool,
                     is_normlize: bool) -> [np.ndarray, tuple]:
             """ wapper for process image and ann to label """
-            im, anns = self.process_img(img, ann, is_augment, is_resize, is_normlize)
-            labels = self.ann_to_label(anns)
-            return (im, *labels)
+            raw_img, ann = self.read_img(filename)
+            raw_img, ann = self.process_img(raw_img, ann, is_augment, is_resize, is_normlize)
+            labels = self.ann_to_label(ann)
+            return (raw_img, *labels)
 
         def _parser(pos_idx: tf.Tensor, neg_idx: tf.Tensor):
             # NOTE use wrapper function and dynamic list construct
             # (img,(label_1,label_2,...))
-            idx = tf.cond(tf.random.uniform(()) < self.neg_sample_ratio,
-                          lambda: neg_idx, lambda: pos_idx)
-            im_src, ann = tf.numpy_function(lambda i: (self.data[i][0].tostring(),
-                                                       self.data[i][2]),
-                                            [idx], [tf.string, tf.float32])
-            # load image
-            raw_img = self.read_img(im_src)
-            # resize image -> image augmenter -> make labels
+            print(neg_idx, pos_idx)
+            filename = tf.cond(tf.random.uniform(()) < self.neg_sample_ratio,
+                               lambda: tf.gather(neg_list, neg_idx),
+                               lambda: tf.gather(pos_list, pos_idx))
+
+            # load image -> resize image -> image augmenter -> make labels
             raw_img, *labels = tf.numpy_function(
-                _wapper, [raw_img, ann, is_augment, True, False],
+                _wapper, [filename, is_augment, True, False],
                 [tf.uint8] + [tf.float32] * self.scale_num)
+
             # normlize image
             if is_normlize:
                 img = self.normlize_img(raw_img)
@@ -553,3 +543,57 @@ class LFFDHelper(BaseHelper):
         plt.tight_layout(pad=0., w_pad=0., h_pad=0.)
         if is_show:
             plt.show()
+
+
+class LFFD_Loss(tf.keras.losses.Loss):
+    def __init__(self, h: LFFDHelper, hnm_ratio: int, reduction='auto', name=None):
+        super().__init__(reduction=reduction, name=name)
+        self.hnm_ratio = hnm_ratio
+
+    def classify_loss(self, y_true_score: tf.Tensor,
+                      y_pred_score: tf.Tensor, mask_score: tf.Tensor):
+        pred_softmax = tf.nn.softmax(y_pred_score, -1)
+        loss = tf.nn.softmax_cross_entropy_with_logits_v2(labels=y_true_score, logits=y_pred_score, axis=-1)
+        loss_mask = tf.ones_like(y_true_score[..., 0])  # shape [bc,featrue,featrue]
+        # y_true_score axis 0 is pos prob , axis 1 is neg prob
+        pos_flag = y_true_score[..., 0] > 0.5
+        pos_num = tf.reduce_sum(tf.cast(pos_flag, tf.float32))  # pos sample num
+
+        def pos_fn():
+            neg_flag = y_true_score[..., 1] > 0.5
+            neg_num = tf.reduce_sum(tf.cast(neg_flag, tf.float32))  # neg sample num
+            neg_num_selected = tf.cast(tf.minimum((hnm_ratio * pos_num), neg_num), tf.int32)
+            neg_prob = pred_softmax[..., 1] * neg_flag  # 过滤掉不需要的点
+            neg_prob_sorted = tf.nn.top_k(tf.reshape(neg_prob, (1, -1)), neg_num_selected)[0]
+            prob_threshold = neg_prob_sorted[0, -1]  # 这里的意思是,以neg_num_selected这个地方作为分界线,然后往上取
+            neg_grad_flag = tf.less_equal(neg_prob, prob_threshold)
+            # 小于阈值的,以及有正样本存在的地方需要计算梯度
+            return tf.logical_or(neg_grad_flag, pos_flag)  # loss_mask
+
+        def neg_fn():
+            """ when this sample is negative sample """
+            neg_choice_ratio = 0.1
+            neg_num_selected = tf.cast(tf.cast(tf.size(pred_softmax[..., 1]), tf.float32) * neg_choice_ratio, tf.int32)
+            neg_prob = pred_softmax[..., 1]
+            neg_prob_sorted = tf.nn.top_k(tf.reshape(neg_prob, (1, -1)), neg_num_selected)[0]
+            prob_threshold = neg_prob_sorted[0, -1]
+            return tf.less_equal(neg_prob, prob_threshold)  # loss mask
+
+        loss_mask = tf.cond(pos_num > 0, pos_fn, neg_fn)
+        loss = loss * tf.cast(loss_mask, tf.float32) * mask_score
+        return tf.reduce_sum(loss, [1, 2])
+
+    def regress_loss(self, y_true_bbox: tf.Tensor,
+                     y_pred_bbox: tf.Tensor, mask_bbox: tf.Tensor):
+        return tf.div_no_nan(tf.reduce_sum(
+            tf.math.squared_difference(y_true_bbox, y_pred_bbox) * mask_bbox,
+            [1, 2, 3]), tf.reduce_sum(mask_bbox, [1, 2, 3]))
+
+    def call(self, y_true: tf.Tensor, y_pred: tf.Tensor):
+        y_true_score, y_true_bbox, mask_score, mask_bbox = tf.split(y_true, [2, 4, 1, 1], -1)
+        y_pred_score, y_pred_bbox = tf.split(y_pred, [2, 4], -1)
+
+        loss = self.classify_loss(y_true_score, y_pred_score, mask_score)
+        loss += self.regress_loss(y_true_bbox, y_pred_bbox, mask_bbox)
+
+        return loss
