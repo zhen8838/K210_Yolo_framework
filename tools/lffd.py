@@ -154,7 +154,7 @@ class LFFDHelper(BaseHelper):
         else:
             im_in[y_pad:y_pad + im_h, x_pad:x_pad + im_w] = img
 
-    @profile()
+    @profile(precision=4, stream=open('tmp/_resize_pos_img.log', 'w'))
     def _resize_pos_img(self, im_in: np.ndarray, img: np.ndarray,
                         boxes: np.ndarray) -> [np.ndarray, np.ndarray,
                                                np.ndarray, np.ndarray]:
