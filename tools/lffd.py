@@ -1,11 +1,13 @@
 import numpy as np
 import tensorflow as tf
 from skimage.transform import resize, rescale
+from skimage.util import img_as_ubyte
 import imgaug.augmenters as iaa
 from imgaug import BoundingBoxesOnImage
 from tools.base import BaseHelper, INFO
 from typing import List
 import matplotlib.pyplot as plt
+from memory_profiler import profile
 
 
 class LFFDHelper(BaseHelper):
@@ -110,6 +112,7 @@ class LFFDHelper(BaseHelper):
         """
         return np.load(name, allow_pickle=True)
 
+    @profile(precision=4, stream=open('tmp/_resize_neg_img.log', 'w'))
     def _resize_neg_img(self, im_in: np.ndarray, img: np.ndarray):
         """ resize negative image
 
@@ -124,10 +127,10 @@ class LFFDHelper(BaseHelper):
         # random resize neg image
         resize_factor = np.random.uniform(self.neg_resize_factor[0],
                                           self.neg_resize_factor[1])
-        img = resize(img, [int(img.shape[0] * resize_factor),
-                           int(img.shape[1] * resize_factor)],
-                     preserve_range=True).astype(np.uint8)
-
+        img = img_as_ubyte(rescale(img, resize_factor, multichannel=True))
+        # img = resize(img, [int(img.shape[0] * resize_factor),
+        #                    int(img.shape[1] * resize_factor)],
+        #              preserve_range=True).astype(np.uint8)
         im_h, im_w = img.shape[0], img.shape[1]  # new h,w
 
         # put neg image into the placeholder
@@ -151,6 +154,7 @@ class LFFDHelper(BaseHelper):
         else:
             im_in[y_pad:y_pad + im_h, x_pad:x_pad + im_w] = img
 
+    @profile()
     def _resize_pos_img(self, im_in: np.ndarray, img: np.ndarray,
                         boxes: np.ndarray) -> [np.ndarray, np.ndarray,
                                                np.ndarray, np.ndarray]:
@@ -214,8 +218,7 @@ class LFFDHelper(BaseHelper):
                     weak_fit[j, i] = True
                     valid[j, i] = True
         # rescale
-        img = rescale(img, target_scale, preserve_range=True,
-                      multichannel=True).astype(np.uint8)
+        img = img_as_ubyte(rescale(img, target_scale, multichannel=True))
         # crop and place the input image centered on the selected box
         vibr = self.stride_list[scale_idx] // 2  # add vibrate
         offset_x = np.random.randint(-vibr, vibr)
@@ -248,6 +251,7 @@ class LFFDHelper(BaseHelper):
         boxes[:, 1] = boxes[:, 1] + top_pad - top
         return boxes, strong_fit, weak_fit, valid
 
+    @profile(precision=4, stream=open('tmp/resize_img.log', 'w'))
     def resize_img(self, img: np.ndarray, boxes: np.ndarray = None) -> [np.ndarray, list]:
         """ resize image
 
@@ -277,7 +281,7 @@ class LFFDHelper(BaseHelper):
             self._resize_neg_img(im_in, img)
         else:
             boxes = self._resize_pos_img(im_in, img, boxes)
-
+        # del img
         return im_in, boxes
 
     def data_augmenter(self, img: np.ndarray,

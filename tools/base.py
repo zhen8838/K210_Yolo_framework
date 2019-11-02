@@ -2,6 +2,7 @@ import tensorflow as tf
 import numpy as np
 import abc
 from termcolor import colored
+from memory_profiler import profile
 
 INFO = colored('[ INFO  ]', 'blue')  # type:str
 ERROR = colored('[ ERROR ]', 'red')  # type:str
@@ -86,6 +87,7 @@ class BaseHelper(object):
         """ normlize img """
         return (tf.cast(img, tf.float32) / 255. - 0.5) / 1
 
+    @profile(precision=4, stream=open('tmp/process_img.log', 'w'))
     def process_img(self, img: np.ndarray, ann: np.ndarray,
                     is_augment: bool, is_resize: bool,
                     is_normlize: bool) -> [tf.Tensor, tf.Tensor]:
