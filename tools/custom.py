@@ -11,7 +11,7 @@ from tensorflow.python.keras import backend as K
 from tensorflow.python.ops import state_ops
 from tensorflow.python.keras.optimizers import Optimizer
 import numpy as np
-from tensorflow.python.ops.resource_variable_ops import ResourceVariable
+from tensorflow.python.ops.variables import RefVariable
 
 
 YOLO_PRECISION = 0
@@ -47,13 +47,13 @@ class Yolo_P_R(Metric):
         if self.out_metric == YOLO_PRECISION:
 
             self.tp = self.add_weight(
-                'tp', initializer=init_ops.zeros_initializer)  # type: ResourceVariable
+                'tp', initializer=init_ops.zeros_initializer)  # type: RefVariable
 
             self.fp = self.add_weight(
-                'fp', initializer=init_ops.zeros_initializer)  # type: ResourceVariable
+                'fp', initializer=init_ops.zeros_initializer)  # type: RefVariable
 
             self.fn = self.add_weight(
-                'fn', initializer=init_ops.zeros_initializer)  # type: ResourceVariable
+                'fn', initializer=init_ops.zeros_initializer)  # type: RefVariable
         else:
             pass
 
@@ -94,22 +94,25 @@ class Yolo_P_R(Metric):
         return {'out_metric': self.out_metric, 'thresholds': self.thresholds, 'name': self.name, 'dtype': self.dtype}
 
 
-class YOLO_LE(MeanMetricWrapper):
-    def __init__(self, landmark_error: ResourceVariable, name='LE', dtype=None):
-        """ yolo landmark error metric
+class DummyMetric(MeanMetricWrapper):
+    def __init__(self, var: RefVariable, name: str, dtype=tf.float32):
+        """ Dummy_Metric from MeanMetricWrapper
 
         Parameters
         ----------
-        MeanMetricWrapper : [type]
+        var : RefVariable
 
-        landmark_error : ResourceVariable
             a variable from yoloalign loss
-        name : str, optional
-            by default 'LE'
+
+        name : str
+
+            dummy metric name
+
         dtype : [type], optional
+
             by default None
         """
-        super(YOLO_LE, self).__init__(lambda y_true, y_pred, v: v, name, dtype=dtype, v=landmark_error.read_value())
+        super().__init__(lambda y_true, y_pred, v: v, name=name, dtype=dtype, v=var.read_value())
 
 # NOTE From https://github.com/bojone/keras_radam
 
@@ -220,7 +223,7 @@ class Lookahead(object):
                       model._feed_sample_weights)
             if not isinstance(K.symbolic_learning_phase(), int):
                 inputs += [K.symbolic_learning_phase()]
-            
+
             with K.get_graph().as_default():
                 with K.name_scope('training'):
                     # Training updates
@@ -285,13 +288,13 @@ class PFLDMetric(Metric):
             self.batch_size = batch_size
             # NOTE if calculate landmark error , this variable will be use, When calculate failure rate , just return failure rate .
             self.landmark_error = self.add_weight(
-                'LE', initializer=init_ops.zeros_initializer)  # type: ResourceVariable
+                'LE', initializer=init_ops.zeros_initializer)  # type: RefVariable
 
             self.failure_num = self.add_weight(
-                'FR', initializer=init_ops.zeros_initializer)  # type: ResourceVariable
+                'FR', initializer=init_ops.zeros_initializer)  # type: RefVariable
 
             self.total = self.add_weight(
-                'total', initializer=init_ops.zeros_initializer)  # type: ResourceVariable
+                'total', initializer=init_ops.zeros_initializer)  # type: RefVariable
 
     def update_state(self, y_true, y_pred, sample_weight=None):
         if self.calc_fr == False:

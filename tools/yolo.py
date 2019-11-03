@@ -11,15 +11,17 @@ from imgaug import BoundingBoxesOnImage
 import tensorflow as tf
 import tensorflow.python.keras.backend as K
 import tensorflow.python.keras as k
-from tensorflow.contrib.data import assert_element_shape
 from tensorflow.python.keras.losses import Loss
 from tensorflow.python.keras.utils import losses_utils
+from tensorflow.python.keras.metrics import MeanMetricWrapper
+from tensorflow.python.ops.variables import RefVariable
 from matplotlib.pyplot import text
 from PIL import Image, ImageFont, ImageDraw
 from tools.base import BaseHelper, INFO, ERROR, NOTE
 from pathlib import Path
 from tqdm import trange
 from termcolor import colored
+from typing import List, Tuple, AnyStr, Iterable
 
 
 def fake_iou(a: np.ndarray, b: np.ndarray) -> float:
@@ -412,19 +414,6 @@ class YOLOHelper(BaseHelper):
             img = gray2rgb(img)
         return img[..., :3]
 
-    def _compute_dataset_shape(self) -> tuple:
-        """ compute dataset shape to avoid keras check shape error
-
-        Returns
-        -------
-        tuple
-            dataset shape lists
-        """
-        output_shapes = [tf.TensorShape([None] + list(self.out_hw[i]) + [len(self.anchors[i]), self.class_num + 5])
-                         for i in range(len(self.anchors))]
-        dataset_shapes = (tf.TensorShape([None] + list(self.in_hw) + [3]), tuple(output_shapes))
-        return dataset_shapes
-
     def build_datapipe(self, image_ann_list: np.ndarray, batch_size: int,
                        rand_seed: int, is_augment: bool,
                        is_normlize: bool, is_training: bool) -> tf.data.Dataset:
@@ -450,22 +439,24 @@ class YOLOHelper(BaseHelper):
             else:
                 img = tf.cast(raw_img, tf.float32)
 
+            # set shape
+            img.set_shape((self.in_hw[0], self.in_hw[1], 3))
+            for i in range(len(self.anchors)):
+                labels[i].set_shape((self.out_hw[i][0], self.out_hw[i][1],
+                                     len(self.anchors[i]), self.class_num + 5))
             return img, tuple(labels)
 
-        dataset_shapes = self._compute_dataset_shape()
         if is_training:
             dataset = (tf.data.Dataset.from_tensor_slices(tf.range(len(image_ann_list))).
                        shuffle(batch_size * 500 if is_training == True else batch_size * 50, rand_seed).
                        repeat().
                        map(_parser_wrapper, -1).
-                       batch(batch_size, True).prefetch(-1).
-                       apply(assert_element_shape(dataset_shapes)))
+                       batch(batch_size, True).prefetch(-1))
         else:
             dataset = (tf.data.Dataset.from_tensor_slices(
                 tf.range(len(image_ann_list))).
                 map(_parser_wrapper, -1).
-                batch(batch_size, True).prefetch(-1).
-                apply(assert_element_shape(dataset_shapes)))
+                batch(batch_size, True).prefetch(-1))
 
         return dataset
 
@@ -651,7 +642,7 @@ def calc_ignore_mask(t_xy_A: tf.Tensor, t_wh_A: tf.Tensor, p_xy: tf.Tensor,
 class YOLO_Loss(Loss):
     def __init__(self, h: YOLOHelper, obj_thresh: float, iou_thresh: float,
                  obj_weight: float, noobj_weight: float, wh_weight: float,
-                 layer: int, reduction=losses_utils.ReductionV2.AUTO, name=None):
+                 layer: int, verbose=1, reduction=losses_utils.ReductionV2.AUTO, name=None):
         """ yolo loss obj
 
         Parameters
@@ -680,6 +671,17 @@ class YOLO_Loss(Loss):
         self.noobj_weight = noobj_weight
         self.wh_weight = wh_weight
         self.layer = layer
+        self.verbose = verbose
+        if self.verbose == 2:
+            with tf.compat.v1.variable_scope(f'lookups_{self.layer}',
+                                             reuse=tf.AUTO_REUSE):
+                names = ['xy', 'wh', 'obj', 'noobj', 'cls']
+                self.lookups: Iterable[Tuple[RefVariable, AnyStr]] = [
+                    (tf.compat.v1.get_variable(name, (self.h.batch_size), tf.float32,
+                                               tf.zeros_initializer(),
+                                               trainable=False),
+                     name)
+                    for name in names]
 
     def call(self, y_true: tf.Tensor, y_pred: tf.Tensor):
         """ split the label """
@@ -730,7 +732,16 @@ class YOLO_Loss(Loss):
             obj_mask * tf.nn.sigmoid_cross_entropy_with_logits(
                 labels=true_cls, logits=pred_cls), [1, 2, 3, 4])
 
-        total_loss = obj_loss + noobj_loss + cls_loss + xy_loss + wh_loss
+        if self.verbose == 2:
+            dummy_loss = (0 * self.lookups[0][0].assign(xy_loss) +
+                          0 * self.lookups[1][0].assign(wh_loss) +
+                          0 * self.lookups[2][0].assign(obj_loss) +
+                          0 * self.lookups[3][0].assign(noobj_loss) +
+                          0 * self.lookups[4][0].assign(cls_loss))
+
+            total_loss = obj_loss + noobj_loss + cls_loss + xy_loss + wh_loss + dummy_loss
+        else:
+            total_loss = obj_loss + noobj_loss + cls_loss + xy_loss + wh_loss
 
         return total_loss
 

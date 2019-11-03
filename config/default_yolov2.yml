@@ -7,18 +7,18 @@ model:
     class_num: 20
     anchors: data/voc_anchor_yolov2.npy
     in_hw:
-    - 224
-    - 320
+      - 224
+      - 320
     out_hw:
-    - - 7
-      - 10
+      - - 7
+        - 10
     validation_split: 0.3
   network: yolo2_mbv1_k210
   network_kwarg:
     input_shape:
-    - 224
-    - 320
-    - 3
+      - 224
+      - 320
+      - 3
     anchor_num: 5
     class_num: 20
     alpha: 0.75
@@ -29,6 +29,7 @@ model:
     obj_weight: 1
     noobj_weight: 1
     wh_weight: 1
+    verbose: 1
 train:
   jit: false
   augmenter: true

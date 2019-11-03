@@ -32,6 +32,7 @@ model:
     obj_weight: 1
     noobj_weight: 1
     wh_weight: 1
+    verbose: 1
 train:
   jit: false
   augmenter: false
