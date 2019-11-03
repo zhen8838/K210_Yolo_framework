@@ -1,10 +1,7 @@
 import numpy as np
 import os
 import cv2
-from skimage.draw import rectangle_perimeter, circle
-from skimage.io import imshow, imread, imsave, show
-from skimage.color import gray2rgb
-from skimage.transform import AffineTransform, warp
+from matplotlib.pyplot import imshow, show
 from math import cos, sin
 import imgaug.augmenters as iaa
 from imgaug import BoundingBoxesOnImage
@@ -22,6 +19,7 @@ from pathlib import Path
 from tqdm import trange
 from termcolor import colored
 from typing import List, Tuple, AnyStr, Iterable
+from memory_profiler import profile
 
 
 def fake_iou(a: np.ndarray, b: np.ndarray) -> float:
@@ -361,6 +359,7 @@ class YOLOHelper(BaseHelper):
 
         return image_aug, new_ann
 
+    @profile(stream=open('tmp/resize_img.log', 'w'), precision=3)
     def resize_img(self, img: np.ndarray, ann: np.ndarray) -> [np.ndarray, np.ndarray]:
         """
         resize image and keep ratio
@@ -377,24 +376,26 @@ class YOLOHelper(BaseHelper):
         [np.ndarray, np.ndarray]
             img, ann [uint8,float64]
         """
-        img_wh = np.array(img.shape[1::-1])
-        in_wh = self.in_hw[::-1]
+        im_in = np.zeros((self.in_hw[0], self.in_hw[1], 3), np.uint8)
 
-        """ calculate the affine transform factor """
-        scale = in_wh / img_wh  # NOTE affine tranform sacle is [w,h]
-        scale[:] = np.min(scale)
-        # NOTE translation is [w offset,h offset]
-        translation = ((in_wh - img_wh * scale) / 2).astype(int)
+        """ transform factor """
+        img_hw = np.array(img.shape[:2])
+        scale = np.min(self.in_hw / img_hw)
+
+        # NOTE hw_off is [h offset,w offset]
+        hw_off = ((self.in_hw - img_hw * scale) / 2).astype(int)
+        img = cv2.resize(img, None, fx=scale, fy=scale)
+
+        im_in[hw_off[0]:hw_off[0] + img.shape[0],
+              hw_off[1]:hw_off[1] + img.shape[1], :] = img[...]
 
         """ calculate the box transform matrix """
         if isinstance(ann, np.ndarray):
-            ann[:, 1:3] = (ann[:, 1:3] * img_wh * scale + translation) / in_wh
-            ann[:, 3:5] = (ann[:, 3:5] * img_wh * scale) / in_wh
+            ann[:, 1:3] = (ann[:, 1:3] * img_hw[::-1] * scale + hw_off[::-1]) / self.in_hw[::-1]
+            ann[:, 3:5] = (ann[:, 3:5] * img_hw[::-1] * scale) / self.in_hw[::-1]
 
-        """ apply Affine Transform """
-        aff = AffineTransform(scale=scale, translation=translation)
-        img = warp(img, aff.inverse, output_shape=self.in_hw, preserve_range=True).astype('uint8')
-        return img, ann
+        del img
+        return im_in, ann
 
     def read_img(self, img_path: str) -> np.ndarray:
         """ read image
@@ -409,10 +410,7 @@ class YOLOHelper(BaseHelper):
         np.ndarray
             image src
         """
-        img = imread(img_path)
-        if len(img.shape) != 3:
-            img = gray2rgb(img)
-        return img[..., :3]
+        return cv2.imread(img_path)[..., ::-1]
 
     def build_datapipe(self, image_ann_list: np.ndarray, batch_size: int,
                        rand_seed: int, is_augment: bool,
