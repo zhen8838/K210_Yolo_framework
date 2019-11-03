@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 
 
 class LFFDHelper(BaseHelper):
-    def __init__(self, image_ann: str, featuremap_size: np.ndarray, in_hw: np.ndarray,
+    def __init__(self, image_ann: np.ndarray, featuremap_size: np.ndarray, in_hw: np.ndarray,
                  neg_resize_factor: np.ndarray, validation_split: float, neg_sample_ratio: float):
         """ LFFD model helper
 
@@ -17,7 +17,16 @@ class LFFDHelper(BaseHelper):
         ----------
         image_ann : str
 
-            image annotation `.npy` file path
+            dataset meta file path,
+            value = 
+            `{'train_pos': 'xxx/train_pos.tfrecords',
+            'train_pos_num': xx,
+            'val_pos': 'xxx/val_pos.tfrecords',
+            'val_pos_num': xx,
+            'train_neg': 'xxx/train_neg.tfrecords',
+            'train_neg_num': xx,
+            'val_neg': 'xxx/val_neg.tfrecords',
+            'val_neg_num': xx}`
 
         featuremap_size : np.ndarray
 
@@ -43,29 +52,14 @@ class LFFDHelper(BaseHelper):
         self.val_dataset: tf.data.Dataset = None
         self.test_dataset: tf.data.Dataset = None
 
-        self.train_pos_list: np.ndarray = None
-        self.val_pos_list: np.ndarray = None
-        self.test_pos_lis: np.ndarray = None
-
-        self.train_neg_list: np.ndarray = None
-        self.val_neg_list: np.ndarray = None
-        self.test_neg_lis: np.ndarray = None
+        self.meta: dict = np.load('data/lffd_img_ann.npy', allow_pickle=True)[()]
+        self.train_pos: str = self.meta['train_pos']
+        self.train_neg: str = self.meta['train_neg']
+        self.val_pos: str = self.meta['val_pos']
+        self.val_neg: str = self.meta['val_neg']
 
         self.train_epoch_step: int = None
         self.val_epoch_step: int = None
-        self.test_epoch_step: int = None
-
-        # load dataset
-        _positive_index, _negative_index = np.load(image_ann, allow_pickle=True)
-        # split dataset
-        self.train_pos_list, self.val_pos_list, self.test_pos_list = np.split(
-            _positive_index,
-            [int((1 - validation_split) * len(_positive_index)),
-             int((1 - validation_split / 2) * len(_positive_index))])
-        self.train_neg_list, self.val_neg_list, self.test_neg_list = np.split(
-            _negative_index,
-            [int((1 - validation_split) * len(_negative_index)),
-             int((1 - validation_split / 2) * len(_negative_index))])
 
         self.iaaseq = iaa.OneOf([
             iaa.Fliplr(0.5),  # 50% 镜像
@@ -89,9 +83,8 @@ class LFFDHelper(BaseHelper):
         self.normal_para = self.large_list // 2  # Normalization parameters
         self.neg_sample_ratio: float = neg_sample_ratio  # neg sample ratio
 
-        self.train_total_data = len(self.train_pos_list)
-        self.val_total_data = len(self.val_pos_list)
-        self.test_total_data = len(self.test_pos_list)
+        self.train_total_data = self.meta['train_pos_num']
+        self.val_total_data = self.meta['val_pos_num']
 
     def read_img(self, name: str) -> [np.ndarray, np.ndarray]:
         """ read img and annotation from filename
@@ -110,7 +103,6 @@ class LFFDHelper(BaseHelper):
         """
         return np.load(name, allow_pickle=True)
 
-    @profile
     def _resize_neg_img(self, im_in: np.ndarray, img: np.ndarray):
         """ resize negative image
 
@@ -126,33 +118,31 @@ class LFFDHelper(BaseHelper):
         resize_factor = np.random.uniform(self.neg_resize_factor[0],
                                           self.neg_resize_factor[1])
 
-        # img = img_as_ubyte(rescale(img, resize_factor, multichannel=True))  # 107486.0
-        img = resize(img, None, fx=resize_factor, fy=resize_factor)  # 849.4
+        img = resize(img, None, fx=resize_factor, fy=resize_factor)
 
-        im_h, im_w = img.shape[0], img.shape[1]  # 4.1
+        im_h, im_w = img.shape[0], img.shape[1]  # new h,w
 
         # put neg image into the placeholder
         h_gap = im_h - in_h
         w_gap = im_w - in_w
         if h_gap >= 0:
-            y_top = np.random.randint(0, h_gap + 1)  # 16.5
+            y_top = np.random.randint(0, h_gap + 1)
         else:
             y_pad = int(-h_gap / 2)
         if w_gap >= 0:
-            x_left = np.random.randint(0, w_gap + 1)  # 9.0
+            x_left = np.random.randint(0, w_gap + 1)
         else:
             x_pad = int(-w_gap / 2)
 
         if h_gap >= 0 and w_gap >= 0:
-            im_in[...] = img[y_top:y_top + in_h, x_left:x_left + in_w]  # 194.8
+            im_in[...] = img[y_top:y_top + in_h, x_left:x_left + in_w]
         elif h_gap >= 0 and w_gap < 0:
-            im_in[:, x_pad:x_pad + im_w] = img[y_top:y_top + in_h]  # 83.1
+            im_in[:, x_pad:x_pad + im_w] = img[y_top:y_top + in_h]
         elif h_gap < 0 and w_gap >= 0:
-            im_in[y_pad:y_pad + im_h] = img[:, x_left:x_left + in_w]  # 97.0
+            im_in[y_pad:y_pad + im_h] = img[:, x_left:x_left + in_w]
         else:
-            im_in[y_pad:y_pad + im_h, x_pad:x_pad + im_w] = img  # 31.8
+            im_in[y_pad:y_pad + im_h, x_pad:x_pad + im_w] = img
 
-    @profile
     def _resize_pos_img(self, im_in: np.ndarray, img: np.ndarray,
                         boxes: np.ndarray) -> [np.ndarray, np.ndarray,
                                                np.ndarray, np.ndarray]:
@@ -216,7 +206,7 @@ class LFFDHelper(BaseHelper):
                     weak_fit[j, i] = True
                     valid[j, i] = True
         # rescale
-        img = resize(img, None, fx=target_scale, fy=target_scale)  # 2615.7
+        img = img = resize(img, None, fx=target_scale, fy=target_scale)
         # crop and place the input image centered on the selected box
         vibr = self.stride_list[scale_idx] // 2  # add vibrate
         offset_x = np.random.randint(-vibr, vibr)
@@ -249,7 +239,7 @@ class LFFDHelper(BaseHelper):
         boxes[:, 1] = boxes[:, 1] + top_pad - top
         return boxes, strong_fit, weak_fit, valid
 
-    def resize_img(self, img: np.ndarray, boxes: np.ndarray = None) -> [np.ndarray, list]:
+    def resize_img(self, img: np.ndarray, boxes: np.ndarray = 0.) -> [np.ndarray, list]:
         """ resize image
 
         Parameters
@@ -258,7 +248,7 @@ class LFFDHelper(BaseHelper):
 
         boxes : np.ndarray, optional
 
-            when annoation is None, mean this sampe is negative, by default None
+            when annoation is 0., mean this sampe is negative, by default None
 
             annoation = [num_box * [left_x, top_y, width, height]]
 
@@ -268,21 +258,22 @@ class LFFDHelper(BaseHelper):
         [np.ndarray, list]
 
             image, state_list
-            when boxes is not **None**, state_list contain :
+            when boxes is not **0.**, state_list contain :
                 [boxes, strong_fit, weak_fit, valid]
 
         """
         im_in = np.zeros([self.in_hw[0], self.in_hw[1], 3], dtype=np.uint8)
 
-        if boxes is None:
-            self._resize_neg_img(im_in, img)
+        if isinstance(boxes, np.ndarray):
+            state_list = self._resize_pos_img(im_in, img, boxes)
+            return im_in, state_list
         else:
-            boxes = self._resize_pos_img(im_in, img, boxes)
-        # del img
-        return im_in, boxes
+            self._resize_neg_img(im_in, img)
+            del img
+            return im_in, boxes
 
     def data_augmenter(self, img: np.ndarray,
-                       boxes: np.ndarray = None) -> [np.ndarray, np.ndarray]:
+                       boxes: np.ndarray = 0.) -> [np.ndarray, np.ndarray]:
         """ data augmenter
 
         Parameters
@@ -291,7 +282,7 @@ class LFFDHelper(BaseHelper):
 
         boxes : np.ndarray, optional
 
-            by default None
+            by default 0.
 
         Returns
         -------
@@ -300,12 +291,12 @@ class LFFDHelper(BaseHelper):
 
             img_aug , ann_aug
         """
-        if boxes is None:
-            image_aug = self.iaaseq(image=img)
-            return image_aug, None
-        else:
+        if isinstance(boxes, np.ndarray):
             # todo add augment
             return img, boxes
+        else:
+            image_aug = self.iaaseq(image=img)
+            return image_aug, boxes
 
     def _neg_ann_to_label(self, labels: list, prob_axis: int, bbox_axis: int):
         """ make negative annotation to label
@@ -422,15 +413,15 @@ class LFFDHelper(BaseHelper):
                 # for bbox regression, only strong_fit area is available
                 labels[i][..., bbox_axis][strong_fit_flag] = 1
 
-    def ann_to_label(self, boxes: np.ndarray = None) -> (list, list):
+    def ann_to_label(self, boxes: np.ndarray = 0.) -> (list, list):
         """ convert annotation to label
 
         Parameters
         ----------
         boxes : np.ndarray, optional
 
-            when boxes is **None** , mean this sample is negative, by default None
-            when boxes is **Not None** , mean this sample is postive ,
+            when boxes is **0.** , mean this sample is negative, by default None
+            when boxes is **ndarray** , mean this sample is postive ,
             And contains :
                 [boxes, strong_fit, weak_fit, valid]
 
@@ -449,37 +440,39 @@ class LFFDHelper(BaseHelper):
         prob_axis = self.out_channels
         bbox_axis = self.out_channels + 1
 
-        if boxes is None:
-            self._neg_ann_to_label(labels, prob_axis, bbox_axis)
-        else:
+        if isinstance(boxes, np.ndarray):
             # boxes, strong_fit, weak_fit, valid = boxes
             self._pos_ann_to_label(labels, prob_axis, bbox_axis, *boxes)
+        else:
+            self._neg_ann_to_label(labels, prob_axis, bbox_axis)
         return labels
 
-    def build_datapipe(self, pos_list: tf.Tensor, neg_list: tf.Tensor,
+    def build_datapipe(self, pos_tfrecord: tf.Tensor, neg_tfrecord: tf.Tensor,
                        batch_size: int, rand_seed: int, is_augment: bool,
                        is_normlize: bool, is_training: bool) -> tf.data.Dataset:
 
         print(INFO, 'data augment is ', str(is_augment))
 
-        def _wapper(filename: str, is_augment: bool, is_resize: bool) -> [np.ndarray, tuple]:
+        def _wapper(raw_img: np.ndarray, ann: np.ndarray, is_augment: bool) -> [np.ndarray, tuple]:
             """ wapper for process image and ann to label """
-            raw_img, ann = self.read_img(filename)
-            raw_img, ann = self.process_img(raw_img, ann, is_augment, is_resize, False)
+            raw_img, ann = self.process_img(raw_img, ann, is_augment, True, False)
             labels = self.ann_to_label(ann)
             return (raw_img, *labels)
 
-        def _parser(pos_idx: tf.Tensor, neg_idx: tf.Tensor):
-            # NOTE use wrapper function and dynamic list construct
-            # (img,(label_1,label_2,...))
-            print(neg_idx, pos_idx)
-            filename = tf.cond(tf.random.uniform(()) < self.neg_sample_ratio,
-                               lambda: tf.gather(neg_list, neg_idx),
-                               lambda: tf.gather(pos_list, pos_idx))
+        def _parser(stream: bytes):
+            example = tf.io.parse_single_example(stream, {
+                'img_raw': tf.io.FixedLenFeature([], tf.string),
+                'label': tf.io.FixedLenFeature([], tf.int64),
+                'bbox': tf.io.FixedLenFeature([], tf.string),
+            })  # type:dict
+
+            raw_img = tf.image.decode_image(example['img_raw'], channels=3)
+            label = example['label']
+            bbox = tf.io.parse_tensor(example['bbox'], tf.float32)
 
             # load image -> resize image -> image augmenter -> make labels
             raw_img, *labels = tf.numpy_function(
-                _wapper, [filename, is_augment, True],
+                _wapper, [raw_img, bbox, is_augment],
                 [tf.uint8] + [tf.float32] * self.scale_num, name='process_img')
 
             # normlize image
@@ -495,22 +488,18 @@ class LFFDHelper(BaseHelper):
             return img, tuple(labels)
 
         if is_training:
-            pos_ds = (tf.data.Dataset.range(tf.size(pos_list, out_type=tf.int64)).
-                      shuffle(batch_size * 200, rand_seed).repeat())
-            neg_ds = (tf.data.Dataset.range(tf.size(neg_list, out_type=tf.int64)).
-                      shuffle(batch_size * 200, rand_seed).repeat())
-            ds = (tf.data.Dataset.zip((pos_ds, neg_ds)).
-                  map(_parser, 4).
-                  batch(batch_size, True).
-                  prefetch(-1))
+            pos_ds = (tf.data.TFRecordDataset(pos_tfrecord, buffer_size=100,
+                                              num_parallel_reads=6).
+                      shuffle(batch_size * 200, rand_seed).repeat().map(_parser))
+            neg_ds = (tf.data.TFRecordDataset(neg_tfrecord, buffer_size=100,
+                                              num_parallel_reads=6).
+                      shuffle(batch_size * 200, rand_seed).repeat().map(_parser))
+            ds = (tf.data.experimental.sample_from_datasets(
+                [pos_ds, neg_ds], [1 - self.neg_sample_ratio,
+                                   self.neg_sample_ratio]).
+                batch(batch_size, True).prefetch(-1))
         else:
-            pos_ds = tf.data.Dataset.range(tf.size(pos_list, out_type=tf.int64))
-            neg_ds = tf.data.Dataset.range(tf.size(pos_list, out_type=tf.int64))
-            ds = (tf.data.Dataset.from_tensor_slices(
-                (tf.range(len(pos_list)), tf.range(len(pos_list)))).
-                map(_parser, -1).
-                batch(batch_size, True).
-                prefetch(-1))
+            raise NotImplementedError('No support to test eval')
 
         return ds
 
@@ -518,24 +507,18 @@ class LFFDHelper(BaseHelper):
                     is_normlize: bool = True, is_training: bool = True):
         self.batch_size = batch_size
         if is_training:
-            self.train_pos_list = tf.convert_to_tensor(self.train_pos_list, tf.string)
-            self.train_neg_list = tf.convert_to_tensor(self.train_neg_list, tf.string)
-            self.val_pos_list = tf.convert_to_tensor(self.val_pos_list, tf.string)
-            self.val_neg_list = tf.convert_to_tensor(self.val_neg_list, tf.string)
             self.train_dataset = self.build_datapipe(
-                self.train_pos_list, self.train_neg_list,
+                self.train_pos, self.train_neg,
                 batch_size, rand_seed, is_augment,
                 is_normlize, is_training)
             self.val_dataset = self.build_datapipe(
-                self.val_pos_list, self.val_neg_list,
+                self.val_pos, self.val_neg,
                 batch_size, rand_seed, False,
                 is_normlize, is_training)
 
             self.train_epoch_step = self.train_total_data // self.batch_size
             self.val_epoch_step = self.val_total_data // self.batch_size
         else:
-            self.test_pos_list = tf.convert_to_tensor(self.test_pos_list, tf.string)
-            self.test_neg_list = tf.convert_to_tensor(self.test_neg_list, tf.string)
             self.test_dataset = self.build_datapipe(
                 self.val_list, batch_size, rand_seed,
                 False, is_normlize, is_training)
@@ -563,11 +546,12 @@ class LFFDHelper(BaseHelper):
             fig, axs = plt.subplots(self.scale_num, 3, figsize=(9, 15))
             for i in range(self.scale_num):
                 score_mask, bbox_mask = labels[i][..., 6:7], labels[i][..., 7:8]
-                img1 = resize(score_mask, self.in_hw / score_mask.shape[:2]) * np.array([150, 0, 0])
-                img2 = (img * resize(bbox_mask, self.in_hw / bbox_mask.shape[:2]))
+                scale = self.in_hw / score_mask.shape[:2]
+                img1 = resize(score_mask, fx=scale[1], fy=scale[0]) * np.array([150, 0, 0])
+                img2 = (img * resize(bbox_mask, fx=scale[1], fy=scale[0]))
                 imgs = [img, img1, img2]
                 for j in range(3):
-                    axs[i, j].imshow(imgs[j])
+                    axs[i, j].imshow(imgs[j].astype(np.uint8))
                     axs[i, j].axis('off')
 
             plt.subplots_adjust(wspace=0.01, hspace=0.02)
