@@ -1,13 +1,11 @@
 import numpy as np
 import tensorflow as tf
-from skimage.transform import resize, rescale
-from skimage.util import img_as_ubyte
+from cv2 import resize
 import imgaug.augmenters as iaa
 from imgaug import BoundingBoxesOnImage
 from tools.base import BaseHelper, INFO
 from typing import List
 import matplotlib.pyplot as plt
-from memory_profiler import profile
 
 
 class LFFDHelper(BaseHelper):
@@ -112,7 +110,7 @@ class LFFDHelper(BaseHelper):
         """
         return np.load(name, allow_pickle=True)
 
-    @profile(precision=4, stream=open('tmp/_resize_neg_img.log', 'w'))
+    @profile
     def _resize_neg_img(self, im_in: np.ndarray, img: np.ndarray):
         """ resize negative image
 
@@ -127,34 +125,34 @@ class LFFDHelper(BaseHelper):
         # random resize neg image
         resize_factor = np.random.uniform(self.neg_resize_factor[0],
                                           self.neg_resize_factor[1])
-        img = img_as_ubyte(rescale(img, resize_factor, multichannel=True))
-        # img = resize(img, [int(img.shape[0] * resize_factor),
-        #                    int(img.shape[1] * resize_factor)],
-        #              preserve_range=True).astype(np.uint8)
-        im_h, im_w = img.shape[0], img.shape[1]  # new h,w
+
+        # img = img_as_ubyte(rescale(img, resize_factor, multichannel=True))  # 107486.0
+        img = resize(img, None, fx=resize_factor, fy=resize_factor)  # 849.4
+
+        im_h, im_w = img.shape[0], img.shape[1]  # 4.1
 
         # put neg image into the placeholder
         h_gap = im_h - in_h
         w_gap = im_w - in_w
         if h_gap >= 0:
-            y_top = np.random.randint(0, h_gap + 1)
+            y_top = np.random.randint(0, h_gap + 1)  # 16.5
         else:
             y_pad = int(-h_gap / 2)
         if w_gap >= 0:
-            x_left = np.random.randint(0, w_gap + 1)
+            x_left = np.random.randint(0, w_gap + 1)  # 9.0
         else:
             x_pad = int(-w_gap / 2)
 
         if h_gap >= 0 and w_gap >= 0:
-            im_in[...] = img[y_top:y_top + in_h, x_left:x_left + in_w]
+            im_in[...] = img[y_top:y_top + in_h, x_left:x_left + in_w]  # 194.8
         elif h_gap >= 0 and w_gap < 0:
-            im_in[:, x_pad:x_pad + im_w] = img[y_top:y_top + in_h]
+            im_in[:, x_pad:x_pad + im_w] = img[y_top:y_top + in_h]  # 83.1
         elif h_gap < 0 and w_gap >= 0:
-            im_in[y_pad:y_pad + im_h] = img[:, x_left:x_left + in_w]
+            im_in[y_pad:y_pad + im_h] = img[:, x_left:x_left + in_w]  # 97.0
         else:
-            im_in[y_pad:y_pad + im_h, x_pad:x_pad + im_w] = img
+            im_in[y_pad:y_pad + im_h, x_pad:x_pad + im_w] = img  # 31.8
 
-    @profile(precision=4, stream=open('tmp/_resize_pos_img.log', 'w'))
+    @profile
     def _resize_pos_img(self, im_in: np.ndarray, img: np.ndarray,
                         boxes: np.ndarray) -> [np.ndarray, np.ndarray,
                                                np.ndarray, np.ndarray]:
@@ -218,7 +216,7 @@ class LFFDHelper(BaseHelper):
                     weak_fit[j, i] = True
                     valid[j, i] = True
         # rescale
-        img = img_as_ubyte(rescale(img, target_scale, multichannel=True))
+        img = resize(img, None, fx=target_scale, fy=target_scale)  # 2615.7
         # crop and place the input image centered on the selected box
         vibr = self.stride_list[scale_idx] // 2  # add vibrate
         offset_x = np.random.randint(-vibr, vibr)
@@ -251,7 +249,6 @@ class LFFDHelper(BaseHelper):
         boxes[:, 1] = boxes[:, 1] + top_pad - top
         return boxes, strong_fit, weak_fit, valid
 
-    @profile(precision=4, stream=open('tmp/resize_img.log', 'w'))
     def resize_img(self, img: np.ndarray, boxes: np.ndarray = None) -> [np.ndarray, list]:
         """ resize image
 
@@ -465,11 +462,10 @@ class LFFDHelper(BaseHelper):
 
         print(INFO, 'data augment is ', str(is_augment))
 
-        def _wapper(filename: str, is_augment: bool, is_resize: bool,
-                    is_normlize: bool) -> [np.ndarray, tuple]:
+        def _wapper(filename: str, is_augment: bool, is_resize: bool) -> [np.ndarray, tuple]:
             """ wapper for process image and ann to label """
             raw_img, ann = self.read_img(filename)
-            raw_img, ann = self.process_img(raw_img, ann, is_augment, is_resize, is_normlize)
+            raw_img, ann = self.process_img(raw_img, ann, is_augment, is_resize, False)
             labels = self.ann_to_label(ann)
             return (raw_img, *labels)
 
@@ -483,7 +479,7 @@ class LFFDHelper(BaseHelper):
 
             # load image -> resize image -> image augmenter -> make labels
             raw_img, *labels = tf.numpy_function(
-                _wapper, [filename, is_augment, True, False],
+                _wapper, [filename, is_augment, True],
                 [tf.uint8] + [tf.float32] * self.scale_num, name='process_img')
 
             # normlize image
@@ -567,13 +563,11 @@ class LFFDHelper(BaseHelper):
             fig, axs = plt.subplots(self.scale_num, 3, figsize=(9, 15))
             for i in range(self.scale_num):
                 score_mask, bbox_mask = labels[i][..., 6:7], labels[i][..., 7:8]
-                img1 = rescale(score_mask, self.in_hw / score_mask.shape[:2],
-                               multichannel=True, preserve_range=True) * np.array([150, 0, 0])
-                img2 = (img * rescale(bbox_mask, self.in_hw / bbox_mask.shape[:2],
-                                      multichannel=True, preserve_range=True))
+                img1 = resize(score_mask, self.in_hw / score_mask.shape[:2]) * np.array([150, 0, 0])
+                img2 = (img * resize(bbox_mask, self.in_hw / bbox_mask.shape[:2]))
                 imgs = [img, img1, img2]
                 for j in range(3):
-                    axs[i, j].imshow(imgs[j].astype(np.uint8))
+                    axs[i, j].imshow(imgs[j])
                     axs[i, j].axis('off')
 
             plt.subplots_adjust(wspace=0.01, hspace=0.02)
