@@ -112,3 +112,4 @@ evaluate:
       - sofa
       - train
       - tvmonitor
+    save_result: true

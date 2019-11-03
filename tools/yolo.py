@@ -16,6 +16,7 @@ from matplotlib.pyplot import text
 from PIL import Image, ImageFont, ImageDraw
 from tools.base import BaseHelper, INFO, ERROR, NOTE
 from pathlib import Path
+import shutil
 from tqdm import trange
 from termcolor import colored
 from typing import List, Tuple, AnyStr, Iterable
@@ -822,7 +823,8 @@ def yolo_parser_one(img: tf.Tensor, img_hw: np.ndarray, infer_model: k.Model,
     y_pred = infer_model.predict(img)
     # NOTE because yolo train model and infer model is same,
     # In order to ensure the consistency of the framework code reshape here.
-    y_pred = [np.reshape(pred, list(pred.shape[:-1]) + [h.anchor_number, 5 + h.class_num])
+    y_pred = [np.reshape(pred, list(pred.shape[:-1]) + [h.anchor_number,
+                                                        5 + h.class_num])
               for pred in y_pred]
     """ box list """
     _yxyx_box = []
@@ -995,7 +997,8 @@ def voc_ap(recall: np.ndarray, precision: np.ndarray) -> float:
 
 
 def yolo_eval(infer_model: k.Model, h: YOLOHelper, det_obj_thresh: float,
-              det_iou_thresh: float, mAp_iou_thresh: float, class_name: list):
+              det_iou_thresh: float, mAp_iou_thresh: float, class_name: list,
+              save_result: bool = False):
     """ calc yolo pre-class Ap and mAp
 
     Parameters
@@ -1015,12 +1018,27 @@ def yolo_eval(infer_model: k.Model, h: YOLOHelper, det_obj_thresh: float,
     mAp_iou_thresh : float
 
         mAp iou thresh
+
+    save_result : bool
+
+        when save result, while save `tmp/detection-results` and `tmp/ground-truth`.
     """
     p_img_ids = [[] for i in range(h.class_num)]
     p_scores = [[] for i in range(h.class_num)]
     p_bboxes = [[] for i in range(h.class_num)]
     t_res = [{} for i in range(h.class_num)]  # type:list[dict]
+    class_name = np.array(class_name)
     t_npos = np.zeros((h.class_num, 1))
+    if save_result == True:
+        res_path = Path('tmp/detection-results')
+        gt_path = Path('tmp/ground-truth')
+        if gt_path.exists():
+            shutil.rmtree(str(gt_path))
+        if res_path.exists():
+            shutil.rmtree(str(res_path))
+        gt_path.mkdir(parents=True)
+        res_path.mkdir(parents=True)
+
     for i in trange(len(h.test_list)):
         img_path, true_ann, img_hw = h.test_list[i]
         img_name = Path(img_path).stem
@@ -1031,89 +1049,111 @@ def yolo_eval(infer_model: k.Model, h: YOLOHelper, det_obj_thresh: float,
         p_yxyx, p_clas, p_score = yolo_parser_one(img, img_hw,
                                                   infer_model, det_obj_thresh,
                                                   det_iou_thresh, h)
+        if save_result == True:
+            p_xyxy = np.concatenate([np.maximum(p_yxyx[:, 1:2], 0),
+                                     np.maximum(p_yxyx[:, 0:1], 0),
+                                     np.minimum(p_yxyx[:, 3:4], img_hw[1]),
+                                     np.minimum(p_yxyx[:, 2:3], img_hw[0])], -1)
 
-        for j, c in enumerate(p_clas.astype(np.int)):
-            p_img_ids[c].append(img_name)
-            p_scores[c].append(p_score[j])
-            p_bboxes[c].append(np.array(
-                [np.maximum(p_yxyx[j, 1], 0),
-                 np.maximum(p_yxyx[j, 0], 0),
-                 np.minimum(p_yxyx[j, 3], img_hw[1]),
-                 np.minimum(p_yxyx[j, 2], img_hw[0])]))
+            p_s = p_score[:, None].astype('<U7')
+            p_c = class_name[p_clas[:, None].astype(np.int)]
+            p_x = p_xyxy.astype(np.int32).astype('<U6')
+            res_arr = np.concatenate([p_c, p_s, p_x], -1)
+            np.savetxt(str(res_path / f'{i}.txt'), res_arr, fmt='%s')
 
-        true_clas, true_box = np.split(true_ann, [1], -1)
-        true_xyxy = center_to_corner(true_box, in_hw=img_hw)
-        true_clas = np.ravel(true_clas)
-        for c in true_clas.astype(np.int):
-            t_res[c][img_name] = {
-                'bbox': true_xyxy,
-                'det': [False] * len(true_xyxy)}
-            t_npos[c] = t_npos[c] + 1
+            true_clas, true_box = np.split(true_ann, [1], -1)
+            true_xyxy = center_to_corner(true_box, in_hw=img_hw)
+            true_clas = np.ravel(true_clas).astype(np.int)
 
-    p_img_ids = np.array([np.array(i, dtype=np.str) for i in p_img_ids])
-    p_scores = np.array([np.array(i) for i in p_scores])
-    p_bboxes = np.array([np.stack(i) for i in p_bboxes])
+            t_c = class_name[true_clas[:, None].astype(np.int)]
+            t_x = true_xyxy.astype(np.int32).astype('<U6')
+            t_arr = np.concatenate([t_c, t_x], -1)
+            np.savetxt(str(gt_path / f'{i}.txt'), t_arr, fmt='%s')
 
-    """ sorted pre-classes by scores """
-    sorted_ind = np.array([np.argsort(-s) for s in p_scores])
-    sorted_scores = np.array([np.sort(-s) for s in p_scores])
-    p_bboxes = np.array([p_bboxes[i][sorted_ind[i]] for i, b in enumerate(p_bboxes)])
-    p_img_ids = np.array([p_img_ids[i][sorted_ind[i]] for i, b in enumerate(p_img_ids)])
+        else:
+            for j, c in enumerate(p_clas.astype(np.int)):
+                p_img_ids[c].append(img_name)
+                p_scores[c].append(p_score[j])
+                p_bboxes[c].append(np.array(
+                    [np.maximum(p_yxyx[j, 1], 0),
+                     np.maximum(p_yxyx[j, 0], 0),
+                     np.minimum(p_yxyx[j, 3], img_hw[1]),
+                     np.minimum(p_yxyx[j, 2], img_hw[0])]))
 
-    """ calc pre-classes tp and fp """
-    nd = [len(i) for i in p_img_ids]
-    tp = np.array([np.zeros(nd[i]) for i in range(h.class_num)])
-    fp = np.array([np.zeros(nd[i]) for i in range(h.class_num)])
-    for c in range(h.class_num):
-        for d in range(nd[c]):
-            if p_img_ids[c][d] in t_res[c]:
-                gt = t_res[c].get(p_img_ids[c][d])  # type:dict
-            else:
-                continue
-            bb = p_bboxes[c][d]
-            gtbb = gt['bbox']
-            if len(gtbb) > 0:
-                ixmin = np.maximum(gtbb[:, 0], bb[0])
-                iymin = np.maximum(gtbb[:, 1], bb[1])
-                ixmax = np.minimum(gtbb[:, 2], bb[2])
-                iymax = np.minimum(gtbb[:, 3], bb[3])
-                iw = np.maximum(ixmax - ixmin + 1., 0.)
-                ih = np.maximum(iymax - iymin + 1., 0.)
-                inters = iw * ih
+            true_clas, true_box = np.split(true_ann, [1], -1)
+            true_xyxy = center_to_corner(true_box, in_hw=img_hw)
+            true_clas = np.ravel(true_clas)
+            for c in true_clas.astype(np.int):
+                t_res[c][img_name] = {
+                    'bbox': true_xyxy,
+                    'det': [False] * len(true_xyxy)}
+                t_npos[c] = t_npos[c] + 1
 
-                # union
-                uni = ((bb[2] - bb[0] + 1.) *
-                       (bb[3] - bb[1] + 1.) +
-                       (gtbb[:, 2] - gtbb[:, 0] + 1.) *
-                       (gtbb[:, 3] - gtbb[:, 1] + 1.) - inters)
+    if save_result == False:
+        p_img_ids = np.array([np.array(i, dtype=np.str) for i in p_img_ids])
+        p_scores = np.array([np.array(i) for i in p_scores])
+        p_bboxes = np.array([np.stack(i) for i in p_bboxes])
 
-                overlaps = inters / uni
-                ovmax = np.max(overlaps)
-                jmax = np.argmax(overlaps)
-            else:
-                continue
+        """ sorted pre-classes by scores """
+        sorted_ind = np.array([np.argsort(-s) for s in p_scores])
+        sorted_scores = np.array([np.sort(-s) for s in p_scores])
+        p_bboxes = np.array([p_bboxes[i][sorted_ind[i]] for i, b in enumerate(p_bboxes)])
+        p_img_ids = np.array([p_img_ids[i][sorted_ind[i]] for i, b in enumerate(p_img_ids)])
 
-            if ovmax > mAp_iou_thresh:
-                if not gt['det'][jmax]:
-                    tp[c][d] = 1.  # tp + 1
-                    gt['det'][jmax] = True  # detectioned = true
+        """ calc pre-classes tp and fp """
+        nd = [len(i) for i in p_img_ids]
+        tp = np.array([np.zeros(nd[i]) for i in range(h.class_num)])
+        fp = np.array([np.zeros(nd[i]) for i in range(h.class_num)])
+        for c in range(h.class_num):
+            for d in range(nd[c]):
+                if p_img_ids[c][d] in t_res[c]:
+                    gt = t_res[c].get(p_img_ids[c][d])  # type:dict
+                else:
+                    continue
+                bb = p_bboxes[c][d]
+                gtbb = gt['bbox']
+                if len(gtbb) > 0:
+                    ixmin = np.maximum(gtbb[:, 0], bb[0])
+                    iymin = np.maximum(gtbb[:, 1], bb[1])
+                    ixmax = np.minimum(gtbb[:, 2], bb[2])
+                    iymax = np.minimum(gtbb[:, 3], bb[3])
+                    iw = np.maximum(ixmax - ixmin + 1., 0.)
+                    ih = np.maximum(iymax - iymin + 1., 0.)
+                    inters = iw * ih
+
+                    # union
+                    uni = ((bb[2] - bb[0] + 1.) *
+                           (bb[3] - bb[1] + 1.) +
+                           (gtbb[:, 2] - gtbb[:, 0] + 1.) *
+                           (gtbb[:, 3] - gtbb[:, 1] + 1.) - inters)
+
+                    overlaps = inters / uni
+                    ovmax = np.max(overlaps)
+                    jmax = np.argmax(overlaps)
+                else:
+                    continue
+
+                if ovmax > mAp_iou_thresh:
+                    if not gt['det'][jmax]:
+                        tp[c][d] = 1.  # tp + 1
+                        gt['det'][jmax] = True  # detectioned = true
+                    else:
+                        fp[c][d] = 1.
                 else:
                     fp[c][d] = 1.
-            else:
-                fp[c][d] = 1.
 
-    Ap = np.zeros(h.class_num)
-    for c in range(h.class_num):
-        fpint = np.cumsum(fp[c])
-        tpint = np.cumsum(tp[c])
-        recall = fpint / t_npos[c]
-        precision = tpint / np.maximum(tpint + fpint,
-                                       np.finfo(np.float64).eps)
-        Ap[c] = voc_ap(recall, precision)
+        Ap = np.zeros(h.class_num)
+        for c in range(h.class_num):
+            fpint = np.cumsum(fp[c])
+            tpint = np.cumsum(tp[c])
+            recall = fpint / t_npos[c]
+            precision = tpint / np.maximum(tpint + fpint,
+                                           np.finfo(np.float64).eps)
+            Ap[c] = voc_ap(recall, precision)
 
-    mAp = np.mean(Ap)
-    print('~~~~~~~~')
-    for c, name in enumerate(class_name):
-        print(f'AP for {name} =', colored(f'{Ap[c]:.4f}', 'blue'))
-    print(f'mAP =', colored(f'{mAp:.4f}', 'red'))
-    print('~~~~~~~~')
+        mAp = np.mean(Ap)
+        print('~~~~~~~~')
+        for c, name in enumerate(class_name):
+            print(f'AP for {name} =', colored(f'{Ap[c]:.4f}', 'blue'))
+        print(f'mAP =', colored(f'{mAp:.4f}', 'red'))
+        print('~~~~~~~~')
