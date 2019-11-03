@@ -19,7 +19,6 @@ from pathlib import Path
 from tqdm import trange
 from termcolor import colored
 from typing import List, Tuple, AnyStr, Iterable
-from memory_profiler import profile
 
 
 def fake_iou(a: np.ndarray, b: np.ndarray) -> float:
@@ -359,7 +358,6 @@ class YOLOHelper(BaseHelper):
 
         return image_aug, new_ann
 
-    @profile(stream=open('tmp/resize_img.log', 'w'), precision=3)
     def resize_img(self, img: np.ndarray, ann: np.ndarray) -> [np.ndarray, np.ndarray]:
         """
         resize image and keep ratio
