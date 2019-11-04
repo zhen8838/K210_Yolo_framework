@@ -286,8 +286,10 @@ def tiny_yolo(input_shape, anchor_num, class_num) -> [k.Model, k.Model]:
         DarknetConv2D_BN_Leaky(256, (3, 3)),
         DarknetConv2D(anchor_num * (class_num + 5), (1, 1)))([x2, x1])
 
-    y1_reshape = kl.Reshape((7, 10, anchor_num, 5 + class_num), name='l1')(y1)
-    y2_reshape = kl.Reshape((14, 20, anchor_num, 5 + class_num), name='l2')(y2)
+    y1_reshape = kl.Reshape((int(input_shape[0] / 32), int(input_shape[1] / 32),
+                             anchor_num, 5 + class_num), name='l1')(y1)
+    y2_reshape = kl.Reshape((int(input_shape[0] / 16), int(input_shape[1] / 16),
+                             anchor_num, 5 + class_num), name='l2')(y2)
 
     yolo_model = k.Model(inputs, [y1, y2])
     yolo_model_warpper = k.Model(inputs, [y1_reshape, y2_reshape])
@@ -321,9 +323,12 @@ def yolo(input_shape, anchor_num, class_num) -> [k.Model, k.Model]:
     x = kl.Concatenate()([x, darknet.layers[92].output])
     x, y3 = make_last_layers(x, 128, anchor_num * (class_num + 5))
 
-    y1_reshape = kl.Reshape((13, 13, anchor_num, 5 + class_num), name='l1')(y1)
-    y2_reshape = kl.Reshape((26, 26, anchor_num, 5 + class_num), name='l2')(y2)
-    y3_reshape = kl.Reshape((52, 52, anchor_num, 5 + class_num), name='l3')(y3)
+    y1_reshape = kl.Reshape((int(input_shape[0] / 32), int(input_shape[1] / 32),
+                             anchor_num, 5 + class_num), name='l1')(y1)
+    y2_reshape = kl.Reshape((int(input_shape[0] / 16), int(input_shape[1] / 16),
+                             anchor_num, 5 + class_num), name='l2')(y2)
+    y3_reshape = kl.Reshape((int(input_shape[0] / 8), int(input_shape[1] / 8),
+                             anchor_num, 5 + class_num), name='l3')(y3)
 
     yolo_model = k.Model(inputs, [y1, y2, y3])
     yolo_model_warpper = k.Model(inputs=inputs, outputs=[y1_reshape, y2_reshape, y3_reshape])
@@ -602,10 +607,12 @@ def yolo_mbv1(input_shape: list, anchor_num: int, class_num: int, alpha: float) 
 
     x = kl.Concatenate()([x, MobilenetConv2D((1, 1), alpha, 128)(base_model.get_layer('conv_pw_5_relu').output)])
     x, y3 = make_last_layers_mobilenet(x, 25, 128, anchor_num * (class_num + 5))
-
-    y1_reshape = kl.Reshape((13, 13, anchor_num, 5 + class_num), name='y1')(y1)
-    y2_reshape = kl.Reshape((26, 26, anchor_num, 5 + class_num), name='y2')(y2)
-    y3_reshape = kl.Reshape((52, 52, anchor_num, 5 + class_num), name='y3')(y3)
+    y1_reshape = kl.Reshape((int(input_shape[0] / 32), int(input_shape[1] / 32),
+                             anchor_num, 5 + class_num), name='y1')(y1)
+    y2_reshape = kl.Reshape((int(input_shape[0] / 16), int(input_shape[1] / 16),
+                             anchor_num, 5 + class_num), name='y2')(y2)
+    y3_reshape = kl.Reshape((int(input_shape[0] / 8), int(input_shape[1] / 8),
+                             anchor_num, 5 + class_num), name='y3')(y3)
 
     infer_model = k.Model(inputs, [y1, y2, y3])
     train_model = k.Model(inputs=inputs, outputs=[y1_reshape, y2_reshape, y3_reshape])

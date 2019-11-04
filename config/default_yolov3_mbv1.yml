@@ -33,6 +33,7 @@ model:
     obj_weight: 1
     noobj_weight: 1
     wh_weight: 0.5
+    verbose: 1
 train:
   jit: false
   augmenter: false
@@ -112,3 +113,4 @@ evaluate:
       - sofa
       - train
       - tvmonitor
+    save_result: true

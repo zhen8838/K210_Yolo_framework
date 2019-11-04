@@ -1,25 +1,25 @@
 import numpy as np
 import os
 import cv2
-from skimage.draw import rectangle_perimeter, circle
-from skimage.io import imshow, imread, imsave, show
-from skimage.color import gray2rgb
-from skimage.transform import AffineTransform, warp
+from matplotlib.pyplot import imshow, show
 from math import cos, sin
 import imgaug.augmenters as iaa
 from imgaug import BoundingBoxesOnImage
 import tensorflow as tf
 import tensorflow.python.keras.backend as K
 import tensorflow.python.keras as k
-from tensorflow.contrib.data import assert_element_shape
 from tensorflow.python.keras.losses import Loss
 from tensorflow.python.keras.utils import losses_utils
+from tensorflow.python.keras.metrics import MeanMetricWrapper
+from tensorflow.python.ops.variables import RefVariable
 from matplotlib.pyplot import text
 from PIL import Image, ImageFont, ImageDraw
 from tools.base import BaseHelper, INFO, ERROR, NOTE
 from pathlib import Path
+import shutil
 from tqdm import trange
 from termcolor import colored
+from typing import List, Tuple, AnyStr, Iterable
 
 
 def fake_iou(a: np.ndarray, b: np.ndarray) -> float:
@@ -375,24 +375,26 @@ class YOLOHelper(BaseHelper):
         [np.ndarray, np.ndarray]
             img, ann [uint8,float64]
         """
-        img_wh = np.array(img.shape[1::-1])
-        in_wh = self.in_hw[::-1]
+        im_in = np.zeros((self.in_hw[0], self.in_hw[1], 3), np.uint8)
 
-        """ calculate the affine transform factor """
-        scale = in_wh / img_wh  # NOTE affine tranform sacle is [w,h]
-        scale[:] = np.min(scale)
-        # NOTE translation is [w offset,h offset]
-        translation = ((in_wh - img_wh * scale) / 2).astype(int)
+        """ transform factor """
+        img_hw = np.array(img.shape[:2])
+        scale = np.min(self.in_hw / img_hw)
+
+        # NOTE hw_off is [h offset,w offset]
+        hw_off = ((self.in_hw - img_hw * scale) / 2).astype(int)
+        img = cv2.resize(img, None, fx=scale, fy=scale)
+
+        im_in[hw_off[0]:hw_off[0] + img.shape[0],
+              hw_off[1]:hw_off[1] + img.shape[1], :] = img[...]
 
         """ calculate the box transform matrix """
         if isinstance(ann, np.ndarray):
-            ann[:, 1:3] = (ann[:, 1:3] * img_wh * scale + translation) / in_wh
-            ann[:, 3:5] = (ann[:, 3:5] * img_wh * scale) / in_wh
+            ann[:, 1:3] = (ann[:, 1:3] * img_hw[::-1] * scale + hw_off[::-1]) / self.in_hw[::-1]
+            ann[:, 3:5] = (ann[:, 3:5] * img_hw[::-1] * scale) / self.in_hw[::-1]
 
-        """ apply Affine Transform """
-        aff = AffineTransform(scale=scale, translation=translation)
-        img = warp(img, aff.inverse, output_shape=self.in_hw, preserve_range=True).astype('uint8')
-        return img, ann
+        del img
+        return im_in, ann
 
     def read_img(self, img_path: str) -> np.ndarray:
         """ read image
@@ -407,23 +409,7 @@ class YOLOHelper(BaseHelper):
         np.ndarray
             image src
         """
-        img = imread(img_path)
-        if len(img.shape) != 3:
-            img = gray2rgb(img)
-        return img[..., :3]
-
-    def _compute_dataset_shape(self) -> tuple:
-        """ compute dataset shape to avoid keras check shape error
-
-        Returns
-        -------
-        tuple
-            dataset shape lists
-        """
-        output_shapes = [tf.TensorShape([None] + list(self.out_hw[i]) + [len(self.anchors[i]), self.class_num + 5])
-                         for i in range(len(self.anchors))]
-        dataset_shapes = (tf.TensorShape([None] + list(self.in_hw) + [3]), tuple(output_shapes))
-        return dataset_shapes
+        return cv2.imread(img_path)[..., ::-1]
 
     def build_datapipe(self, image_ann_list: np.ndarray, batch_size: int,
                        rand_seed: int, is_augment: bool,
@@ -450,22 +436,24 @@ class YOLOHelper(BaseHelper):
             else:
                 img = tf.cast(raw_img, tf.float32)
 
+            # set shape
+            img.set_shape((self.in_hw[0], self.in_hw[1], 3))
+            for i in range(len(self.anchors)):
+                labels[i].set_shape((self.out_hw[i][0], self.out_hw[i][1],
+                                     len(self.anchors[i]), self.class_num + 5))
             return img, tuple(labels)
 
-        dataset_shapes = self._compute_dataset_shape()
         if is_training:
             dataset = (tf.data.Dataset.from_tensor_slices(tf.range(len(image_ann_list))).
                        shuffle(batch_size * 500 if is_training == True else batch_size * 50, rand_seed).
                        repeat().
                        map(_parser_wrapper, -1).
-                       batch(batch_size, True).prefetch(-1).
-                       apply(assert_element_shape(dataset_shapes)))
+                       batch(batch_size, True).prefetch(-1))
         else:
             dataset = (tf.data.Dataset.from_tensor_slices(
                 tf.range(len(image_ann_list))).
                 map(_parser_wrapper, -1).
-                batch(batch_size, True).prefetch(-1).
-                apply(assert_element_shape(dataset_shapes)))
+                batch(batch_size, True).prefetch(-1))
 
         return dataset
 
@@ -651,7 +639,7 @@ def calc_ignore_mask(t_xy_A: tf.Tensor, t_wh_A: tf.Tensor, p_xy: tf.Tensor,
 class YOLO_Loss(Loss):
     def __init__(self, h: YOLOHelper, obj_thresh: float, iou_thresh: float,
                  obj_weight: float, noobj_weight: float, wh_weight: float,
-                 layer: int, reduction=losses_utils.ReductionV2.AUTO, name=None):
+                 layer: int, verbose=1, reduction=losses_utils.ReductionV2.AUTO, name=None):
         """ yolo loss obj
 
         Parameters
@@ -680,6 +668,17 @@ class YOLO_Loss(Loss):
         self.noobj_weight = noobj_weight
         self.wh_weight = wh_weight
         self.layer = layer
+        self.verbose = verbose
+        if self.verbose == 2:
+            with tf.compat.v1.variable_scope(f'lookups_{self.layer}',
+                                             reuse=tf.AUTO_REUSE):
+                names = ['xy', 'wh', 'obj', 'noobj', 'cls']
+                self.lookups: Iterable[Tuple[RefVariable, AnyStr]] = [
+                    (tf.compat.v1.get_variable(name, (self.h.batch_size), tf.float32,
+                                               tf.zeros_initializer(),
+                                               trainable=False),
+                     name)
+                    for name in names]
 
     def call(self, y_true: tf.Tensor, y_pred: tf.Tensor):
         """ split the label """
@@ -730,7 +729,16 @@ class YOLO_Loss(Loss):
             obj_mask * tf.nn.sigmoid_cross_entropy_with_logits(
                 labels=true_cls, logits=pred_cls), [1, 2, 3, 4])
 
-        total_loss = obj_loss + noobj_loss + cls_loss + xy_loss + wh_loss
+        if self.verbose == 2:
+            dummy_loss = (0 * self.lookups[0][0].assign(xy_loss) +
+                          0 * self.lookups[1][0].assign(wh_loss) +
+                          0 * self.lookups[2][0].assign(obj_loss) +
+                          0 * self.lookups[3][0].assign(noobj_loss) +
+                          0 * self.lookups[4][0].assign(cls_loss))
+
+            total_loss = obj_loss + noobj_loss + cls_loss + xy_loss + wh_loss + dummy_loss
+        else:
+            total_loss = obj_loss + noobj_loss + cls_loss + xy_loss + wh_loss
 
         return total_loss
 
@@ -815,7 +823,8 @@ def yolo_parser_one(img: tf.Tensor, img_hw: np.ndarray, infer_model: k.Model,
     y_pred = infer_model.predict(img)
     # NOTE because yolo train model and infer model is same,
     # In order to ensure the consistency of the framework code reshape here.
-    y_pred = [np.reshape(pred, list(pred.shape[:-1]) + [h.anchor_number, 5 + h.class_num])
+    y_pred = [np.reshape(pred, list(pred.shape[:-1]) + [h.anchor_number,
+                                                        5 + h.class_num])
               for pred in y_pred]
     """ box list """
     _yxyx_box = []
@@ -988,7 +997,8 @@ def voc_ap(recall: np.ndarray, precision: np.ndarray) -> float:
 
 
 def yolo_eval(infer_model: k.Model, h: YOLOHelper, det_obj_thresh: float,
-              det_iou_thresh: float, mAp_iou_thresh: float, class_name: list):
+              det_iou_thresh: float, mAp_iou_thresh: float, class_name: list,
+              save_result: bool = False):
     """ calc yolo pre-class Ap and mAp
 
     Parameters
@@ -1008,12 +1018,27 @@ def yolo_eval(infer_model: k.Model, h: YOLOHelper, det_obj_thresh: float,
     mAp_iou_thresh : float
 
         mAp iou thresh
+
+    save_result : bool
+
+        when save result, while save `tmp/detection-results` and `tmp/ground-truth`.
     """
     p_img_ids = [[] for i in range(h.class_num)]
     p_scores = [[] for i in range(h.class_num)]
     p_bboxes = [[] for i in range(h.class_num)]
     t_res = [{} for i in range(h.class_num)]  # type:list[dict]
+    class_name = np.array(class_name)
     t_npos = np.zeros((h.class_num, 1))
+    if save_result == True:
+        res_path = Path('tmp/detection-results')
+        gt_path = Path('tmp/ground-truth')
+        if gt_path.exists():
+            shutil.rmtree(str(gt_path))
+        if res_path.exists():
+            shutil.rmtree(str(res_path))
+        gt_path.mkdir(parents=True)
+        res_path.mkdir(parents=True)
+
     for i in trange(len(h.test_list)):
         img_path, true_ann, img_hw = h.test_list[i]
         img_name = Path(img_path).stem
@@ -1024,89 +1049,111 @@ def yolo_eval(infer_model: k.Model, h: YOLOHelper, det_obj_thresh: float,
         p_yxyx, p_clas, p_score = yolo_parser_one(img, img_hw,
                                                   infer_model, det_obj_thresh,
                                                   det_iou_thresh, h)
+        if save_result == True:
+            p_xyxy = np.concatenate([np.maximum(p_yxyx[:, 1:2], 0),
+                                     np.maximum(p_yxyx[:, 0:1], 0),
+                                     np.minimum(p_yxyx[:, 3:4], img_hw[1]),
+                                     np.minimum(p_yxyx[:, 2:3], img_hw[0])], -1)
 
-        for j, c in enumerate(p_clas.astype(np.int)):
-            p_img_ids[c].append(img_name)
-            p_scores[c].append(p_score[j])
-            p_bboxes[c].append(np.array(
-                [np.maximum(p_yxyx[j, 1], 0),
-                 np.maximum(p_yxyx[j, 0], 0),
-                 np.minimum(p_yxyx[j, 3], img_hw[1]),
-                 np.minimum(p_yxyx[j, 2], img_hw[0])]))
+            p_s = p_score[:, None].astype('<U7')
+            p_c = class_name[p_clas[:, None].astype(np.int)]
+            p_x = p_xyxy.astype(np.int32).astype('<U6')
+            res_arr = np.concatenate([p_c, p_s, p_x], -1)
+            np.savetxt(str(res_path / f'{i}.txt'), res_arr, fmt='%s')
 
-        true_clas, true_box = np.split(true_ann, [1], -1)
-        true_xyxy = center_to_corner(true_box, in_hw=img_hw)
-        true_clas = np.ravel(true_clas)
-        for c in true_clas.astype(np.int):
-            t_res[c][img_name] = {
-                'bbox': true_xyxy,
-                'det': [False] * len(true_xyxy)}
-            t_npos[c] = t_npos[c] + 1
+            true_clas, true_box = np.split(true_ann, [1], -1)
+            true_xyxy = center_to_corner(true_box, in_hw=img_hw)
+            true_clas = np.ravel(true_clas).astype(np.int)
 
-    p_img_ids = np.array([np.array(i, dtype=np.str) for i in p_img_ids])
-    p_scores = np.array([np.array(i) for i in p_scores])
-    p_bboxes = np.array([np.stack(i) for i in p_bboxes])
+            t_c = class_name[true_clas[:, None].astype(np.int)]
+            t_x = true_xyxy.astype(np.int32).astype('<U6')
+            t_arr = np.concatenate([t_c, t_x], -1)
+            np.savetxt(str(gt_path / f'{i}.txt'), t_arr, fmt='%s')
 
-    """ sorted pre-classes by scores """
-    sorted_ind = np.array([np.argsort(-s) for s in p_scores])
-    sorted_scores = np.array([np.sort(-s) for s in p_scores])
-    p_bboxes = np.array([p_bboxes[i][sorted_ind[i]] for i, b in enumerate(p_bboxes)])
-    p_img_ids = np.array([p_img_ids[i][sorted_ind[i]] for i, b in enumerate(p_img_ids)])
+        else:
+            for j, c in enumerate(p_clas.astype(np.int)):
+                p_img_ids[c].append(img_name)
+                p_scores[c].append(p_score[j])
+                p_bboxes[c].append(np.array(
+                    [np.maximum(p_yxyx[j, 1], 0),
+                     np.maximum(p_yxyx[j, 0], 0),
+                     np.minimum(p_yxyx[j, 3], img_hw[1]),
+                     np.minimum(p_yxyx[j, 2], img_hw[0])]))
 
-    """ calc pre-classes tp and fp """
-    nd = [len(i) for i in p_img_ids]
-    tp = np.array([np.zeros(nd[i]) for i in range(h.class_num)])
-    fp = np.array([np.zeros(nd[i]) for i in range(h.class_num)])
-    for c in range(h.class_num):
-        for d in range(nd[c]):
-            if p_img_ids[c][d] in t_res[c]:
-                gt = t_res[c].get(p_img_ids[c][d])  # type:dict
-            else:
-                continue
-            bb = p_bboxes[c][d]
-            gtbb = gt['bbox']
-            if len(gtbb) > 0:
-                ixmin = np.maximum(gtbb[:, 0], bb[0])
-                iymin = np.maximum(gtbb[:, 1], bb[1])
-                ixmax = np.minimum(gtbb[:, 2], bb[2])
-                iymax = np.minimum(gtbb[:, 3], bb[3])
-                iw = np.maximum(ixmax - ixmin + 1., 0.)
-                ih = np.maximum(iymax - iymin + 1., 0.)
-                inters = iw * ih
+            true_clas, true_box = np.split(true_ann, [1], -1)
+            true_xyxy = center_to_corner(true_box, in_hw=img_hw)
+            true_clas = np.ravel(true_clas)
+            for c in true_clas.astype(np.int):
+                t_res[c][img_name] = {
+                    'bbox': true_xyxy,
+                    'det': [False] * len(true_xyxy)}
+                t_npos[c] = t_npos[c] + 1
 
-                # union
-                uni = ((bb[2] - bb[0] + 1.) *
-                       (bb[3] - bb[1] + 1.) +
-                       (gtbb[:, 2] - gtbb[:, 0] + 1.) *
-                       (gtbb[:, 3] - gtbb[:, 1] + 1.) - inters)
+    if save_result == False:
+        p_img_ids = np.array([np.array(i, dtype=np.str) for i in p_img_ids])
+        p_scores = np.array([np.array(i) for i in p_scores])
+        p_bboxes = np.array([np.stack(i) for i in p_bboxes])
 
-                overlaps = inters / uni
-                ovmax = np.max(overlaps)
-                jmax = np.argmax(overlaps)
-            else:
-                continue
+        """ sorted pre-classes by scores """
+        sorted_ind = np.array([np.argsort(-s) for s in p_scores])
+        sorted_scores = np.array([np.sort(-s) for s in p_scores])
+        p_bboxes = np.array([p_bboxes[i][sorted_ind[i]] for i, b in enumerate(p_bboxes)])
+        p_img_ids = np.array([p_img_ids[i][sorted_ind[i]] for i, b in enumerate(p_img_ids)])
 
-            if ovmax > mAp_iou_thresh:
-                if not gt['det'][jmax]:
-                    tp[c][d] = 1.  # tp + 1
-                    gt['det'][jmax] = True  # detectioned = true
+        """ calc pre-classes tp and fp """
+        nd = [len(i) for i in p_img_ids]
+        tp = np.array([np.zeros(nd[i]) for i in range(h.class_num)])
+        fp = np.array([np.zeros(nd[i]) for i in range(h.class_num)])
+        for c in range(h.class_num):
+            for d in range(nd[c]):
+                if p_img_ids[c][d] in t_res[c]:
+                    gt = t_res[c].get(p_img_ids[c][d])  # type:dict
+                else:
+                    continue
+                bb = p_bboxes[c][d]
+                gtbb = gt['bbox']
+                if len(gtbb) > 0:
+                    ixmin = np.maximum(gtbb[:, 0], bb[0])
+                    iymin = np.maximum(gtbb[:, 1], bb[1])
+                    ixmax = np.minimum(gtbb[:, 2], bb[2])
+                    iymax = np.minimum(gtbb[:, 3], bb[3])
+                    iw = np.maximum(ixmax - ixmin + 1., 0.)
+                    ih = np.maximum(iymax - iymin + 1., 0.)
+                    inters = iw * ih
+
+                    # union
+                    uni = ((bb[2] - bb[0] + 1.) *
+                           (bb[3] - bb[1] + 1.) +
+                           (gtbb[:, 2] - gtbb[:, 0] + 1.) *
+                           (gtbb[:, 3] - gtbb[:, 1] + 1.) - inters)
+
+                    overlaps = inters / uni
+                    ovmax = np.max(overlaps)
+                    jmax = np.argmax(overlaps)
+                else:
+                    continue
+
+                if ovmax > mAp_iou_thresh:
+                    if not gt['det'][jmax]:
+                        tp[c][d] = 1.  # tp + 1
+                        gt['det'][jmax] = True  # detectioned = true
+                    else:
+                        fp[c][d] = 1.
                 else:
                     fp[c][d] = 1.
-            else:
-                fp[c][d] = 1.
 
-    Ap = np.zeros(h.class_num)
-    for c in range(h.class_num):
-        fpint = np.cumsum(fp[c])
-        tpint = np.cumsum(tp[c])
-        recall = fpint / t_npos[c]
-        precision = tpint / np.maximum(tpint + fpint,
-                                       np.finfo(np.float64).eps)
-        Ap[c] = voc_ap(recall, precision)
+        Ap = np.zeros(h.class_num)
+        for c in range(h.class_num):
+            fpint = np.cumsum(fp[c])
+            tpint = np.cumsum(tp[c])
+            recall = fpint / t_npos[c]
+            precision = tpint / np.maximum(tpint + fpint,
+                                           np.finfo(np.float64).eps)
+            Ap[c] = voc_ap(recall, precision)
 
-    mAp = np.mean(Ap)
-    print('~~~~~~~~')
-    for c, name in enumerate(class_name):
-        print(f'AP for {name} =', colored(f'{Ap[c]:.4f}', 'blue'))
-    print(f'mAP =', colored(f'{mAp:.4f}', 'red'))
-    print('~~~~~~~~')
+        mAp = np.mean(Ap)
+        print('~~~~~~~~')
+        for c, name in enumerate(class_name):
+            print(f'AP for {name} =', colored(f'{Ap[c]:.4f}', 'blue'))
+        print(f'mAP =', colored(f'{mAp:.4f}', 'red'))
+        print('~~~~~~~~')
