@@ -40,7 +40,7 @@ train:
   log_dir: log
   sub_log_dir: lffd_exp
   debug: false
-  verbose: 0
+  verbose: 1
   vali_step_factor: 0.2
   optimizer: RAdam
   optimizer_kwarg:

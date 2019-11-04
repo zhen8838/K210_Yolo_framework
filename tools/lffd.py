@@ -601,8 +601,9 @@ class LFFD_Loss(tf.keras.losses.Loss):
 
     def regress_loss(self, y_true_bbox: tf.Tensor,
                      y_pred_bbox: tf.Tensor, mask_bbox: tf.Tensor):
-        return tf.reduce_sum(tf.math.squared_difference(
-            y_true_bbox, y_pred_bbox) * mask_bbox)
+        return tf.math.divide_no_nan(
+            tf.reduce_sum(tf.math.squared_difference(y_true_bbox, y_pred_bbox) * mask_bbox),
+            tf.reduce_sum(mask_bbox))
 
     def call(self, y_true: tf.Tensor, y_pred: tf.Tensor):
         y_true_score, y_true_bbox, mask_score, mask_bbox = tf.split(y_true, [2, 4, 1, 1], -1)
