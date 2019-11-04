@@ -18,7 +18,7 @@ class LFFDHelper(BaseHelper):
         image_ann : str
 
             dataset meta file path,
-            value = 
+            value =
             `{'train_pos': 'xxx/train_pos.tfrecords',
             'train_pos_num': xx,
             'val_pos': 'xxx/val_pos.tfrecords',
@@ -85,23 +85,6 @@ class LFFDHelper(BaseHelper):
 
         self.train_total_data = self.meta['train_pos_num']
         self.val_total_data = self.meta['val_pos_num']
-
-    def read_img(self, name: str) -> [np.ndarray, np.ndarray]:
-        """ read img and annotation from filename
-
-        Parameters
-        ----------
-        name: str
-
-        Returns
-        -------
-
-        np.ndarray, np.ndarray
-
-            [image source , annotation]
-                uint8       None or int
-        """
-        return np.load(name, allow_pickle=True)
 
     def _resize_neg_img(self, im_in: np.ndarray, img: np.ndarray):
         """ resize negative image
@@ -206,7 +189,7 @@ class LFFDHelper(BaseHelper):
                     weak_fit[j, i] = True
                     valid[j, i] = True
         # rescale
-        img = img = resize(img, None, fx=target_scale, fy=target_scale)
+        img = resize(img, None, fx=target_scale, fy=target_scale)
         # crop and place the input image centered on the selected box
         vibr = self.stride_list[scale_idx] // 2  # add vibrate
         offset_x = np.random.randint(-vibr, vibr)
@@ -266,6 +249,7 @@ class LFFDHelper(BaseHelper):
 
         if isinstance(boxes, np.ndarray):
             state_list = self._resize_pos_img(im_in, img, boxes)
+            del img
             return im_in, state_list
         else:
             self._resize_neg_img(im_in, img)
@@ -273,16 +257,19 @@ class LFFDHelper(BaseHelper):
             return im_in, boxes
 
     def data_augmenter(self, img: np.ndarray,
-                       boxes: np.ndarray = 0.) -> [np.ndarray, np.ndarray]:
+                       boxes: tuple = 0.) -> [np.ndarray, np.ndarray]:
         """ data augmenter
 
         Parameters
         ----------
         img : np.ndarray
 
-        boxes : np.ndarray, optional
+        boxes : tuple, optional
 
-            by default 0.
+            when boxes is **0.** , mean this sample is negative, by default 0.
+            when boxes is **tuple** , mean this sample is postive ,
+            And contains :
+                [boxes, strong_fit, weak_fit, valid]
 
         Returns
         -------
@@ -291,7 +278,7 @@ class LFFDHelper(BaseHelper):
 
             img_aug , ann_aug
         """
-        if isinstance(boxes, np.ndarray):
+        if isinstance(boxes, tuple):
             # todo add augment
             return img, boxes
         else:
@@ -413,15 +400,15 @@ class LFFDHelper(BaseHelper):
                 # for bbox regression, only strong_fit area is available
                 labels[i][..., bbox_axis][strong_fit_flag] = 1
 
-    def ann_to_label(self, boxes: np.ndarray = 0.) -> (list, list):
+    def ann_to_label(self, boxes: tuple = 0.) -> (list, list):
         """ convert annotation to label
 
         Parameters
         ----------
-        boxes : np.ndarray, optional
+        boxes : tuple, optional
 
             when boxes is **0.** , mean this sample is negative, by default None
-            when boxes is **ndarray** , mean this sample is postive ,
+            when boxes is **tuple** , mean this sample is postive ,
             And contains :
                 [boxes, strong_fit, weak_fit, valid]
 
@@ -440,7 +427,7 @@ class LFFDHelper(BaseHelper):
         prob_axis = self.out_channels
         bbox_axis = self.out_channels + 1
 
-        if isinstance(boxes, np.ndarray):
+        if isinstance(boxes, tuple):
             # boxes, strong_fit, weak_fit, valid = boxes
             self._pos_ann_to_label(labels, prob_axis, bbox_axis, *boxes)
         else:
@@ -450,8 +437,6 @@ class LFFDHelper(BaseHelper):
     def build_datapipe(self, pos_tfrecord: tf.Tensor, neg_tfrecord: tf.Tensor,
                        batch_size: int, rand_seed: int, is_augment: bool,
                        is_normlize: bool, is_training: bool) -> tf.data.Dataset:
-
-        print(INFO, 'data augment is ', str(is_augment))
 
         def _wapper(raw_img: np.ndarray, ann: np.ndarray, is_augment: bool) -> [np.ndarray, tuple]:
             """ wapper for process image and ann to label """
@@ -547,8 +532,8 @@ class LFFDHelper(BaseHelper):
             for i in range(self.scale_num):
                 score_mask, bbox_mask = labels[i][..., 6:7], labels[i][..., 7:8]
                 scale = self.in_hw / score_mask.shape[:2]
-                img1 = resize(score_mask, fx=scale[1], fy=scale[0]) * np.array([150, 0, 0])
-                img2 = (img * resize(bbox_mask, fx=scale[1], fy=scale[0]))
+                img1 = resize(score_mask, None, fx=scale[1], fy=scale[0])[..., None] * np.array([150, 0, 0])
+                img2 = (img * resize(bbox_mask, None, fx=scale[1], fy=scale[0])[..., None])
                 imgs = [img, img1, img2]
                 for j in range(3):
                     axs[i, j].imshow(imgs[j].astype(np.uint8))
@@ -578,8 +563,6 @@ class LFFD_Loss(tf.keras.losses.Loss):
     def classify_loss(self, y_true_score: tf.Tensor,
                       y_pred_score: tf.Tensor, mask_score: tf.Tensor):
         pred_softmax = tf.nn.softmax(y_pred_score, -1)
-        loss = tf.nn.softmax_cross_entropy_with_logits_v2(labels=y_true_score, logits=y_pred_score, axis=-1)
-        loss_mask = tf.ones_like(y_true_score[..., 0])  # shape [bc,featrue,featrue]
         # y_true_score axis 0 is pos prob , axis 1 is neg prob
         pos_flag = y_true_score[..., 0] > 0.5
         pos_num = tf.reduce_sum(tf.cast(pos_flag, tf.float32))  # pos sample num
@@ -598,21 +581,28 @@ class LFFD_Loss(tf.keras.losses.Loss):
         def neg_fn():
             """ when this sample is negative sample """
             neg_choice_ratio = 0.1
-            neg_num_selected = tf.cast(tf.cast(tf.size(pred_softmax[..., 1]), tf.float32) * neg_choice_ratio, tf.int32)
+            neg_num_selected = tf.cast(tf.cast(tf.size(pred_softmax[..., 1]),
+                                               tf.float32) * neg_choice_ratio, tf.int32)
             neg_prob = pred_softmax[..., 1]
-            neg_prob_sorted = tf.nn.top_k(tf.reshape(neg_prob, (1, -1)), neg_num_selected)[0]
+            neg_prob_sorted = tf.nn.top_k(tf.reshape(neg_prob, (1, -1)),
+                                          neg_num_selected)[0]
             prob_threshold = neg_prob_sorted[0, -1]
             return tf.less_equal(neg_prob, prob_threshold)  # loss mask
 
         loss_mask = tf.cast(tf.cond(pos_num > 0, pos_fn, neg_fn), tf.float32)
-        loss = loss * loss_mask * tf.squeeze(mask_score, -1)
-        return tf.reduce_sum(tf.math.divide(loss, tf.reduce_sum(loss_mask)), [1, 2])
+
+        loss = (tf.nn.softmax_cross_entropy_with_logits_v2(
+            labels=y_true_score, logits=y_pred_score, axis=-1)
+            * loss_mask
+            * tf.squeeze(mask_score, -1))
+
+        return tf.math.divide_no_nan(tf.reduce_sum(loss),
+                                     tf.reduce_sum(loss_mask))
 
     def regress_loss(self, y_true_bbox: tf.Tensor,
                      y_pred_bbox: tf.Tensor, mask_bbox: tf.Tensor):
-        return tf.math.divide_no_nan(tf.reduce_sum(
-            tf.math.squared_difference(y_true_bbox, y_pred_bbox) * mask_bbox,
-            [1, 2, 3]), tf.reduce_sum(mask_bbox, [1, 2, 3]))
+        return tf.reduce_sum(tf.math.squared_difference(
+            y_true_bbox, y_pred_bbox) * mask_bbox)
 
     def call(self, y_true: tf.Tensor, y_pred: tf.Tensor):
         y_true_score, y_true_bbox, mask_score, mask_bbox = tf.split(y_true, [2, 4, 1, 1], -1)

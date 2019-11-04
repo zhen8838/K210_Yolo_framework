@@ -4,7 +4,7 @@ from pathlib import Path
 from tools.base import BaseHelper, INFO
 import argparse
 from tqdm import tqdm
-import shutil
+
 
 tf.compat.v1.enable_v2_behavior()
 
@@ -35,7 +35,7 @@ def main(pkl_path, save_path, output_file):
     save_path = Path(save_path)
 
     if save_path.exists() is True:
-        shutil.rmtree(str(save_path))
+        tf.io.gfile.rmtree(str(save_path))
 
     save_path.mkdir(parents=True)
 
