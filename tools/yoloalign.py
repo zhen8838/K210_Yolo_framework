@@ -1,8 +1,5 @@
 from tools.yolo import YOLOHelper, center_to_corner, corner_to_center
-from skimage.draw import rectangle_perimeter, circle
-from skimage.io import imshow, imread, imsave, show
-from skimage.color import gray2rgb
-from skimage.transform import AffineTransform, warp
+import cv2
 import numpy as np
 from imgaug import BoundingBoxesOnImage, KeypointsOnImage
 from imgaug import augmenters as iaa
@@ -16,6 +13,7 @@ from tensorflow.python.keras.backend import switch
 from PIL import Image, ImageFont, ImageDraw
 from tools.base import ERROR, INFO, NOTE
 from pathlib import Path
+from matplotlib.pyplot import imshow, show
 
 
 class YOLOAlignHelper(YOLOHelper):
@@ -86,26 +84,29 @@ class YOLOAlignHelper(YOLOHelper):
         [np.ndarray, np.ndarray]
             img, ann [uint8,float64]
         """
-        img_wh = np.array(img.shape[1::-1])
+        im_in = np.zeros((self.in_hw[0], self.in_hw[1], 3), np.uint8)
+
+        """ transform factor """
+        img_hw = np.array(img.shape[:2])
+        img_wh = img_hw[::-1]
         in_wh = self.in_hw[::-1]
+        scale = np.min(self.in_hw / img_hw)
 
-        """ calculate the affine transform factor """
-        scale = in_wh / img_wh  # NOTE affine tranform sacle is [w,h]
-        scale[:] = np.min(scale)
-        # NOTE translation is [w offset,h offset]
-        translation = ((in_wh - img_wh * scale) / 2).astype(int)
+        # NOTE hw_off is [h offset,w offset]
+        hw_off = ((self.in_hw - img_hw * scale) / 2).astype(int)
+        img = cv2.resize(img, None, fx=scale, fy=scale)
 
+        im_in[hw_off[0]:hw_off[0] + img.shape[0],
+              hw_off[1]:hw_off[1] + img.shape[1], :] = img[...]
         """ calculate the box transform matrix """
         if isinstance(ann, np.ndarray):
-            ann[:, 1:3] = (ann[:, 1:3] * img_wh * scale + translation) / in_wh
+            ann[:, 1:3] = (ann[:, 1:3] * img_wh * scale + hw_off[::-1]) / in_wh
             ann[:, 3:5] = (ann[:, 3:5] * img_wh * scale) / in_wh
             ann[:, 5:5 + self.landmark_num * 2] = ((ann[:, 5:5 + self.landmark_num * 2].reshape(
-                (-1, self.landmark_num, 2)) * img_wh * scale + translation) / in_wh).reshape((-1, self.landmark_num * 2))
+                (-1, self.landmark_num, 2)) * img_wh * scale + hw_off[::-1]) / in_wh).reshape((-1, self.landmark_num * 2))
 
-        """ apply Affine Transform """
-        aff = AffineTransform(scale=scale, translation=translation)
-        img = warp(img, aff.inverse, output_shape=self.in_hw, preserve_range=True).astype('uint8')
-        return img, ann
+        del img
+        return im_in, ann
 
     def draw_image(self, img: np.ndarray, ann: np.ndarray, is_show=True, scores=None):
         """ draw img and show bbox , set ann = None will not show bbox
@@ -129,25 +130,24 @@ class YOLOAlignHelper(YOLOHelper):
         if isinstance(ann, np.ndarray):
             p = ann[:, 0]
 
-            left_top = ((ann[:, 1:3] - ann[:, 3:5] / 2)[:, ::-1] * img.shape[0:2]).astype('int32')
-            right_bottom = ((ann[:, 1:3] + ann[:, 3:5] / 2)[:, ::-1] * img.shape[0:2]).astype('int32')
+            left_top = ((ann[:, 1:3] - ann[:, 3:5] / 2) * img.shape[1::-1]).astype('int32')
+            right_bottom = ((ann[:, 1:3] + ann[:, 3:5] / 2) * img.shape[1::-1]).astype('int32')
 
-            # convert landmark  from [n,[x,y]] ===> [n,[y,x]]
+            # convert landmark  from [n,[x,y]]
             landmarks = ann[:, 5:5 + self.landmark_num * 2].reshape((-1, self.landmark_num, 2))
-            landmarks = (landmarks[:, :, ::-1] * img.shape[0:2]).astype('int32')
+            landmarks = (landmarks * img.shape[1::-1]).astype('int32')
 
             for i in range(len(p)):
                 classes = int(p[i])
                 # draw bbox
-                rr, cc = rectangle_perimeter(left_top[i], right_bottom[i], shape=img.shape, clip=True)
-                img[rr, cc] = self.colormap[classes]
+                cv2.rectangle(img, tuple(left_top[i]),
+                              tuple(right_bottom[i]), self.colormap[classes])
                 for j in range(self.landmark_num):
                     # NOTE circle( y, x, radius )
-                    rr, cc = circle(landmarks[i][j][0], landmarks[i][j][1], 2)
-                    img[rr, cc] = self.colormap[classes]
+                    cv2.circle(img, tuple(landmarks[i][j]), 2, self.colormap[classes])
 
         if is_show:
-            imshow((img).astype('uint8'))
+            imshow(img)
             show()
 
     def data_augmenter(self, img: np.ndarray, ann: np.ndarray) -> tuple:

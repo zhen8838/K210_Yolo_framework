@@ -5,11 +5,11 @@ from tools.base import BaseHelper
 from tools.yolo import center_to_corner, corner_to_center
 import imgaug.augmenters as iaa
 from imgaug import BoundingBoxesOnImage
-from skimage.transform import AffineTransform, warp, resize
-from skimage.io import imshow, show
-from skimage.draw import rectangle_perimeter
+import cv2
+from matplotlib.pyplot import imshow, show
 from tools.base import INFO, ERROR, NOTE
 from pathlib import Path
+from typing import Sequence, Tuple
 
 
 class CtdetHelper(BaseHelper):
@@ -28,23 +28,27 @@ class CtdetHelper(BaseHelper):
             iaa.Affine(translate_percent={"x": (-0.1, 0.1), "y": (-0.1, 0.1)})  # 随机平移
         ])  # type: iaa.meta.Augmenter
 
-        self.colormap = np.array([
-            (255, 82, 0), (0, 255, 245), (0, 61, 255), (0, 255, 112), (0, 255, 133),
-            (255, 0, 0), (255, 163, 0), (255, 102, 0), (194, 255, 0), (0, 143, 255),
-            (51, 255, 0), (0, 82, 255), (0, 255, 41), (0, 255, 173), (10, 0, 255),
-            (173, 255, 0), (0, 255, 153), (255, 92, 0), (255, 0, 255), (255, 0, 245),
-            (128, 0, 0), (0, 128, 0), (128, 128, 0), (0, 0, 128), (128, 0, 128),
-            (0, 128, 128), (128, 128, 128), (64, 0, 0), (192, 0, 0), (64, 128, 0),
-            (192, 128, 0), (64, 0, 128), (192, 0, 128), (64, 128, 128), (192, 128, 128),
-            (0, 64, 0), (128, 64, 0), (0, 192, 0), (128, 192, 0), (0, 64, 128),
-            (61, 230, 250), (255, 6, 51), (11, 102, 255), (255, 7, 71), (255, 9, 224),
-            (9, 7, 230), (220, 220, 220), (255, 9, 92), (112, 9, 255), (8, 255, 214),
-            (7, 255, 224), (255, 184, 6), (10, 255, 71), (255, 41, 10), (7, 255, 255),
-            (224, 255, 8), (102, 8, 255), (255, 61, 6), (255, 194, 7), (255, 122, 8),
-            (0, 255, 20), (255, 8, 41), (255, 5, 153), (6, 51, 255), (235, 12, 255),
-            (160, 150, 20), (0, 163, 255), (140, 140, 140), (250, 10, 15), (20, 255, 0),
-            (31, 255, 0), (255, 31, 0), (255, 224, 0), (153, 255, 0), (0, 0, 255),
-            (255, 71, 0), (0, 235, 255), (0, 173, 255), (31, 0, 255), (11, 200, 200)], dtype=np.uint8)
+        self.colormap: Sequence[Tuple[int]] = [
+            (255, 82, 0), (0, 255, 245), (0, 61, 255), (0, 255, 112),
+            (0, 255, 133), (255, 0, 0), (255, 163, 0), (255, 102, 0),
+            (194, 255, 0), (0, 143, 255), (51, 255, 0), (0, 82, 255),
+            (0, 255, 41), (0, 255, 173), (10, 0, 255), (173, 255, 0),
+            (0, 255, 153), (255, 92, 0), (255, 0, 255), (255, 0, 245),
+            (128, 0, 0), (0, 128, 0), (128, 128, 0), (0, 0, 128),
+            (128, 0, 128), (0, 128, 128), (128, 128, 128), (64, 0, 0),
+            (192, 0, 0), (64, 128, 0), (192, 128, 0), (64, 0, 128),
+            (192, 0, 128), (64, 128, 128), (192, 128, 128), (0, 64, 0),
+            (128, 64, 0), (0, 192, 0), (128, 192, 0), (0, 64, 128),
+            (255, 6, 51), (11, 102, 255), (255, 7, 71), (255, 9, 224),
+            (9, 7, 230), (220, 220, 220), (255, 9, 92), (112, 9, 255),
+            (8, 255, 214), (7, 255, 224), (255, 184, 6), (10, 255, 71),
+            (255, 41, 10), (7, 255, 255), (224, 255, 8), (102, 8, 255),
+            (255, 61, 6), (255, 194, 7), (255, 122, 8), (0, 255, 20),
+            (255, 8, 41), (255, 5, 153), (6, 51, 255), (235, 12, 255),
+            (160, 150, 20), (0, 163, 255), (140, 140, 140), (250, 10, 15),
+            (20, 255, 0), (31, 255, 0), (255, 31, 0), (255, 224, 0),
+            (153, 255, 0), (0, 0, 255), (255, 71, 0), (0, 235, 255),
+            (0, 173, 255), (31, 0, 255), (11, 200, 200), (61, 230, 250)]
 
     def _gaussian_radius(self, w: int, h: int, min_overlap: float = 0.7) -> int:
         """ calc gaussian heatmap radius """
@@ -145,24 +149,26 @@ class CtdetHelper(BaseHelper):
         [np.ndarray, np.ndarray]
             img, ann [uint8,float64]
         """
-        img_wh = np.array(img.shape[1::-1])
-        in_wh = self.in_hw[::-1]
+        im_in = np.zeros((self.in_hw[0], self.in_hw[1], 3), np.uint8)
 
-        """ calculate the affine transform factor """
-        scale = in_wh / img_wh  # NOTE affine tranform sacle is [w,h]
-        scale[:] = np.min(scale)
-        # NOTE translation is [w offset,h offset]
-        translation = ((in_wh - img_wh * scale) / 2).astype(int)
+        """ transform factor """
+        img_hw = np.array(img.shape[:2])
+        scale = np.min(self.in_hw / img_hw)
+
+        # NOTE hw_off is [h offset,w offset]
+        hw_off = ((self.in_hw - img_hw * scale) / 2).astype(int)
+        img = cv2.resize(img, None, fx=scale, fy=scale)
+
+        im_in[hw_off[0]:hw_off[0] + img.shape[0],
+              hw_off[1]:hw_off[1] + img.shape[1], :] = img[...]
 
         """ calculate the box transform matrix """
-        if ann is not None:
-            ann[:, 1:3] = (ann[:, 1:3] * img_wh * scale + translation) / in_wh
-            ann[:, 3:5] = (ann[:, 3:5] * img_wh * scale) / in_wh
+        if isinstance(ann, np.ndarray):
+            ann[:, 1:3] = (ann[:, 1:3] * img_hw[::-1] * scale + hw_off[::-1]) / self.in_hw[::-1]
+            ann[:, 3:5] = (ann[:, 3:5] * img_hw[::-1] * scale) / self.in_hw[::-1]
 
-        """ apply Affine Transform """
-        aff = AffineTransform(scale=scale, translation=translation)
-        img = warp(img, aff.inverse, output_shape=self.in_hw, preserve_range=True).astype('uint8')
-        return img, ann
+        del img
+        return im_in, ann
 
     def colors_img(self, heatmap: np.ndarray) -> np.ndarray:
         """
@@ -181,7 +187,7 @@ class CtdetHelper(BaseHelper):
         """
         color = np.array([np.array(self.colormap, dtype=np.float32)[c][np.newaxis, np.newaxis, :] *
                           heatmap[:, :, c:c + 1] for c in range(self.class_num)])
-        return resize(np.sum(color, 0), self.in_hw, preserve_range=True).astype('uint8')
+        return cv2.resize(np.sum(color, 0), tuple(self.in_hw))
 
     def blend_img(self, raw_img: np.ndarray, colors_img: np.ndarray, factor: float = 0.6) -> np.ndarray:
         """ blend colors image to raw image
@@ -327,18 +333,13 @@ class CtdetHelper(BaseHelper):
 
             show image
         """
-        img_hw = img.shape[:2]
-        p, boxes = ann[:, 0], ann[:, 1:]
-        img = img.astype('uint8')
-
-        for i, box in enumerate(boxes):
-            yx, hw = box[1::-1], box[:-3:-1]
-
-            classes = int(p[i])
-            s = ((yx - hw / 2) * img_hw).astype(np.int)
-            e = s + (hw * img_hw).astype(np.int)
-            rr, cc = rectangle_perimeter(s, e, shape=img.shape)
-            img[rr, cc] = self.colormap[classes]
+        img_wh = img.shape[:2][::-1]
+        classes, boxes = ann[:, 0], ann[:, 1:]
+        for clas, box in zip(classes, boxes):
+            xy, wh = box[:2], box[2:]
+            s = tuple(((xy - wh / 2) * img_wh).astype(np.int))
+            e = tuple(s + (wh * img_wh).astype(np.int))
+            cv2.rectangle(img, s, e, self.colormap[int(clas)], 2)
 
         if heatmap is not None:
             img = self.blend_img(img, self.colors_img(heatmap))

@@ -2,10 +2,6 @@ import numpy as np
 import cv2
 import imgaug.augmenters as iaa
 from imgaug import KeypointsOnImage
-from skimage.draw import rectangle_perimeter, circle
-from skimage.io import imshow, imread, imsave, show
-from skimage.color import gray2rgb
-from skimage.transform import AffineTransform, warp
 import tensorflow as tf
 import tensorflow.python.keras.backend as K
 from tensorflow.python.keras.losses import Loss
@@ -18,7 +14,6 @@ from pathlib import Path
 
 class PFLDHelper(BaseHelper):
     def __init__(self, image_ann: str, in_hw: tuple, landmark_num: int, attribute_num: int, validation_split=0.1):
-        super().__init__()
         self.in_hw = np.array(in_hw)
         assert self.in_hw.ndim == 1
         self.landmark_num = landmark_num
@@ -150,11 +145,9 @@ class PFLDHelper(BaseHelper):
 
         landmark = landmark.reshape(-1, 2) * img.shape[0:2]
         for (x, y) in landmark.astype('uint8'):
-            rr, cc = circle(y, x, 1)
-            img[rr, cc] = (255, 0, 0)
-
-        imshow(img)
-        show()
+            cv2.circle(img, (x, y), 0, (255, 0, 0), 1)
+        plt.imshow(img)
+        plt.show()
 
 
 def calculate_pitch_yaw_roll(landmarks_2D, cam_w=256, cam_h=256, radians=False):
@@ -348,8 +341,8 @@ def pfld_infer(img_path: Path, infer_model: tf.keras.Model,
                 rr, cc = circle(landmark[j][1], landmark[j][0], 1)
                 raw_img[i][rr, cc] = (200, 0, 0)
 
-            imshow(raw_img[i])
-            show()
+            plt.imshow(raw_img[i])
+            plt.show()
     else:
         """ parser output """
         pred_landmark = tf.sigmoid(result).numpy()
@@ -366,16 +359,14 @@ def pfld_infer(img_path: Path, infer_model: tf.keras.Model,
                                   raw_img_hw[i][0] - 1)
             for j in range(h.landmark_num):
                 # NOTE circle( y, x, radius )
-                rr, cc = circle(landmark[j][1], landmark[j][0], 1)
-                ax1_img[rr, cc] = (200, 0, 0)
+                cv2.circle(ax1_img, tuple(landmark[j]), 1, (200, 0, 0), 1)
 
             """ plot ax2 """
             landmark = np.minimum(np.reshape(ncc_pred_landmark[i], (h.landmark_num, 2)) * raw_img_hw[i][::-1],
                                   raw_img_hw[i][0] - 1)
             for j in range(h.landmark_num):
                 # NOTE circle( y, x, radius )
-                rr, cc = circle(landmark[j][1], landmark[j][0], radius=radius)
-                ax2_img[rr, cc] = (200, 0, 0)
+                cv2.circle(ax2_img, tuple(landmark[j]), radius, (200, 0, 0), 1)
 
             ax1.imshow(ax1_img)
             ax2.imshow(ax2_img)
