@@ -86,7 +86,6 @@ from . import imagenet_utils
 from .imagenet_utils import decode_predictions
 from .imagenet_utils import _obtain_input_shape
 from tensorflow.python.keras.applications import keras_modules_injection
-import tensorflow as tf
 
 BASE_WEIGHT_PATH = ('https://github.com/JonathanCMitchell/mobilenet_v2_keras/'
                     'releases/download/v1.1/')

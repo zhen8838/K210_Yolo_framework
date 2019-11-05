@@ -1,8 +1,10 @@
 from models.networks import mbv1_softmax_facerec, mbv1_triplet_facerec, mbv1_amsoftmax_facerec,\
-    mbv2_ctdet, yolo, tiny_yolo, pfld, shuffle_ctdet, yolo3_nano, yolo_mbv1
+    mbv2_ctdet, yolo, tiny_yolo, pfld, shuffle_ctdet, yolo3_nano, yolo_mbv1,\
+    mbv1_tinyimgnet, mbv2_tinyimgnet
 from models.receptivefieldnet import rffacedetnet
 from models.networks4k210 import yolo_mbv1_k210, yolo_mbv2_k210, yolo2_mbv1_k210, yolov2algin_mbv1_k210, pfld_k210,\
-    mbv1_softmax_facerec_k210, mbv1_triplet_facerec_k210, mbv1_amsoftmax_facerec_k210
+    mbv1_softmax_facerec_k210, mbv1_triplet_facerec_k210, mbv1_amsoftmax_facerec_k210, mbv1_tinyimgnet_k210,\
+    mbv2_tinyimgnet_k210
 from tensorflow.python.keras.optimizers import Adam, SGD, RMSprop
 from tools.custom import RAdam
 from tools.yolo import YOLOHelper, YOLO_Loss, yolo_infer, yolo_eval
@@ -10,6 +12,7 @@ from tools.yoloalign import YOLOAlignHelper, YOLOAlign_Loss, yoloalgin_infer
 from tools.pfld import PFLDHelper, PFLD_Loss, pfld_infer
 from tools.ctdet import CtdetHelper, Ctdet_Loss, ctdet_infer
 from tools.lffd import LFFDHelper, LFFD_Loss
+from tools.tinyimgnet import TinyImgnetHelper, Sparse_Classify_Loss
 from tools.facerec import FcaeRecHelper, Triplet_Loss, Sparse_Softmax_Loss, Sparse_Amsoftmax_Loss, Sparse_Asoftmax_Loss
 from yaml import safe_dump
 
@@ -147,7 +150,8 @@ helper_register = {
     'PFLDHelper': PFLDHelper,
     'CtdetHelper': CtdetHelper,
     'FcaeRecHelper': FcaeRecHelper,
-    'LFFDHelper': LFFDHelper
+    'LFFDHelper': LFFDHelper,
+    'TinyImgnetHelper': TinyImgnetHelper
 }
 
 
@@ -159,6 +163,8 @@ network_register = {
     'mbv1_softmax_facerec': mbv1_softmax_facerec,
     'mbv1_triplet_facerec': mbv1_triplet_facerec,
     'mbv2_ctdet': mbv2_ctdet,
+    'mbv1_tinyimgnet': mbv1_tinyimgnet,
+    'mbv2_tinyimgnet': mbv2_tinyimgnet,
     'yolo': yolo,
     'tiny_yolo': tiny_yolo,
     'yolo3_nano': yolo3_nano,
@@ -171,6 +177,8 @@ network_register = {
     'yolo2_mbv1_k210': yolo2_mbv1_k210,
     'yolov2algin_mbv1_k210': yolov2algin_mbv1_k210,
     'pfld_k210': pfld_k210,
+    'mbv1_tinyimgnet_k210': mbv1_tinyimgnet_k210,
+    'mbv2_tinyimgnet_k210': mbv2_tinyimgnet_k210,
 }
 
 loss_register = {
@@ -182,7 +190,8 @@ loss_register = {
     'Sparse_Softmax_Loss': Sparse_Softmax_Loss,
     'Sparse_Amsoftmax_Loss': Sparse_Amsoftmax_Loss,
     'Sparse_Asoftmax_Loss': Sparse_Asoftmax_Loss,
-    'LFFD_Loss': LFFD_Loss
+    'LFFD_Loss': LFFD_Loss,
+    'Sparse_Classify_Loss': Sparse_Classify_Loss
 }
 
 

@@ -54,31 +54,32 @@ https://github.com/tensorflow/models/blob/master/research/slim/nets/mobilenet_v1
 import os
 import warnings
 
-# from . import get_submodules_from_kwargs
-# from . import imagenet_utils
-# from .imagenet_utils import decode_predictions
-# from .imagenet_utils import _obtain_input_shape
-# from tensorflow.python.keras.applications import keras_modules_injection
-import tensorflow as tf
-from tensorflow.python.keras import layers, backend, models
-from tensorflow.python.keras import utils as keras_utils
+from . import imagenet_utils
+from .imagenet_utils import decode_predictions
+from .imagenet_utils import _obtain_input_shape
+from . import get_submodules_from_kwargs
+from tensorflow.python.keras.applications import keras_modules_injection
 
 BASE_WEIGHT_PATH = ('https://github.com/fchollet/deep-learning-models/'
                     'releases/download/v0.6/')
+backend = None
+layers = None
+models = None
+keras_utils = None
 
 
-# def preprocess_input(x, **kwargs):
-#     """Preprocesses a numpy array encoding a batch of images.
+def preprocess_input(x, **kwargs):
+    """Preprocesses a numpy array encoding a batch of images.
 
-#     # Arguments
-#         x: a 4D numpy array consists of RGB values within [0, 255].
+    # Arguments
+        x: a 4D numpy array consists of RGB values within [0, 255].
 
-#     # Returns
-#         Preprocessed array.
-#     """
-#     return imagenet_utils.preprocess_input(x, mode='tf', **kwargs)
+    # Returns
+        Preprocessed array.
+    """
+    return imagenet_utils.preprocess_input(x, mode='tf', **kwargs)
 
-
+@keras_modules_injection
 def MobileNet(input_shape=None,
               alpha=1.0,
               depth_multiplier=1,
@@ -88,7 +89,7 @@ def MobileNet(input_shape=None,
               input_tensor=None,
               pooling=None,
               classes=1000,
-              **kwargs) -> tf.keras.Model:
+              **kwargs):
     """Instantiates the MobileNet architecture.
 
     # Arguments
@@ -144,65 +145,65 @@ def MobileNet(input_shape=None,
         RuntimeError: If attempting to run this model with a
             backend that does not support separable convolutions.
     """
-    # global backend, models, keras_utils
-    # backend, _, models, keras_utils = get_submodules_from_kwargs(kwargs)
+    global backend, layers, models, keras_utils
+    backend, layers, models, keras_utils = get_submodules_from_kwargs(kwargs)
 
-    # if not (weights in {'imagenet', None} or os.path.exists(weights)):
-    #     raise ValueError('The `weights` argument should be either '
-    #                      '`None` (random initialization), `imagenet` '
-    #                      '(pre-training on ImageNet), '
-    #                      'or the path to the weights file to be loaded.')
+    if not (weights in {'imagenet', None} or os.path.exists(weights)):
+        raise ValueError('The `weights` argument should be either '
+                         '`None` (random initialization), `imagenet` '
+                         '(pre-training on ImageNet), '
+                         'or the path to the weights file to be loaded.')
 
-    # if weights == 'imagenet' and include_top and classes != 1000:
-    #     raise ValueError('If using `weights` as `"imagenet"` with `include_top` '
-    #                      'as true, `classes` should be 1000')
+    if weights == 'imagenet' and include_top and classes != 1000:
+        raise ValueError('If using `weights` as `"imagenet"` with `include_top` '
+                         'as true, `classes` should be 1000')
 
-    # # Determine proper input shape and default size.
-    # if input_shape is None:
-    #     default_size = 224
-    # else:
-    #     if backend.image_data_format() == 'channels_first':
-    #         rows = input_shape[1]
-    #         cols = input_shape[2]
-    #     else:
-    #         rows = input_shape[0]
-    #         cols = input_shape[1]
+    # Determine proper input shape and default size.
+    if input_shape is None:
+        default_size = 224
+    else:
+        if backend.image_data_format() == 'channels_first':
+            rows = input_shape[1]
+            cols = input_shape[2]
+        else:
+            rows = input_shape[0]
+            cols = input_shape[1]
 
-    #     if rows == cols and rows in [128, 160, 192, 224]:
-    #         default_size = rows
-    #     else:
-    #         default_size = 224
+        if rows == cols and rows in [128, 160, 192, 224]:
+            default_size = rows
+        else:
+            default_size = 224
 
-    # input_shape = _obtain_input_shape(input_shape,
-    #                                   default_size=default_size,
-    #                                   min_size=32,
-    #                                   data_format=backend.image_data_format(),
-    #                                   require_flatten=include_top,
-    #                                   weights=weights)
+    input_shape = _obtain_input_shape(input_shape,
+                                      default_size=default_size,
+                                      min_size=32,
+                                      data_format=backend.image_data_format(),
+                                      require_flatten=include_top,
+                                      weights=weights)
 
-    # if backend.image_data_format() == 'channels_last':
-    #     row_axis, col_axis = (0, 1)
-    # else:
-    #     row_axis, col_axis = (1, 2)
-    # rows = input_shape[row_axis]
-    # cols = input_shape[col_axis]
+    if backend.image_data_format() == 'channels_last':
+        row_axis, col_axis = (0, 1)
+    else:
+        row_axis, col_axis = (1, 2)
+    rows = input_shape[row_axis]
+    cols = input_shape[col_axis]
 
-    # if weights == 'imagenet':
-    #     if depth_multiplier != 1:
-    #         raise ValueError('If imagenet weights are being loaded, '
-    #                          'depth multiplier must be 1')
+    if weights == 'imagenet':
+        if depth_multiplier != 1:
+            raise ValueError('If imagenet weights are being loaded, '
+                             'depth multiplier must be 1')
 
-    #     if alpha not in [0.25, 0.50, 0.75, 1.0]:
-    #         raise ValueError('If imagenet weights are being loaded, '
-    #                          'alpha can be one of'
-    #                          '`0.25`, `0.50`, `0.75` or `1.0` only.')
+        if alpha not in [0.25, 0.50, 0.75, 1.0]:
+            raise ValueError('If imagenet weights are being loaded, '
+                             'alpha can be one of'
+                             '`0.25`, `0.50`, `0.75` or `1.0` only.')
 
-    #     if rows != cols or rows not in [128, 160, 192, 224]:
-    #         rows = 224
-    #         warnings.warn('`input_shape` is undefined or non-square, '
-    #                       'or `rows` is not in [128, 160, 192, 224]. '
-    #                       'Weights for input shape (224, 224) will be'
-    #                       ' loaded as the default.')
+        if rows != cols or rows not in [128, 160, 192, 224]:
+            rows = 224
+            warnings.warn('`input_shape` is undefined or non-square, '
+                          'or `rows` is not in [128, 160, 192, 224]. '
+                          'Weights for input shape (224, 224) will be'
+                          ' loaded as the default.')
 
     if input_tensor is None:
         img_input = layers.Input(shape=input_shape)
@@ -228,62 +229,62 @@ def MobileNet(input_shape=None,
     x = _depthwise_conv_block(x, 1024, alpha, depth_multiplier, strides=(2, 2), block_id=12)
     x = _depthwise_conv_block(x, 1024, alpha, depth_multiplier, block_id=13)
 
-    # if include_top:
-    #     if backend.image_data_format() == 'channels_first':
-    #         shape = (int(1024 * alpha), 1, 1)
-    #     else:
-    #         shape = (1, 1, int(1024 * alpha))
+    if include_top:
+        if backend.image_data_format() == 'channels_first':
+            shape = (int(1024 * alpha), 1, 1)
+        else:
+            shape = (1, 1, int(1024 * alpha))
 
-    #     x = layers.GlobalAveragePooling2D()(x)
-    #     x = layers.Reshape(shape, name='reshape_1')(x)
-    #     x = layers.Dropout(dropout, name='dropout')(x)
-    #     x = layers.Conv2D(classes, (1, 1),
-    #                       padding='same',
-    #                       name='conv_preds')(x)
-    #     x = layers.Reshape((classes,), name='reshape_2')(x)
-    #     x = layers.Activation('softmax', name='act_softmax')(x)
-    # else:
-    #     if pooling == 'avg':
-    #         x = layers.GlobalAveragePooling2D()(x)
-    #     elif pooling == 'max':
-    #         x = layers.GlobalMaxPooling2D()(x)
+        x = layers.GlobalAveragePooling2D()(x)
+        x = layers.Reshape(shape, name='reshape_1')(x)
+        x = layers.Dropout(dropout, name='dropout')(x)
+        x = layers.Conv2D(classes, (1, 1),
+                          padding='same',
+                          name='conv_preds')(x)
+        x = layers.Reshape((classes,), name='reshape_2')(x)
+        x = layers.Activation('softmax', name='act_softmax')(x)
+    else:
+        if pooling == 'avg':
+            x = layers.GlobalAveragePooling2D()(x)
+        elif pooling == 'max':
+            x = layers.GlobalMaxPooling2D()(x)
 
     # Ensure that the model takes into account
     # any potential predecessors of `input_tensor`.
-    # if input_tensor is not None:
-    #     inputs = keras_utils.get_source_inputs(input_tensor)
-    # else:
-    #     inputs = img_input
+    if input_tensor is not None:
+        inputs = keras_utils.get_source_inputs(input_tensor)
+    else:
+        inputs = img_input
 
     # Create model.
     model = models.Model(img_input, x, name='mobilenet_v1')
 
     # Load weights.
-    # if weights == 'imagenet':
-    #     if alpha == 1.0:
-    #         alpha_text = '1_0'
-    #     elif alpha == 0.75:
-    #         alpha_text = '7_5'
-    #     elif alpha == 0.50:
-    #         alpha_text = '5_0'
-    #     else:
-    #         alpha_text = '2_5'
+    if weights == 'imagenet':
+        if alpha == 1.0:
+            alpha_text = '1_0'
+        elif alpha == 0.75:
+            alpha_text = '7_5'
+        elif alpha == 0.50:
+            alpha_text = '5_0'
+        else:
+            alpha_text = '2_5'
 
-    #     if include_top:
-    #         model_name = 'mobilenet_%s_%d_tf.h5' % (alpha_text, rows)
-    #         weight_path = BASE_WEIGHT_PATH + model_name
-    #         weights_path = keras_utils.get_file(model_name,
-    #                                             weight_path,
-    #                                             cache_subdir='models')
-    #     else:
-    #         model_name = 'mobilenet_%s_%d_tf_no_top.h5' % (alpha_text, rows)
-    #         weight_path = BASE_WEIGHT_PATH + model_name
-    #         weights_path = keras_utils.get_file(model_name,
-    #                                             weight_path,
-    #                                             cache_subdir='models')
-    #     model.load_weights(weights_path)
-    # elif weights is not None:
-    #     model.load_weights(weights)
+        if include_top:
+            model_name = 'mobilenet_%s_%d_tf.h5' % (alpha_text, rows)
+            weight_path = BASE_WEIGHT_PATH + model_name
+            weights_path = keras_utils.get_file(model_name,
+                                                weight_path,
+                                                cache_subdir='models')
+        else:
+            model_name = 'mobilenet_%s_%d_tf_no_top.h5' % (alpha_text, rows)
+            weight_path = BASE_WEIGHT_PATH + model_name
+            weights_path = keras_utils.get_file(model_name,
+                                                weight_path,
+                                                cache_subdir='models')
+        model.load_weights(weights_path)
+    elif weights is not None:
+        model.load_weights(weights)
 
     return model
 

@@ -1,11 +1,9 @@
 import tensorflow as tf
-from tensorflow.contrib import slim
 import tensorflow.python.keras as k
 import tensorflow.python.keras.backend as K
 import tensorflow.python.keras.layers as kl
 from models.keras_mobilenet_v2 import MobileNetV2
 from models.keras_mobilenet import MobileNet
-from models.mobilenet_v2 import training_scope, mobilenet_base
 from models.darknet import darknet_body, DarknetConv2D, DarknetConv2D_BN_Leaky, compose, resblock_body
 from toolz import pipe
 
@@ -628,3 +626,25 @@ def mbv1_amsoftmax_facerec_k210(input_shape: list, class_num: int,
     infer_model = k.Model(inputs, embedds)  # encoder to infer
     train_model = k.Model(inputs, outputs)  # full model to train
     return infer_model, train_model
+
+
+def mbv1_tinyimgnet_k210(input_shape: list, class_num: int,
+                         depth_multiplier: float = 1.0):
+
+    inputs = k.Input(input_shape)
+    base_model = MobileNet(input_tensor=inputs, input_shape=input_shape,
+                           include_top=True, weights=None,
+                           alpha=depth_multiplier, classes=class_num)  # type: keras.Model
+
+    return base_model, base_model
+
+
+def mbv2_tinyimgnet_k210(input_shape: list, class_num: int,
+                         depth_multiplier: float = 1.0):
+
+    inputs = k.Input(input_shape)
+    base_model = MobileNetV2(input_tensor=inputs, input_shape=input_shape,
+                             include_top=True, weights=None,
+                             alpha=depth_multiplier, classes=class_num)  # type: keras.Model
+
+    return base_model, base_model

@@ -48,7 +48,7 @@ def main(config_file, new_cfg, mode, model, train, prune):
     """ Build Data Input PipeLine """
 
     h = helper_register[model.helper](**model.helper_kwarg)  # type:BaseHelper
-    h.set_dataset(train.batch_size, train.rand_seed, train.augmenter)
+    h.set_dataset(train.batch_size, train.augmenter)
 
     train_ds = h.train_dataset
     validation_ds = h.val_dataset
@@ -114,6 +114,10 @@ def main(config_file, new_cfg, mode, model, train, prune):
         loss_fn = loss_register[model.loss]
         losses = [loss_fn(h=h, **model.loss_kwarg) for i in range(h.scale_num)]
         metrics = []
+    elif model.name == 'imagenet':
+        loss_fn = loss_register[model.loss]
+        losses = [loss_fn(**model.loss_kwarg)]
+        metrics = [SparseCategoricalAccuracy(name='acc')]
     else:
         loss_obj = loss_register[model.loss](h=h, **model.loss_kwarg)
         losses = [loss_obj]

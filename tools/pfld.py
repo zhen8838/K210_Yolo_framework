@@ -6,7 +6,6 @@ import tensorflow as tf
 import tensorflow.python.keras.backend as K
 from tensorflow.python.keras.losses import Loss
 from tensorflow.python.keras.utils import losses_utils
-from tensorflow.contrib.data import assert_element_shape
 from tools.base import BaseHelper, INFO, ERROR, NOTE
 import matplotlib.pyplot as plt
 from pathlib import Path
@@ -22,21 +21,18 @@ class PFLDHelper(BaseHelper):
         if image_ann == None:
             self.train_list = None
             self.test_list = None
+            self.val_list = None
         else:
             img_ann_list = np.load(image_ann, allow_pickle=True)
-
             if isinstance(img_ann_list[()], dict):
                 # NOTE can use dict set trian and test dataset
                 self.train_list = img_ann_list[()]['train_data']  # type:np.ndarray
-                self.test_list = img_ann_list[()]['test_data']  # type:np.ndarray
-            elif isinstance(img_ann_list[()], np.ndarray):
-                num = int(len(img_ann_list) * self.validation_split)
-                self.train_list = img_ann_list[num:]  # type:np.ndarray
-                self.test_list = img_ann_list[:num]  # type:np.ndarray
+                self.val_list = self.test_list = img_ann_list[()]['test_data']  # type:np.ndarray
             else:
                 raise ValueError(f'{image_ann} data format error!')
             self.train_total_data = len(self.train_list)  # type:int
             self.test_total_data = len(self.test_list)  # type:int
+            self.val_total_data = len(self.val_list)  # type:int
 
         self.iaaseq = iaa.OneOf([
             iaa.Fliplr(0.5),  # 50% 镜像
@@ -47,28 +43,11 @@ class PFLDHelper(BaseHelper):
     def resize_img(self, raw_img: tf.Tensor) -> tf.Tensor:
         return tf.image.resize(raw_img, self.in_hw, method=0)
 
-    def _compute_dataset_shape(self) -> tuple:
-        """ compute dataset shape to avoid keras check shape error
-
-        Returns
-        -------
-        tuple
-            dataset shape lists
-        """
-        img_shapes = tf.TensorShape([None] + list(self.in_hw) + [3])
-        # landmark_shape = tf.TensorShape([None, self.landmark_num * 2])
-        # attribute_w_shape = tf.TensorShape([None, 1])
-        # eular_shape = tf.TensorShape([None, 3])
-        label_shape = tf.TensorShape([None, self.landmark_num * 2 + 1 + 3])
-        dataset_shapes = (img_shapes, label_shape)
-        return dataset_shapes
-
     def data_augmenter(self, img, ann):
         """ No implement """
         return img, ann
 
-    def build_datapipe(self, image_ann_list: np.ndarray, batch_size: int,
-                       rand_seed: int, is_augment: bool,
+    def build_datapipe(self, image_ann_list: np.ndarray, batch_size: int, is_augment: bool,
                        is_normlize: bool, is_training: bool) -> tf.data.Dataset:
         print(INFO, 'data augment is ', str(is_augment))
 
@@ -87,14 +66,12 @@ class PFLDHelper(BaseHelper):
 
             return img, label
 
-        dataset_shapes = self._compute_dataset_shape()
-
         def _batch_parser(img: tf.Tensor, label: tf.Tensor) -> [
-                tf.Tensor, tf.Tensor, tf.Tensor, tf.Tensor]:
+                tf.Tensor, tf.Tensor]:
             """ 
                 process ann , calc the attribute weights 
 
-                return : img , landmarks , attribute_weight , euluar
+                return : img , [landmarks-attribute_weight-euluar]
             """
             attr = label[:, self.landmark_num * 2:self.landmark_num * 2 + self.attribute_num]
             mat_ratio = tf.reduce_mean(attr, axis=0, keepdims=True)
@@ -102,24 +79,28 @@ class PFLDHelper(BaseHelper):
                                  tf.ones([1, self.attribute_num]) * batch_size)
             attribute_weight = tf.matmul(attr, mat_ratio, transpose_b=True)  # [n,1]
 
-            return img, tf.concat((label[:, 0:self.landmark_num * 2], attribute_weight,
-                                   label[:, self.landmark_num * 2 + self.attribute_num:]), 1)
+            labels = tf.concat((label[:, 0:self.landmark_num * 2], attribute_weight,
+                                label[:, self.landmark_num * 2 + self.attribute_num:]), 1)  # type:tf.Tensor
+            # set shape
+            img.set_shape([None, self.in_hw[0], self.in_hw[1], 3])
+            labels.set_shape([None, self.landmark_num * 2 + 1 + 3])
+
+            return img, labels
+
         if is_training:
             ds = (tf.data.Dataset.from_tensor_slices(tf.range(len(image_ann_list)))
-                  .shuffle(batch_size * 500, rand_seed)
+                  .shuffle(batch_size * 500)
                   .repeat()
                   .map(_parser_wrapper, -1)
                   .batch(batch_size, True)
                   .map(_batch_parser, -1)
-                  .prefetch(-1)
-                  .apply(assert_element_shape(dataset_shapes)))
+                  .prefetch(-1))
         else:
             ds = (tf.data.Dataset.from_tensor_slices(tf.range(len(image_ann_list)))
                   .map(_parser_wrapper, -1)
                   .batch(batch_size, True)
                   .map(_batch_parser, -1)
-                  .prefetch(-1)
-                  .apply(assert_element_shape(dataset_shapes)))
+                  .prefetch(-1))
 
         return ds
 
@@ -338,8 +319,7 @@ def pfld_infer(img_path: Path, infer_model: tf.keras.Model,
 
             for j in range(h.landmark_num):
                 # NOTE circle( y, x, radius )
-                rr, cc = circle(landmark[j][1], landmark[j][0], 1)
-                raw_img[i][rr, cc] = (200, 0, 0)
+                cv2.circle(raw_img, (landmark[j][1], landmark[j][0]), 0, (200, 0, 0), 1)
 
             plt.imshow(raw_img[i])
             plt.show()

@@ -271,8 +271,7 @@ class CtdetHelper(BaseHelper):
 
         return np.concatenate((clses, (ct_int + offset[idx]) / self.out_hw, obj_wh[idx] / self.out_hw), -1)
 
-    def build_datapipe(self, image_ann_list: np.ndarray, batch_size: int,
-                       rand_seed: int, is_augment: bool,
+    def build_datapipe(self, image_ann_list: np.ndarray, batch_size: int, is_augment: bool,
                        is_normlize: bool, is_training: bool) -> tf.data.Dataset:
         print(INFO, 'data augment is ', str(is_augment))
 
@@ -304,7 +303,7 @@ class CtdetHelper(BaseHelper):
 
         if is_training:
             ds = (tf.data.Dataset.from_tensor_slices(tf.range(len(image_ann_list))).
-                  shuffle(batch_size * 500 if is_training == True else batch_size * 50, rand_seed).repeat().
+                  shuffle(batch_size * 500).repeat().
                   map(parser, -1).
                   batch(batch_size, True).prefetch(-1))
         else:

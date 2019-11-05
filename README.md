@@ -197,13 +197,13 @@ python3 ./make_wflw_list.py xxxxx/WFLW_annotations xxxxx/WFLW_images xxxxx/wflw_
 1.  start train
 
 ```sh
-python3 ./keras_train.py --config_file config/default_pfld.yml
+make train CFG=config/default_pfld.yml
 ```
 
 2.  modify `default_landmark.yml` `pre_ckpt` to `log/xxxxx/saved_model_xx.h5`
 
 ```sh
-python3 ./keras_train.py --config_file config/default_pfld.yml
+make train CFG=config/default_pfld.yml
 ```
 
 ## Convert Kmodel
@@ -222,13 +222,13 @@ ncc compile pfld_infer.tflite pfld_opted.kmodel -i tflite -o kmodel -t k210 --da
 
 
 ```sh
-python3 ./keras_inference.py log/xxxxx/infer_model_xx.h5 xxxxx/xxx.png
+make infer CKPT=log/xxxxx/infer_model_xx.h5 IMG=xx/xxx.jpg
 ```
 
 2.  Infer images:
 
 ```sh
-python3 ./keras_inference.py log/xxxxx/infer_model_xx.h5 xxxxx/images
+make infer CKPT=log/xxxxx/infer_model_xx.h5 IMG=xx/images
 ```
 
 3.  Plot kmodel results:
@@ -286,4 +286,21 @@ make train CFG=config/default_facerec_amsoftmax.yml
 
 ```sh
 make train CFG=config/default_facerec_asoftmax.yml
+```
+
+
+# Tiny ImageNet
+
+## Prepare dataset
+
+Download [Tiny ImageNet Visual Recognition Challenge](https://tiny-imagenet.herokuapp.com/) dataset, and unzip.
+
+```sh
+python3 ./make_tinyimgenet_list.py --input_path xxxxx/tiny-imagenet-200 --save_path xxxxx/tiny-imagenet-tfrecord
+```
+
+## Train
+
+```sh
+make train CFG=config/default_tinyimgnet.yml
 ```

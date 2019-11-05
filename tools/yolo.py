@@ -359,7 +359,8 @@ class YOLOHelper(BaseHelper):
 
         return image_aug, new_ann
 
-    def resize_img(self, img: np.ndarray, ann: np.ndarray) -> [np.ndarray, np.ndarray]:
+    def resize_img(self, img: np.ndarray, ann: np.ndarray
+                   ) -> [np.ndarray, np.ndarray]:
         """
         resize image and keep ratio
 
@@ -411,18 +412,20 @@ class YOLOHelper(BaseHelper):
         """
         return cv2.imread(img_path)[..., ::-1]
 
-    def build_datapipe(self, image_ann_list: np.ndarray, batch_size: int,
-                       rand_seed: int, is_augment: bool,
+    def build_datapipe(self, image_ann_list: np.ndarray, batch_size: int, is_augment: bool,
                        is_normlize: bool, is_training: bool) -> tf.data.Dataset:
         print(INFO, 'data augment is ', str(is_augment))
 
         def _parser_wrapper(i: tf.Tensor):
             # NOTE use wrapper function and dynamic list construct (x,(y_1,y_2,...))
-            img_path, ann = tf.numpy_function(lambda idx: (image_ann_list[idx][0].copy(), image_ann_list[idx][1].copy()),
+            img_path, ann = tf.numpy_function(lambda idx:
+                                              (image_ann_list[idx][0].copy(),
+                                               image_ann_list[idx][1].copy()),
                                               [i], [tf.dtypes.string, tf.float64])
             # tf.numpy_function(lambda x: print('img id:', x), [i],[])
             # load image
-            raw_img = tf.image.decode_image(tf.io.read_file(img_path), channels=3, expand_animations=False)
+            raw_img = tf.image.decode_image(tf.io.read_file(img_path),
+                                            channels=3, expand_animations=False)
             # resize image -> image augmenter
             raw_img, ann = tf.numpy_function(self.process_img,
                                              [raw_img, ann, is_augment, True, False],
@@ -445,15 +448,17 @@ class YOLOHelper(BaseHelper):
 
         if is_training:
             dataset = (tf.data.Dataset.from_tensor_slices(tf.range(len(image_ann_list))).
-                       shuffle(batch_size * 500 if is_training == True else batch_size * 50, rand_seed).
+                       shuffle(batch_size * 500).
                        repeat().
                        map(_parser_wrapper, -1).
-                       batch(batch_size, True).prefetch(-1))
+                       batch(batch_size, True).
+                       prefetch(-1))
         else:
             dataset = (tf.data.Dataset.from_tensor_slices(
                 tf.range(len(image_ann_list))).
                 map(_parser_wrapper, -1).
-                batch(batch_size, True).prefetch(-1))
+                batch(batch_size, True).
+                prefetch(-1))
 
         return dataset
 
@@ -524,7 +529,8 @@ def tf_xywh_to_all(grid_pred_xy: tf.Tensor, grid_pred_wh: tf.Tensor,
     return all_pred_xy, all_pred_wh
 
 
-def tf_xywh_to_grid(all_true_xy: tf.Tensor, all_true_wh: tf.Tensor, layer: int, h: YOLOHelper) -> [tf.Tensor, tf.Tensor]:
+def tf_xywh_to_grid(all_true_xy: tf.Tensor, all_true_wh: tf.Tensor, layer: int,
+                    h: YOLOHelper) -> [tf.Tensor, tf.Tensor]:
     """convert true label xy wh to grid scale
 
     Parameters
@@ -1059,7 +1065,7 @@ def yolo_eval(infer_model: k.Model, h: YOLOHelper, det_obj_thresh: float,
             p_c = class_name[p_clas[:, None].astype(np.int)]
             p_x = p_xyxy.astype(np.int32).astype('<U6')
             res_arr = np.concatenate([p_c, p_s, p_x], -1)
-            np.savetxt(str(res_path / f'{i}.txt'), res_arr, fmt='%s')
+            np.savetxt(str(res_path / f'{img_name}.txt'), res_arr, fmt='%s')
 
             true_clas, true_box = np.split(true_ann, [1], -1)
             true_xyxy = center_to_corner(true_box, in_hw=img_hw)
@@ -1068,7 +1074,7 @@ def yolo_eval(infer_model: k.Model, h: YOLOHelper, det_obj_thresh: float,
             t_c = class_name[true_clas[:, None].astype(np.int)]
             t_x = true_xyxy.astype(np.int32).astype('<U6')
             t_arr = np.concatenate([t_c, t_x], -1)
-            np.savetxt(str(gt_path / f'{i}.txt'), t_arr, fmt='%s')
+            np.savetxt(str(gt_path / f'{img_name}.txt'), t_arr, fmt='%s')
 
         else:
             for j, c in enumerate(p_clas.astype(np.int)):

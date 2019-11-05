@@ -44,24 +44,24 @@ class BaseHelper(object):
 
     @abc.abstractmethod
     def build_datapipe(self, image_ann_list: np.ndarray, batch_size: int,
-                       rand_seed: int, is_augment: bool,
-                       is_normlize: bool, is_training: bool) -> tf.data.Dataset:
+                       is_augment: bool, is_normlize: bool,
+                       is_training: bool) -> tf.data.Dataset:
         NotImplementedError('Must be implemented in subclasses.')
 
-    def set_dataset(self, batch_size: int, rand_seed: int, is_augment: bool = True,
+    def set_dataset(self, batch_size: int, is_augment: bool = True,
                     is_normlize: bool = True, is_training: bool = True):
         self.batch_size = batch_size
         if is_training:
-            self.train_dataset = self.build_datapipe(self.train_list, batch_size, rand_seed,
+            self.train_dataset = self.build_datapipe(self.train_list, batch_size,
                                                      is_augment, is_normlize, is_training)
-            self.val_dataset = self.build_datapipe(self.val_list, batch_size, rand_seed,
+            self.val_dataset = self.build_datapipe(self.val_list, batch_size,
                                                    False, is_normlize, is_training)
 
             self.train_epoch_step = self.train_total_data // self.batch_size
             self.val_epoch_step = self.val_total_data // self.batch_size
         else:
-            self.test_dataset = self.build_datapipe(self.val_list, batch_size,
-                                                    rand_seed, False, is_normlize, is_training)
+            self.test_dataset = self.build_datapipe(self.test_list, batch_size,
+                                                    False, is_normlize, is_training)
             self.test_epoch_step = self.test_total_data // self.batch_size
 
     def read_img(self, img_path: str) -> tf.Tensor:

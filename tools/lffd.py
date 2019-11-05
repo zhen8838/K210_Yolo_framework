@@ -53,10 +53,12 @@ class LFFDHelper(BaseHelper):
         self.test_dataset: tf.data.Dataset = None
 
         self.meta: dict = np.load('data/lffd_img_ann.npy', allow_pickle=True)[()]
-        self.train_pos: str = self.meta['train_pos']
-        self.train_neg: str = self.meta['train_neg']
-        self.val_pos: str = self.meta['val_pos']
-        self.val_neg: str = self.meta['val_neg']
+        self.train_pos = self.meta['train_pos']  # type:list
+        self.train_neg = self.meta['train_neg']  # type:list
+        self.val_pos = self.meta['val_pos']  # type:list
+        self.val_neg = self.meta['val_neg']  # type:list
+        self.train_total_data = self.meta['train_pos_num']  # type:int
+        self.val_total_data = self.meta['val_pos_num']  # type:int
 
         self.train_epoch_step: int = None
         self.val_epoch_step: int = None
@@ -82,9 +84,6 @@ class LFFDHelper(BaseHelper):
         self.out_channels = 6
         self.normal_para = self.large_list // 2  # Normalization parameters
         self.neg_sample_ratio: float = neg_sample_ratio  # neg sample ratio
-
-        self.train_total_data = self.meta['train_pos_num']
-        self.val_total_data = self.meta['val_pos_num']
 
     def _resize_neg_img(self, im_in: np.ndarray, img: np.ndarray):
         """ resize negative image
@@ -434,8 +433,8 @@ class LFFDHelper(BaseHelper):
             self._neg_ann_to_label(labels, prob_axis, bbox_axis)
         return labels
 
-    def build_datapipe(self, pos_tfrecord: tf.Tensor, neg_tfrecord: tf.Tensor,
-                       batch_size: int, rand_seed: int, is_augment: bool,
+    def build_datapipe(self, pos_list: list, neg_list: list,
+                       batch_size: int, is_augment: bool,
                        is_normlize: bool, is_training: bool) -> tf.data.Dataset:
 
         def _wapper(raw_img: np.ndarray, ann: np.ndarray, is_augment: bool) -> [np.ndarray, tuple]:
@@ -473,12 +472,12 @@ class LFFDHelper(BaseHelper):
             return img, tuple(labels)
 
         if is_training:
-            pos_ds = (tf.data.TFRecordDataset(pos_tfrecord, buffer_size=100,
-                                              num_parallel_reads=6).
-                      shuffle(batch_size * 200, rand_seed).repeat().map(_parser))
-            neg_ds = (tf.data.TFRecordDataset(neg_tfrecord, buffer_size=100,
-                                              num_parallel_reads=6).
-                      shuffle(batch_size * 200, rand_seed).repeat().map(_parser))
+            pos_ds = (tf.data.Dataset.list_files(pos_list, True).
+                      interleave(tf.data.TFRecordDataset, len(pos_list), 1, 4).
+                      shuffle(batch_size * 500).repeat().map(_parser))
+            neg_ds = (tf.data.Dataset.list_files(neg_list, True).
+                      interleave(tf.data.TFRecordDataset, len(neg_list), 1, 4).
+                      shuffle(batch_size * 500).repeat().map(_parser))
             ds = (tf.data.experimental.sample_from_datasets(
                 [pos_ds, neg_ds], [1 - self.neg_sample_ratio,
                                    self.neg_sample_ratio]).
@@ -488,25 +487,22 @@ class LFFDHelper(BaseHelper):
 
         return ds
 
-    def set_dataset(self, batch_size: int, rand_seed: int, is_augment: bool = True,
+    def set_dataset(self, batch_size: int, is_augment: bool = True,
                     is_normlize: bool = True, is_training: bool = True):
         self.batch_size = batch_size
         if is_training:
             self.train_dataset = self.build_datapipe(
                 self.train_pos, self.train_neg,
-                batch_size, rand_seed, is_augment,
-                is_normlize, is_training)
+                batch_size, is_augment, is_normlize, is_training)
             self.val_dataset = self.build_datapipe(
                 self.val_pos, self.val_neg,
-                batch_size, rand_seed, False,
-                is_normlize, is_training)
+                batch_size, False, is_normlize, is_training)
 
             self.train_epoch_step = self.train_total_data // self.batch_size
             self.val_epoch_step = self.val_total_data // self.batch_size
         else:
             self.test_dataset = self.build_datapipe(
-                self.val_list, batch_size, rand_seed,
-                False, is_normlize, is_training)
+                self.val_list, batch_size, False, is_normlize, is_training)
             self.test_epoch_step = self.test_total_data // self.batch_size
 
     def draw_image(self, img: np.ndarray, labels: list, is_show: bool = True):

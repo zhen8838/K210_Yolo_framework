@@ -1,5 +1,4 @@
 import tensorflow as tf
-from tensorflow.contrib import slim
 import tensorflow.python.keras as k
 import tensorflow.python.keras.backend as K
 import tensorflow.python.keras.layers as kl
@@ -617,3 +616,23 @@ def yolo_mbv1(input_shape: list, anchor_num: int, class_num: int, alpha: float) 
     infer_model = k.Model(inputs, [y1, y2, y3])
     train_model = k.Model(inputs=inputs, outputs=[y1_reshape, y2_reshape, y3_reshape])
     return infer_model, train_model
+
+
+def mbv1_tinyimgnet(input_shape: list, class_num: int, depth_multiplier: float = 1.0):
+
+    inputs = k.Input(input_shape)
+    base_model = MobileNet(input_tensor=inputs, input_shape=input_shape,
+                           include_top=True, weights=None,
+                           alpha=depth_multiplier, classes=class_num)  # type: keras.Model
+
+    return base_model, base_model
+
+
+def mbv2_tinyimgnet(input_shape: list, class_num: int, depth_multiplier: float = 1.0):
+
+    inputs = k.Input(input_shape)
+    base_model = MobileNetV2(input_tensor=inputs, input_shape=input_shape,
+                             include_top=True, weights=None,
+                             alpha=depth_multiplier, classes=class_num)  # type: keras.Model
+
+    return base_model, base_model
