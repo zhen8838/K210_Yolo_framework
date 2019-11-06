@@ -452,8 +452,9 @@ class LFFDHelper(BaseHelper):
 
             raw_img = tf.image.decode_image(example['img_raw'], channels=3)
             label = example['label']
-            bbox = tf.io.parse_tensor(example['bbox'], tf.float32)
-
+            bbox = tf.cond(tf.equal(label, 1),
+                           lambda: tf.io.parse_tensor(example['bbox'], tf.float32),
+                           lambda: 0.)
             # load image -> resize image -> image augmenter -> make labels
             raw_img, *labels = tf.numpy_function(
                 _wapper, [raw_img, bbox, is_augment],
@@ -473,15 +474,15 @@ class LFFDHelper(BaseHelper):
 
         if is_training:
             pos_ds = (tf.data.Dataset.list_files(pos_list, True).
-                      interleave(tf.data.TFRecordDataset, len(pos_list), 1, 4).
-                      shuffle(batch_size * 500).repeat().map(_parser))
+                      interleave(tf.data.TFRecordDataset, len(pos_list), 1, min(4, len(pos_list))).
+                      shuffle(batch_size * 500).repeat())
             neg_ds = (tf.data.Dataset.list_files(neg_list, True).
-                      interleave(tf.data.TFRecordDataset, len(neg_list), 1, 4).
-                      shuffle(batch_size * 500).repeat().map(_parser))
+                      interleave(tf.data.TFRecordDataset, len(neg_list), 1, min(4, len(neg_list))).
+                      shuffle(batch_size * 500).repeat())
             ds = (tf.data.experimental.sample_from_datasets(
                 [pos_ds, neg_ds], [1 - self.neg_sample_ratio,
                                    self.neg_sample_ratio]).
-                batch(batch_size, True).prefetch(-1))
+                map(_parser).batch(batch_size, True).prefetch(-1))
         else:
             raise NotImplementedError('No support to test eval')
 
