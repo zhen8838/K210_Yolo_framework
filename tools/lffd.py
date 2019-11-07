@@ -1,6 +1,6 @@
 import numpy as np
 import tensorflow as tf
-from cv2 import resize
+from cv2 import resize, imdecode, IMREAD_COLOR
 import imgaug.augmenters as iaa
 from imgaug import BoundingBoxesOnImage
 from tools.base import BaseHelper, INFO
@@ -52,14 +52,14 @@ class LFFDHelper(BaseHelper):
         self.val_dataset: tf.data.Dataset = None
         self.test_dataset: tf.data.Dataset = None
 
-        self.meta: dict = np.load('data/lffd_img_ann.npy', allow_pickle=True)[()]
+        self.meta: dict = np.load(image_ann, allow_pickle=True)[()]
+        self.data = np.load(self.meta['data_path'], allow_pickle=True)
         self.train_pos = self.meta['train_pos']  # type:list
         self.train_neg = self.meta['train_neg']  # type:list
         self.val_pos = self.meta['val_pos']  # type:list
         self.val_neg = self.meta['val_neg']  # type:list
-        self.train_total_data = self.meta['train_pos_num']  # type:int
-        self.val_total_data = self.meta['val_pos_num']  # type:int
-
+        self.train_total_data = self.meta['train_num']  # type:int
+        self.val_total_data = self.meta['val_num']  # type:int
         self.train_epoch_step: int = None
         self.val_epoch_step: int = None
 
@@ -247,12 +247,10 @@ class LFFDHelper(BaseHelper):
         im_in = np.zeros([self.in_hw[0], self.in_hw[1], 3], dtype=np.uint8)
 
         if isinstance(boxes, np.ndarray):
-            state_list = self._resize_pos_img(im_in, img, boxes)
-            del img
+            state_list = self._resize_pos_img(im_in, img, boxes.copy())
             return im_in, state_list
         else:
             self._resize_neg_img(im_in, img)
-            del img
             return im_in, boxes
 
     def data_augmenter(self, img: np.ndarray,
@@ -437,27 +435,17 @@ class LFFDHelper(BaseHelper):
                        batch_size: int, is_augment: bool,
                        is_normlize: bool, is_training: bool) -> tf.data.Dataset:
 
-        def _wapper(raw_img: np.ndarray, ann: np.ndarray, is_augment: bool) -> [np.ndarray, tuple]:
+        def _wapper(idx: int, is_augment: bool) -> [np.ndarray, tuple]:
             """ wapper for process image and ann to label """
-            raw_img, ann = self.process_img(raw_img, ann, is_augment, True, False)
+            raw_img = imdecode(self.data[idx][0], IMREAD_COLOR)[:, :, ::-1]  # BGR to RGB
+            raw_img, ann = self.process_img(raw_img, self.data[idx][2], is_augment, True, False)
             labels = self.ann_to_label(ann)
             return (raw_img, *labels)
 
-        def _parser(stream: bytes):
-            example = tf.io.parse_single_example(stream, {
-                'img_raw': tf.io.FixedLenFeature([], tf.string),
-                'label': tf.io.FixedLenFeature([], tf.int64),
-                'bbox': tf.io.FixedLenFeature([], tf.string),
-            })  # type:dict
-
-            raw_img = tf.image.decode_image(example['img_raw'], channels=3)
-            label = example['label']
-            bbox = tf.cond(tf.equal(label, 1),
-                           lambda: tf.io.parse_tensor(example['bbox'], tf.float32),
-                           lambda: 0.)
-            # load image -> resize image -> image augmenter -> make labels
+        def _parser(idx: tf.Tensor):
+            # read -> resize -> augmenter -> make labels
             raw_img, *labels = tf.numpy_function(
-                _wapper, [raw_img, bbox, is_augment],
+                _wapper, [idx, is_augment],
                 [tf.uint8] + [tf.float32] * self.scale_num, name='process_img')
 
             # normlize image
@@ -473,11 +461,9 @@ class LFFDHelper(BaseHelper):
             return img, tuple(labels)
 
         if is_training:
-            pos_ds = (tf.data.Dataset.list_files(pos_list, True).
-                      interleave(tf.data.TFRecordDataset, len(pos_list), 1, min(4, len(pos_list))).
+            pos_ds = (tf.data.Dataset.range(len(pos_list)).
                       shuffle(batch_size * 500).repeat())
-            neg_ds = (tf.data.Dataset.list_files(neg_list, True).
-                      interleave(tf.data.TFRecordDataset, len(neg_list), 1, min(4, len(neg_list))).
+            neg_ds = (tf.data.Dataset.range(len(neg_list)).
                       shuffle(batch_size * 500).repeat())
             ds = (tf.data.experimental.sample_from_datasets(
                 [pos_ds, neg_ds], [1 - self.neg_sample_ratio,

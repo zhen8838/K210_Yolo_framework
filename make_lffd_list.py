@@ -3,10 +3,6 @@ import tensorflow as tf
 from pathlib import Path
 from tools.base import BaseHelper, INFO
 import argparse
-from tqdm import trange
-
-
-tf.compat.v1.enable_v2_behavior()
 
 
 def make_example(img_string: str, label: int, bbox_string: str):
@@ -22,62 +18,29 @@ def make_example(img_string: str, label: int, bbox_string: str):
 
 def main(pkl_path, save_path, output_file):
     data = np.load(open(pkl_path, 'rb'), allow_pickle=True)  # type:dict
-    _positive_index = []
-    _negative_index = []
+    pos_arr = []
+    neg_arr = []
     for k, v in data.items():
         if v[1] == 0:  # negative
-            _negative_index.append(k)
+            neg_arr.append(k)
         else:  # positive
-            _positive_index.append(k)
-    _positive_index = np.array(_positive_index)
-    _negative_index = np.array(_negative_index)
+            pos_arr.append(k)
+    pos_arr = np.array(pos_arr)
+    neg_arr = np.array(neg_arr)
 
-    save_path = Path(save_path)
+    train_pos_arr, val_pos_arr = np.split(pos_arr, [int(0.8 * len(pos_arr))])
+    train_neg_arr, val_neg_arr = np.split(neg_arr, [int(0.8 * len(neg_arr))])
 
-    if save_path.exists() is True:
-        tf.io.gfile.rmtree(str(save_path))
-
-    save_path.mkdir(parents=True)
-
-    validation_split = 0.2
-    train_pos_list, val_pos_list = np.split(_positive_index,
-                                            [int((1 - validation_split) * len(_positive_index))])
-    train_neg_list, val_neg_list = np.split(_negative_index,
-                                            [int((1 - validation_split) * len(_negative_index))])
-    meta_dict = {}
-    group_size = 2000
-
-    for idx_list, name in [(train_pos_list, 'train_pos'), (val_pos_list, 'val_pos')]:
-        print(INFO, f'Make List : {name}')
-        meta_dict[name] = []
-        meta_dict[name + '_num'] = len(idx_list)
-        for i in trange(0, len(idx_list), group_size):
-            record_file = save_path / f'{name}_{i:d}.tfrecords'
-            meta_dict[name].append(str(record_file))
-            with tf.io.TFRecordWriter(str(record_file)) as writer:
-                for idx in idx_list[i:i + group_size]:
-                    im_buf, label, bboxes = data[idx]
-                    bboxes = tf.io.serialize_tensor(bboxes).numpy()
-                    serialized_example = make_example(im_buf.tostring(), label, bboxes)
-                    writer.write(serialized_example)
-
-    for idx_list, name in [(train_neg_list, 'train_neg'), (val_neg_list, 'val_neg')]:
-        print(INFO, f'Make List : {name}')
-        record_file = save_path / name
-        meta_dict[name] = []
-        meta_dict[name + '_num'] = len(idx_list)
-        for i in trange(0, len(idx_list), group_size):
-            record_file = save_path / f'{name}_{i:d}.tfrecords'
-            meta_dict[name].append(str(record_file))
-            with tf.io.TFRecordWriter(str(record_file)) as writer:
-                for idx in idx_list[i:i + group_size]:
-                    im_buf, label, _ = data[idx]
-                    bboxes = tf.io.serialize_tensor(np.array(0., dtype=np.float32)).numpy()
-                    serialized_example = make_example(im_buf.tostring(), label, bboxes)
-                    writer.write(serialized_example)
+    meta = {'data_path': str(Path(pkl_path).absolute()),
+            'train_pos': train_pos_arr,
+            'train_neg': train_neg_arr,
+            'val_pos': val_pos_arr,
+            'val_neg': val_neg_arr,
+            'train_num': len(train_pos_arr),
+            'val_num': len(val_pos_arr)}
 
     print(INFO, f'Save Dataset meta file in {output_file}')
-    np.save(output_file, meta_dict, allow_pickle=True)
+    np.save(output_file, meta, allow_pickle=True)
 
 
 if __name__ == "__main__":
