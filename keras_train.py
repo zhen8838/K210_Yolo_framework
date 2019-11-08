@@ -1,6 +1,6 @@
 import tensorflow as tf
 import tensorflow.python.keras as k
-from tensorflow.python.keras.metrics import SparseCategoricalAccuracy
+from tensorflow.python.keras.metrics import SparseCategoricalAccuracy, CategoricalAccuracy
 from tensorflow.python.keras.callbacks import EarlyStopping, CSVLogger, ModelCheckpoint, TerminateOnNaN
 from tensorflow.python.keras.callbacks_v1 import TensorBoard
 from tools.base import INFO, ERROR, NOTE
@@ -114,10 +114,14 @@ def main(config_file, new_cfg, mode, model, train, prune):
         loss_fn = loss_register[model.loss]
         losses = [loss_fn(h=h, **model.loss_kwarg) for i in range(h.scale_num)]
         metrics = []
-    elif model.name == 'imagenet':
+    elif model.name == 'tinyimagenet':
         loss_fn = loss_register[model.loss]
         losses = [loss_fn(**model.loss_kwarg)]
         metrics = [SparseCategoricalAccuracy(name='acc')]
+    elif model.name == 'imagenet':
+        loss_fn = loss_register[model.loss]
+        losses = [loss_fn(**model.loss_kwarg)]
+        metrics = [CategoricalAccuracy(name='acc')]
     else:
         loss_obj = loss_register[model.loss](h=h, **model.loss_kwarg)
         losses = [loss_obj]

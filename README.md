@@ -304,3 +304,39 @@ python3 ./make_tinyimgenet_list.py --input_path xxxxx/tiny-imagenet-200 --save_p
 ```sh
 make train CFG=config/default_tinyimgnet.yml
 ```
+
+# ImageNet
+
+## Prepare dataset
+
+Download [ILSVRC2012_img_train.tar,ILSVRC2012_img_val.tar](http://academictorrents.com/browse.php?search=imagenet)
+
+```sh
+mkdir xxx/imagenet
+tar -xf ILSVRC2012_img_train.tar  -C xxx/imagenet/
+cd xxx/imagenet/
+DIR=xxx/imagenet/
+
+for x in `ls $DIR/*tar`
+do
+    filename=`basename $x .tar`
+    mkdir $DIR/$filename
+    tar -xvf $x -C $DIR/$filename
+done
+
+rm *.tar
+
+mkdir xxx/imagenetval
+tar -xf ILSVRC2012_img_val.tar -C ~/zhengqihang/imagenetval
+cd xxx/imagenetval/
+wget https://raw.githubusercontent.com/tensorflow/models/master/research/slim/datasets/imagenet_2012_validation_synset_labels.txt
+
+python make_imgenet_list.py --input_train_path xxx/imagenet --input_val_path xxx/imagenetval
+```
+
+
+## Train
+
+```sh
+make train CFG=config/default_imgnet.yml
+```

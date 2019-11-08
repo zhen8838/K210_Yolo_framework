@@ -35,7 +35,7 @@ class TinyImgnetHelper(BaseHelper):
 
         self.class_num: int = class_num
         self.in_hw = in_hw
-        self.meta: dict = np.load('data/tinyimgnet_img_ann.npy', allow_pickle=True)[()]
+        self.meta: dict = np.load(image_ann, allow_pickle=True)[()]
 
         self.train_list = self.meta['train_list']
         self.val_list = self.meta['val_list']

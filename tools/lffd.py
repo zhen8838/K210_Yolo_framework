@@ -276,7 +276,7 @@ class LFFDHelper(BaseHelper):
             img_aug , ann_aug
         """
         if isinstance(boxes, tuple):
-            # todo add augment
+            # TODO add augment
             return img, boxes
         else:
             image_aug = self.iaaseq(image=img)
