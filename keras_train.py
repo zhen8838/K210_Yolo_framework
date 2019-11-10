@@ -5,7 +5,7 @@ from tensorflow.python.keras.callbacks import EarlyStopping, CSVLogger, ModelChe
 from tensorflow.python.keras.callbacks_v1 import TensorBoard
 from tools.base import INFO, ERROR, NOTE
 from tools.facerec import TripletAccuracy
-from tools.custom import Yolo_P_R, Lookahead, PFLDMetric, DummyMetric
+from tools.custom import Yolo_P_R, Lookahead, PFLDMetric, DummyMetric, SignalStopping
 from tools.base import BaseHelper
 from pathlib import Path
 from datetime import datetime
@@ -140,7 +140,7 @@ def main(config_file, new_cfg, mode, model, train, prune):
         lookahead.inject(train_model)  # inject to model
 
     """ Callbacks """
-    cbs = []
+    cbs = [SignalStopping()]
     if prune.is_prune == True:
         cbs += [sparsity.UpdatePruningStep(),
                 sparsity.PruningSummaries(log_dir=str(log_dir), profile_batch=0)]
@@ -158,14 +158,11 @@ def main(config_file, new_cfg, mode, model, train, prune):
     # file_writer = tf.compat.v1.summary.FileWriter(str(log_dir), sess.graph)
 
     """ Start Training """
-    try:
-        train_model.fit(train_ds, epochs=initial_epoch + train.epochs,
-                        steps_per_epoch=train_epoch_step, callbacks=cbs,
-                        validation_data=validation_ds, validation_steps=vali_epoch_step,
-                        verbose=train.verbose,
-                        initial_epoch=initial_epoch)
-    except KeyboardInterrupt as e:
-        pass
+    train_model.fit(train_ds, epochs=initial_epoch + train.epochs,
+                    steps_per_epoch=train_epoch_step, callbacks=cbs,
+                    validation_data=validation_ds, validation_steps=vali_epoch_step,
+                    verbose=train.verbose,
+                    initial_epoch=initial_epoch)
 
     """ Finish Training """
     model_name = f'train_model_{initial_epoch+int(train_model.optimizer.iterations.eval(sess) / train_epoch_step)}.h5'

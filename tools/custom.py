@@ -7,9 +7,12 @@ from tensorflow.python.ops.gen_array_ops import reshape
 from tensorflow.python.keras.utils.generic_utils import to_list
 from tensorflow.python.keras.utils import metrics_utils
 from tensorflow.python.keras.metrics import Metric, MeanMetricWrapper
+from tensorflow.python.keras.callbacks import Callback
 from tensorflow.python.keras import backend as K
 from tensorflow.python.ops import state_ops
 from tensorflow.python.keras.optimizers import Optimizer
+import signal
+from tools.base import NOTE
 import numpy as np
 from tensorflow.python.ops.variables import RefVariable
 
@@ -327,3 +330,34 @@ class PFLDMetric(Metric):
             return div_no_nan(self.landmark_error, self.total)
         else:
             return div_no_nan(self.failure_num, self.total)
+
+
+class SignalStopping(Callback):
+    '''Stop training when an interrupt signal (or other) was received
+            # Arguments
+            sig: the signal to listen to. Defaults to signal.SIGINT.
+            doubleSignalExits: Receiving the signal twice exits the python
+                    process instead of waiting for this epoch to finish.
+            patience: number of epochs with no improvement
+                    after which training will be stopped.
+            verbose: verbosity mode.
+    '''
+
+    def __init__(self, sig=signal.SIGINT, doubleSignalExits=True):
+        super(SignalStopping, self).__init__()
+        self.signal_received = False
+        self.doubleSignalExits = doubleSignalExits
+
+        def signal_handler(sig, frame):
+            if self.doubleSignalExits:
+                print(f'\n {NOTE} Received sigINT to stop twice. Exiting..')
+                self.doubleSignalExits = False
+            else:
+                self.signal_received = True
+                print('\n {NOTE} Received sigINT to stop Now ')
+
+        signal.signal(sig, signal_handler)
+
+    def on_batch_end(self, batch, logs=None):
+        if self.signal_received:
+            self.model.stop_training = True
