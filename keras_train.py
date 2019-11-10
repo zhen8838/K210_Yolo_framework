@@ -114,11 +114,7 @@ def main(config_file, new_cfg, mode, model, train, prune):
         loss_fn = loss_register[model.loss]
         losses = [loss_fn(h=h, **model.loss_kwarg) for i in range(h.scale_num)]
         metrics = []
-    elif model.name == 'tinyimagenet':
-        loss_fn = loss_register[model.loss]
-        losses = [loss_fn(**model.loss_kwarg)]
-        metrics = [SparseCategoricalAccuracy(name='acc')]
-    elif model.name == 'imagenet':
+    elif model.name in 'imagenet':
         loss_fn = loss_register[model.loss]
         losses = [loss_fn(**model.loss_kwarg)]
         metrics = [CategoricalAccuracy(name='acc')]

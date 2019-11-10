@@ -632,19 +632,19 @@ def mbv1_imgnet_k210(input_shape: list, class_num: int,
                      depth_multiplier: float = 1.0, weights=None):
 
     inputs = k.Input(input_shape)
-    base_model = MobileNet(input_tensor=inputs, input_shape=tuple(input_shape),
-                           include_top=True, weights=weights,
-                           alpha=depth_multiplier, classes=class_num)  # type: keras.Model
+    model = MobileNet(input_tensor=inputs, input_shape=tuple(input_shape),
+                      include_top=True, weights=weights,
+                      alpha=depth_multiplier, classes=class_num)  # type: keras.Model
 
-    return base_model, base_model
+    return model, model
 
 
 def mbv2_imgnet_k210(input_shape: list, class_num: int,
                      depth_multiplier: float = 1.0, weights=None):
 
     inputs = k.Input(input_shape)
-    base_model = MobileNetV2(input_tensor=inputs, input_shape=tuple(input_shape),
-                             include_top=True, weights=weights,
-                             alpha=depth_multiplier, classes=class_num)  # type: keras.Model
+    model = MobileNetV2(input_tensor=inputs, input_shape=tuple(input_shape),
+                        include_top=True, weights=weights,
+                        alpha=depth_multiplier, classes=class_num)  # type: keras.Model
 
-    return base_model, base_model
+    return model, model

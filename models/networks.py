@@ -621,18 +621,18 @@ def yolo_mbv1(input_shape: list, anchor_num: int, class_num: int, alpha: float) 
 def mbv1_imgnet(input_shape: list, class_num: int, depth_multiplier: float = 1.0, weights=None):
 
     inputs = k.Input(input_shape)
-    base_model = MobileNet(input_tensor=inputs, input_shape=tuple(input_shape),
+    model = MobileNet(input_tensor=inputs, input_shape=tuple(input_shape),
                            include_top=True, weights=weights,
                            alpha=depth_multiplier, classes=class_num)  # type: keras.Model
 
-    return base_model, base_model
+    return model, model
 
 
 def mbv2_imgnet(input_shape: list, class_num: int, depth_multiplier: float = 1.0, weights=None):
 
     inputs = k.Input(input_shape)
-    base_model = MobileNetV2(input_tensor=inputs, input_shape=tuple(input_shape),
+    model = MobileNetV2(input_tensor=inputs, input_shape=tuple(input_shape),
                              include_top=True, weights=weights,
                              alpha=depth_multiplier, classes=class_num)  # type: keras.Model
 
-    return base_model, base_model
+    return model, model

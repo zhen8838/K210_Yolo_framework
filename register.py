@@ -11,8 +11,8 @@ from tools.yoloalign import YOLOAlignHelper, YOLOAlign_Loss, yoloalgin_infer
 from tools.pfld import PFLDHelper, PFLD_Loss, pfld_infer
 from tools.ctdet import CtdetHelper, Ctdet_Loss, ctdet_infer
 from tools.lffd import LFFDHelper, LFFD_Loss
-from tools.tinyimgnet import TinyImgnetHelper, Sparse_Classify_Loss
-from tools.imagenet import ImgnetHelper, Classify_Loss
+from tools.tinyimgnet import TinyImgnetHelper
+from tools.imgnet import ImgnetHelper, Classify_Loss
 from tools.facerec import FcaeRecHelper, Triplet_Loss, Sparse_Softmax_Loss, Sparse_Amsoftmax_Loss, Sparse_Asoftmax_Loss
 from yaml import safe_dump
 
@@ -192,7 +192,6 @@ loss_register = {
     'Sparse_Amsoftmax_Loss': Sparse_Amsoftmax_Loss,
     'Sparse_Asoftmax_Loss': Sparse_Asoftmax_Loss,
     'LFFD_Loss': LFFD_Loss,
-    'Sparse_Classify_Loss': Sparse_Classify_Loss,
     'Classify_Loss': Classify_Loss
 }
 

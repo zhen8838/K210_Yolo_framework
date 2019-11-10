@@ -61,7 +61,7 @@ class TinyImgnetHelper(BaseHelper):
                        is_augment: bool, is_normlize: bool,
                        is_training: bool) -> tf.data.Dataset:
 
-        def _wapper(img, label):
+        def _wapper(img, ann):
             img = tf.image.resize(img, self.in_hw)
 
             if is_augment:
@@ -70,6 +70,8 @@ class TinyImgnetHelper(BaseHelper):
 
             if is_normlize:
                 img = self.normlize_img(img)
+
+            label = tf.one_hot(ann, self.class_num)
             return img, label
 
         if is_training:
@@ -88,29 +90,3 @@ class TinyImgnetHelper(BaseHelper):
                     batch(batch_size, True).
                     map(_wapper, -1).
                     prefetch(-1))
-
-
-class Sparse_Classify_Loss(k.losses.Loss):
-    def __init__(self, scale=30, reduction='auto', name=None):
-        """ sparse softmax loss with scale
-
-        Parameters
-        ----------
-        scale : int, optional
-
-            loss scale, by default 30
-
-        reduction : [type], optional
-
-            by default `auto`
-
-        name : str, optional
-
-            by default None
-
-        """
-        super().__init__(reduction=reduction, name=name)
-        self.scale = scale
-
-    def call(self, y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
-        return k.backend.sparse_categorical_crossentropy(y_true, self.scale * y_pred, True)
