@@ -350,11 +350,11 @@ class SignalStopping(Callback):
 
         def signal_handler(sig, frame):
             if self.doubleSignalExits:
-                print(f'\n {NOTE} Received sigINT to stop twice. Exiting..')
+                print(f'\n {NOTE} Received SIGINT twice to stop. Exiting..')
                 self.doubleSignalExits = False
             else:
                 self.signal_received = True
-                print('\n {NOTE} Received sigINT to stop Now ')
+                print(f'\n {NOTE} Received SIGINT to stop Now ')
 
         signal.signal(sig, signal_handler)
 
