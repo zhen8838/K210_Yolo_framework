@@ -80,14 +80,10 @@ def main(config_file, new_cfg, mode, model, train, prune):
 
         metrics = []
         for loss_obj in losses:
-            precision = Yolo_P_R(0, model.loss_kwarg['obj_thresh'], name='p', dtype=tf.float32)
-            recall = Yolo_P_R(1, model.loss_kwarg['obj_thresh'], name='r', dtype=tf.float32)
-            recall.tp, recall.fn = precision.tp, precision.fn  # share the variable avoid more repeated calculation
+            l = [DummyMetric(var, name) for (var, name) in loss_obj.prlookups]
             if loss_obj.verbose == 2:
-                metrics.append([precision, recall] +
-                               [DummyMetric(var, name) for (var, name) in loss_obj.lookups])
-            else:
-                metrics.append([precision, recall])
+                l.extend([DummyMetric(var, name) for (var, name) in loss_obj.lookups])
+            metrics.append(l)
 
         if model.name == 'yoloalign':
             for i, m in enumerate(metrics):

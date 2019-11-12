@@ -272,24 +272,44 @@ class YOLOHelper(BaseHelper):
         Returns
         -------
         tuple
-            labels list value :[output_number*[out_h,out_w,anchor_num,class+5]]
+            labels list value :[output_number*[ out_h, out_w, anchor_num, class +5 +1 ]]
+
+            NOTE The last element of the last dimension is the allocation flag,
+             which means that there is ground truth at this position.
+            Can use only one output label find all ground truth~
+            ```python
+            new_anns = []
+            for i in range(h.output_number):
+                new_ann = labels[i][np.where(labels[i][..., -1] == 1)]
+                new_anns.append(np.c_[np.argmax(new_ann[:, 5:], axis=-1), new_ann[:, :4]])
+            np.allclose(new_anns[0], new_anns[1])  # True
+            np.allclose(new_anns[1], new_anns[2])  # True
+            ```
+
         """
         labels = [np.zeros((self.out_hw[i][0], self.out_hw[i][1], len(self.anchors[i]),
-                            5 + self.class_num), dtype='float32') for i in range(self.output_number)]
+                            5 + self.class_num + 1), dtype='float32') for i in range(self.output_number)]
 
         layer_idx, anchor_idx = self._get_anchor_index(ann[:, 3:5])
         for box, l, n in zip(ann, layer_idx, anchor_idx):
+            # NOTE box [x y w h] are relative to the size of the entire image [0~1]
+            # clip box avoid width or heigh == 0 ====> loss = inf
+            bb = np.clip(box[1:5], 1e-8, 0.99999999)
+            cnt = np.zeros(self.output_number, np.bool)  # assigned flag
             for i in range(len(l)):
-                # NOTE box [x y w h] are relative to the size of the entire image [0~1]
-                # clip box avoid width or heigh == 0 ====> loss = inf
-                bb = np.clip(box[1:5], 1e-8, 0.99999999)
                 x, y = self._xy_grid_index(bb[0:2], l[i])  # [x index , y index]
-                if labels[l[i]][y, x, n[i], 4] == 1.:
-                    continue  # when this grid already being assigned, skip to next
+                if cnt[l[i]] or labels[l[i]][y, x, n[i], 4] == 1.:
+                    # 1. when this output layer already have ground truth, skip
+                    # 2. when this grid already being assigned, skip
+                    continue
                 labels[l[i]][y, x, n[i], 0:4] = bb
-                labels[l[i]][y, x, n[i], 4] = 1.
+                labels[l[i]][y, x, n[i], 4] = (0. if cnt.any() else 1.)
                 labels[l[i]][y, x, n[i], 5 + int(box[0])] = 1.
-                break
+                labels[l[i]][y, x, n[i], -1] = 1.  # set gt flag = 1
+                cnt[l[i]] = True  # output layer ground truth flag
+                if cnt.all():
+                    # when all output layer have ground truth, exit
+                    break
         return labels
 
     def _xy_to_all(self, labels: tuple):
@@ -675,6 +695,17 @@ class YOLO_Loss(Loss):
         self.wh_weight = wh_weight
         self.layer = layer
         self.verbose = verbose
+        self.op_list = []
+        with tf.compat.v1.variable_scope(f'lookups_{self.layer}',
+                                         reuse=tf.AUTO_REUSE):
+            names = ['p', 'r']
+            self.prlookups: Iterable[Tuple[RefVariable, AnyStr]] = [
+                (tf.compat.v1.get_variable(name, (), tf.float32,
+                                           tf.zeros_initializer(),
+                                           trainable=False),
+                    name)
+                for name in names]
+
         if self.verbose == 2:
             with tf.compat.v1.variable_scope(f'lookups_{self.layer}',
                                              reuse=tf.AUTO_REUSE):
@@ -686,6 +717,19 @@ class YOLO_Loss(Loss):
                      name)
                     for name in names]
 
+    def smoothl1loss(self, labels: tf.Tensor, predictions: tf.Tensor, delta=1.0):
+        error = tf.math.subtract(predictions, labels)
+        abs_error = tf.math.abs(error)
+        quadratic = tf.math.minimum(abs_error, delta)
+        # The following expression is the same in value as
+        # tf.maximum(abs_error - delta, 0), but importantly the gradient for the
+        # expression when abs_error == delta is 0 (for tf.maximum it would be 1).
+        # This is necessary to avoid doubling the gradient, since there is already a
+        # nonzero contribution to the gradient from the quadratic term.
+        linear = tf.math.subtract(abs_error, quadratic)
+        return tf.math.add(tf.math.multiply(0.5, tf.math.multiply(quadratic, quadratic)),
+                           tf.math.multiply(delta, linear))
+
     def call(self, y_true: tf.Tensor, y_pred: tf.Tensor):
         """ split the label """
         grid_pred_xy = y_pred[..., 0:2]
@@ -696,17 +740,47 @@ class YOLO_Loss(Loss):
         all_true_xy = y_true[..., 0:2]
         all_true_wh = y_true[..., 2:4]
         true_confidence = y_true[..., 4:5]
-        true_cls = y_true[..., 5:]
+        true_cls = y_true[..., 5:5 + self.h.class_num]
+        location_mask = tf.cast(y_true[..., -1], tf.bool)
 
-        obj_mask = true_confidence  # true_confidence[..., 0] > obj_thresh
-        obj_mask_bool = y_true[..., 4] > self.obj_thresh
+        obj_mask = true_confidence
+        obj_mask_bool = tf.cast(y_true[..., 4], tf.bool)
+        batch_obj = tf.reduce_sum(obj_mask)
+
+        """ calc the tp,tn,fn """
+        pred_obj_mask_bool = tf.greater_equal(tf.nn.sigmoid(pred_confidence[..., 0]),
+                                              self.obj_thresh)
+
+        tp = tf.reduce_sum(tf.cast(
+            tf.logical_and(obj_mask_bool, pred_obj_mask_bool), tf.float32))
+
+        fp = tf.reduce_sum(tf.cast(
+            tf.logical_and(tf.logical_not(obj_mask_bool),
+                           pred_obj_mask_bool), tf.float32))
+
+        fn = tf.reduce_sum(tf.cast(
+            tf.logical_and(obj_mask_bool,
+                           tf.logical_not(pred_obj_mask_bool)), tf.float32))
 
         """ calc the ignore mask  """
+        pred_xy, pred_wh = tf_xywh_to_all(grid_pred_xy, grid_pred_wh, self.layer, self.h)
 
-        ignore_mask = calc_ignore_mask(all_true_xy, all_true_wh, grid_pred_xy,
-                                       grid_pred_wh, obj_mask_bool,
-                                       self.iou_thresh, self.layer, self.h)
+        def lmba(bc):
+            # bc=1
+            # NOTE use location_mask find all ground truth
+            gt_xy = tf.boolean_mask(all_true_xy[bc], location_mask[bc])
+            gt_wh = tf.boolean_mask(all_true_wh[bc], location_mask[bc])
+            iou_score = tf_iou(pred_xy[bc], pred_wh[bc], gt_xy, gt_wh)  # [h,w,anchor,box_num]
+            # NOTE this layer gt and pred iou score
+            mask_iou_score = tf.reduce_max(tf.boolean_mask(iou_score, obj_mask_bool[bc]), -1)
+            # if iou for any ground truth larger than iou_thresh, the pred is true.
+            match_num = tf.reduce_sum(tf.cast(iou_score > self.iou_thresh, tf.float32),
+                                      -1, keepdims=True)
+            return tf.cast(match_num < 1, tf.float32)
 
+        ignore_mask = tf.map_fn(lmba, tf.range(self.h.batch_size), dtype=tf.float32)
+
+        """ calc the loss """
         grid_true_xy, grid_true_wh = tf_xywh_to_grid(all_true_xy, all_true_wh, self.layer, self.h)
         # NOTE When wh=0 , tf.log(0) = -inf, so use tf.where to avoid it
         grid_true_wh = tf.where(tf.tile(obj_mask_bool[..., tf.newaxis], [1, 1, 1, 1, 2]),
@@ -720,8 +794,8 @@ class YOLO_Loss(Loss):
                 labels=grid_true_xy, logits=grid_pred_xy), [1, 2, 3, 4])
 
         wh_loss = tf.reduce_sum(
-            obj_mask * coord_weight * self.wh_weight * tf.square(tf.subtract(
-                x=grid_true_wh, y=grid_pred_wh)), [1, 2, 3, 4])
+            obj_mask * coord_weight * self.wh_weight * self.smoothl1loss(
+                labels=grid_true_wh, predictions=grid_pred_wh), [1, 2, 3, 4])
 
         obj_loss = self.obj_weight * tf.reduce_sum(
             obj_mask * tf.nn.sigmoid_cross_entropy_with_logits(
@@ -735,17 +809,21 @@ class YOLO_Loss(Loss):
             obj_mask * tf.nn.sigmoid_cross_entropy_with_logits(
                 labels=true_cls, logits=pred_cls), [1, 2, 3, 4])
 
+        """ sum loss """
+        self.op_list.extend([
+            self.prlookups[0][0].assign_add(tf.math.divide_no_nan(tp, tp + fp)),
+            self.prlookups[1][0].assign_add(tf.math.divide_no_nan(tp, tp + fn))
+        ])
+
         if self.verbose == 2:
-            dummy_loss = (0 * self.lookups[0][0].assign(xy_loss) +
-                          0 * self.lookups[1][0].assign(wh_loss) +
-                          0 * self.lookups[2][0].assign(obj_loss) +
-                          0 * self.lookups[3][0].assign(noobj_loss) +
-                          0 * self.lookups[4][0].assign(cls_loss))
+            self.op_list.extend([self.lookups[0][0].assign(xy_loss),
+                                 self.lookups[1][0].assign(wh_loss),
+                                 self.lookups[2][0].assign(obj_loss),
+                                 self.lookups[3][0].assign(noobj_loss),
+                                 self.lookups[4][0].assign(cls_loss)])
 
-            total_loss = obj_loss + noobj_loss + cls_loss + xy_loss + wh_loss + dummy_loss
-        else:
+        with tf.control_dependencies(self.op_list):
             total_loss = obj_loss + noobj_loss + cls_loss + xy_loss + wh_loss
-
         return total_loss
 
 
@@ -769,8 +847,8 @@ def correct_box(box_xy: tf.Tensor, box_wh: tf.Tensor,
     tf.Tensor
         new boxes
     """
-    box_yx = box_xy[..., ::-1]
-    box_hw = box_wh[..., ::-1]
+    box_yx = box_xy[..., :: -1]
+    box_hw = box_wh[..., :: -1]
     input_hw = tf.cast(input_hw, tf.float32)
     img_hw = tf.cast(img_hw, tf.float32)
     new_shape = tf.round(img_hw * tf.reduce_min(input_hw / img_hw))
@@ -838,9 +916,9 @@ def yolo_parser_one(img: tf.Tensor, img_hw: np.ndarray, infer_model: k.Model,
     """ preprocess label """
     for l, pred_label in enumerate(y_pred):
         """ split the label """
-        pred_xy = pred_label[..., 0:2]
-        pred_wh = pred_label[..., 2:4]
-        pred_confidence = pred_label[..., 4:5]
+        pred_xy = pred_label[..., 0: 2]
+        pred_wh = pred_label[..., 2: 4]
+        pred_confidence = pred_label[..., 4: 5]
         pred_cls = pred_label[..., 5:]
         # box_scores = obj_score * class_score
         box_scores = tf.sigmoid(pred_cls) * tf.sigmoid(pred_confidence)
@@ -914,7 +992,7 @@ def yolo_infer(img_path: Path, infer_model: k.Model,
 
     """ load images """
     orig_img = h.read_img(str(img_path))
-    img_hw = orig_img.shape[0:2]
+    img_hw = orig_img.shape[0: 2]
     img, _ = h.process_img(orig_img, None, False, True, True)
     img = tf.expand_dims(img, 0)
     """ get output """
@@ -963,7 +1041,7 @@ def yolo_infer(img_path: Path, infer_model: k.Model,
 
 
 def voc_ap(recall: np.ndarray, precision: np.ndarray) -> float:
-    """ 
+    """
         Compute VOC AP given precision and recall
 
     Parameters
@@ -996,7 +1074,7 @@ def voc_ap(recall: np.ndarray, precision: np.ndarray) -> float:
     # to calculate area under PR curve, look for points
     #  where X axis (recall) changes value
 
-    i = np.where(mrec[1:] != mrec[:-1])[0]
+    i = np.where(mrec[1:] != mrec[: -1])[0]
     # and sum (\Delta recall) * prec
     Ap = np.sum((mrec[i + 1] - mrec[i]) * mpre[i + 1])
     return Ap
