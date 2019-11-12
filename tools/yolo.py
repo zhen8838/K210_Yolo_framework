@@ -790,11 +790,11 @@ class YOLO_Loss(Loss):
         coord_weight = 2 - all_true_wh[..., 0:1] * all_true_wh[..., 1:2]
 
         xy_loss = tf.reduce_sum(
-            obj_mask * coord_weight * tf.nn.sigmoid_cross_entropy_with_logits(
+            2 * obj_mask * coord_weight * tf.nn.sigmoid_cross_entropy_with_logits(
                 labels=grid_true_xy, logits=grid_pred_xy), [1, 2, 3, 4])
 
         wh_loss = tf.reduce_sum(
-            obj_mask * coord_weight * self.wh_weight * self.smoothl1loss(
+            3 * obj_mask * coord_weight * self.wh_weight * self.smoothl1loss(
                 labels=grid_true_wh, predictions=grid_pred_wh), [1, 2, 3, 4])
 
         obj_loss = self.obj_weight * tf.reduce_sum(
@@ -806,8 +806,8 @@ class YOLO_Loss(Loss):
                 labels=true_confidence, logits=pred_confidence), [1, 2, 3, 4])
 
         cls_loss = tf.reduce_sum(
-            obj_mask * tf.nn.sigmoid_cross_entropy_with_logits(
-                labels=true_cls, logits=pred_cls), [1, 2, 3, 4])
+            obj_mask[..., 0] * tf.nn.softmax_cross_entropy_with_logits_v2(
+                labels=true_cls, logits=pred_cls), [1, 2, 3])
 
         """ sum loss """
         self.op_list.extend([
