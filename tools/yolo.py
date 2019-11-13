@@ -753,9 +753,13 @@ class YOLO_Loss(Loss):
 
     def call(self, y_true: tf.Tensor, y_pred: tf.Tensor):
         """ reshape y pred """
-        out_hw = tf.cast(tf.shape(y_pred)[1:3], tf.float32)
+        out_hw = tf.cast(tf.shape(y_true)[1:3], tf.float32)
+
+        y_true = tf.reshape(y_true, [-1, out_hw[0], out_hw[1],
+                                     self.h.anchor_number, self.h.class_num + 5 + 1])
         y_pred = tf.reshape(y_pred, [-1, out_hw[0], out_hw[1],
                                      self.h.anchor_number, self.h.class_num + 5])
+
         """ split the label """
         grid_pred_xy = y_pred[..., 0:2]
         grid_pred_wh = y_pred[..., 2:4]

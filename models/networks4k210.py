@@ -48,8 +48,8 @@ def yolo_mbv1_k210(input_shape: list, anchor_num: int, class_num: int, alpha: fl
         DarknetConv2D_BN_Leaky(filters, (3, 3)),
         DarknetConv2D(anchor_num * (class_num + 5), (1, 1)))([x2, x1])
 
-    y1_reshape = kl.Lambda(lambda x: tf.expand_dims(x, -1), name='l1')(y1)
-    y2_reshape = kl.Lambda(lambda x: tf.expand_dims(x, -1), name='l2')(y2)
+    y1_reshape = kl.Lambda(lambda x: x, name='l1')(y1)
+    y2_reshape = kl.Lambda(lambda x: x, name='l2')(y2)
 
     yolo_model = k.Model(inputs, [y1, y2])
     yolo_model_warpper = k.Model(inputs, [y1_reshape, y2_reshape])
@@ -116,8 +116,8 @@ def yolo_mbv2_k210(input_shape: list, anchor_num: int, class_num: int, alpha: fl
         DarknetConv2D_BN_Leaky(filters, (3, 3)),
         DarknetConv2D(anchor_num * (class_num + 5), (1, 1)))([x2, x1])
 
-    y1_reshape = kl.Lambda(lambda x: tf.expand_dims(x, -1), name='l1')(y1)
-    y2_reshape = kl.Lambda(lambda x: tf.expand_dims(x, -1), name='l2')(y2)
+    y1_reshape = kl.Lambda(lambda x: x, name='l1')(y1)
+    y2_reshape = kl.Lambda(lambda x: x, name='l2')(y2)
 
     yolo_model = k.Model(inputs=input_tensor, outputs=[y1, y2])
     yolo_model_warpper = k.Model(inputs=input_tensor, outputs=[y1_reshape, y2_reshape])
@@ -177,7 +177,7 @@ def yolo2_mbv1_k210(input_shape: list, anchor_num: int, class_num: int, alpha: f
 
     y = DarknetConv2D(anchor_num * (class_num + 5), (1, 1))(y)
 
-    y_reshape = kl.Lambda(lambda x: tf.expand_dims(x, -1), name='l1')(y)
+    y_reshape = kl.Lambda(lambda x: x, name='l1')(y)
 
     yolo_model = k.Model(inputs, [y])
     yolo_model_warpper = k.Model(inputs, [y_reshape])
