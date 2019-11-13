@@ -12,7 +12,7 @@ from tensorflow.python.keras import backend as K
 from tensorflow.python.ops import state_ops
 from tensorflow.python.keras.optimizers import Optimizer
 import signal
-from tools.base import NOTE
+from tools.base import NOTE, colored
 import numpy as np
 from tensorflow.python.ops.variables import RefVariable
 
@@ -354,7 +354,7 @@ class SignalStopping(Callback):
                 self.doubleSignalExits = False
             else:
                 self.signal_received = True
-                print(f'\n {NOTE} Received SIGINT to stop Now ')
+                print(f"\n {NOTE} Received SIGINT to stop now. {colored('Please Wait !','red')}")
 
         signal.signal(sig, signal_handler)
 

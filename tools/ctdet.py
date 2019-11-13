@@ -167,7 +167,6 @@ class CtdetHelper(BaseHelper):
             ann[:, 1:3] = (ann[:, 1:3] * img_hw[::-1] * scale + hw_off[::-1]) / self.in_hw[::-1]
             ann[:, 3:5] = (ann[:, 3:5] * img_hw[::-1] * scale) / self.in_hw[::-1]
 
-        del img
         return im_in, ann
 
     def colors_img(self, heatmap: np.ndarray) -> np.ndarray:

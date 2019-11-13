@@ -16,8 +16,8 @@ model:
   network: yolo2_mbv1_k210
   network_kwarg:
     input_shape:
-      - 224
-      - 320
+      - null
+      - null
       - 3
     anchor_num: 5
     class_num: 20
@@ -28,7 +28,9 @@ model:
     iou_thresh: 0.5
     obj_weight: 1
     noobj_weight: 1
-    wh_weight: 1
+    wh_weight: 3
+    xy_weight: 2
+    cls_weight: 1
     verbose: 1
 train:
   jit: false
@@ -53,24 +55,31 @@ train:
   Lookahead_kwarg:
     k: 5
     alpha: 0.5
-  earlystop: true
-  earlystop_kwarg:
-    monitor: val_loss
-    min_delta: 0
-    patience: 4
-    verbose: 0
-    mode: auto
-    baseline: null
-    restore_best_weights: false
-  modelcheckpoint: true
-  modelcheckpoint_kwarg:
-    monitor: val_loss
-    verbose: 0
-    save_best_only: true
-    save_weights_only: false
-    mode: auto
-    save_freq: epoch
-    load_weights_on_restart: false
+  callbacks:
+    - name: EarlyStopping
+      kwarg:
+        monitor: val_loss
+        min_delta: 0
+        patience: 4
+        verbose: 0
+        mode: auto
+        baseline: null
+        restore_best_weights: false
+    - name: ModelCheckpoint
+      kwarg:
+        monitor: val_loss
+        verbose: 0
+        save_best_only: true
+        save_weights_only: false
+        mode: auto
+        save_freq: epoch
+        load_weights_on_restart: false
+    - name: TerminateOnNaN
+      kwarg: null
+    - name: MultiScaleTrain
+      kwarg:
+        interval: 300
+        scale_range: [-3, 3]
 prune:
   is_prune: false
   init_sparsity: 0.5

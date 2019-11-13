@@ -105,7 +105,6 @@ class YOLOAlignHelper(YOLOHelper):
             ann[:, 5:5 + self.landmark_num * 2] = ((ann[:, 5:5 + self.landmark_num * 2].reshape(
                 (-1, self.landmark_num, 2)) * img_wh * scale + hw_off[::-1]) / in_wh).reshape((-1, self.landmark_num * 2))
 
-        del img
         return im_in, ann
 
     def draw_image(self, img: np.ndarray, ann: np.ndarray, is_show=True, scores=None):

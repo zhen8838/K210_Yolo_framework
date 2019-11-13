@@ -5,8 +5,9 @@ from models.receptivefieldnet import rffacedetnet
 from models.networks4k210 import yolo_mbv1_k210, yolo_mbv2_k210, yolo2_mbv1_k210, yolov2algin_mbv1_k210, pfld_k210,\
     mbv1_softmax_facerec_k210, mbv1_triplet_facerec_k210, mbv1_amsoftmax_facerec_k210, mbv1_imgnet_k210, mbv2_imgnet_k210
 from tensorflow.python.keras.optimizers import Adam, SGD, RMSprop
+from tensorflow.python.keras.callbacks import EarlyStopping, ModelCheckpoint, TerminateOnNaN
 from tools.custom import RAdam
-from tools.yolo import YOLOHelper, YOLO_Loss, yolo_infer, yolo_eval
+from tools.yolo import YOLOHelper, YOLO_Loss, yolo_infer, yolo_eval, MultiScaleTrain
 from tools.yoloalign import YOLOAlignHelper, YOLOAlign_Loss, yoloalgin_infer
 from tools.pfld import PFLDHelper, PFLD_Loss, pfld_infer
 from tools.ctdet import CtdetHelper, Ctdet_Loss, ctdet_infer
@@ -195,6 +196,12 @@ loss_register = {
     'Classify_Loss': Classify_Loss
 }
 
+callback_register = {
+    'MultiScaleTrain': MultiScaleTrain,
+    'EarlyStopping': EarlyStopping,
+    'ModelCheckpoint': ModelCheckpoint,
+    'TerminateOnNaN': TerminateOnNaN
+}
 
 optimizer_register = {
     'Adam': Adam,

@@ -285,10 +285,8 @@ def tiny_yolo(input_shape, anchor_num, class_num) -> [k.Model, k.Model]:
         DarknetConv2D_BN_Leaky(256, (3, 3)),
         DarknetConv2D(anchor_num * (class_num + 5), (1, 1)))([x2, x1])
 
-    y1_reshape = kl.Reshape((int(input_shape[0] / 32), int(input_shape[1] / 32),
-                             anchor_num, 5 + class_num), name='l1')(y1)
-    y2_reshape = kl.Reshape((int(input_shape[0] / 16), int(input_shape[1] / 16),
-                             anchor_num, 5 + class_num), name='l2')(y2)
+    y1_reshape = kl.Lambda(lambda x: tf.expand_dims(x, -1), name='l1')(y1)
+    y2_reshape = kl.Lambda(lambda x: tf.expand_dims(x, -1), name='l2')(y2)
 
     yolo_model = k.Model(inputs, [y1, y2])
     yolo_model_warpper = k.Model(inputs, [y1_reshape, y2_reshape])
@@ -322,12 +320,9 @@ def yolo(input_shape, anchor_num, class_num) -> [k.Model, k.Model]:
     x = kl.Concatenate()([x, darknet.layers[92].output])
     x, y3 = make_last_layers(x, 128, anchor_num * (class_num + 5))
 
-    y1_reshape = kl.Reshape((int(input_shape[0] / 32), int(input_shape[1] / 32),
-                             anchor_num, 5 + class_num), name='l1')(y1)
-    y2_reshape = kl.Reshape((int(input_shape[0] / 16), int(input_shape[1] / 16),
-                             anchor_num, 5 + class_num), name='l2')(y2)
-    y3_reshape = kl.Reshape((int(input_shape[0] / 8), int(input_shape[1] / 8),
-                             anchor_num, 5 + class_num), name='l3')(y3)
+    y1_reshape = kl.Lambda(lambda x: tf.expand_dims(x, -1), name='l1')(y1)
+    y2_reshape = kl.Lambda(lambda x: tf.expand_dims(x, -1), name='l2')(y2)
+    y3_reshape = kl.Lambda(lambda x: tf.expand_dims(x, -1), name='l3')(y3)
 
     yolo_model = k.Model(inputs, [y1, y2, y3])
     yolo_model_warpper = k.Model(inputs=inputs, outputs=[y1_reshape, y2_reshape, y3_reshape])
@@ -581,6 +576,10 @@ def shuffle_ctdet(input_shape: list, class_num: int,
 
 
 def yolo_mbv1(input_shape: list, anchor_num: int, class_num: int, alpha: float) -> [k.Model, k.Model]:
+    # input_shape=[None,None,3]
+    # anchor_num=3
+    # class_num=20
+    # alpha=0.5
     inputs = k.Input(input_shape)
     base_model = MobileNet(input_tensor=inputs, input_shape=input_shape,
                            include_top=False, weights='imagenet', alpha=alpha)  # type: k.Model
@@ -606,12 +605,10 @@ def yolo_mbv1(input_shape: list, anchor_num: int, class_num: int, alpha: float) 
 
     x = kl.Concatenate()([x, MobilenetConv2D((1, 1), alpha, 128)(base_model.get_layer('conv_pw_5_relu').output)])
     x, y3 = make_last_layers_mobilenet(x, 25, 128, anchor_num * (class_num + 5))
-    y1_reshape = kl.Reshape((int(input_shape[0] / 32), int(input_shape[1] / 32),
-                             anchor_num, 5 + class_num), name='y1')(y1)
-    y2_reshape = kl.Reshape((int(input_shape[0] / 16), int(input_shape[1] / 16),
-                             anchor_num, 5 + class_num), name='y2')(y2)
-    y3_reshape = kl.Reshape((int(input_shape[0] / 8), int(input_shape[1] / 8),
-                             anchor_num, 5 + class_num), name='y3')(y3)
+
+    y1_reshape = kl.Lambda(lambda x: tf.expand_dims(x, -1), name='y1')(y1)
+    y2_reshape = kl.Lambda(lambda x: tf.expand_dims(x, -1), name='y2')(y2)
+    y3_reshape = kl.Lambda(lambda x: tf.expand_dims(x, -1), name='y3')(y3)
 
     infer_model = k.Model(inputs, [y1, y2, y3])
     train_model = k.Model(inputs=inputs, outputs=[y1_reshape, y2_reshape, y3_reshape])
@@ -622,8 +619,8 @@ def mbv1_imgnet(input_shape: list, class_num: int, depth_multiplier: float = 1.0
 
     inputs = k.Input(input_shape)
     model = MobileNet(input_tensor=inputs, input_shape=tuple(input_shape),
-                           include_top=True, weights=weights,
-                           alpha=depth_multiplier, classes=class_num)  # type: keras.Model
+                      include_top=True, weights=weights,
+                      alpha=depth_multiplier, classes=class_num)  # type: keras.Model
 
     return model, model
 
@@ -632,7 +629,7 @@ def mbv2_imgnet(input_shape: list, class_num: int, depth_multiplier: float = 1.0
 
     inputs = k.Input(input_shape)
     model = MobileNetV2(input_tensor=inputs, input_shape=tuple(input_shape),
-                             include_top=True, weights=weights,
-                             alpha=depth_multiplier, classes=class_num)  # type: keras.Model
+                        include_top=True, weights=weights,
+                        alpha=depth_multiplier, classes=class_num)  # type: keras.Model
 
     return model, model

@@ -1,7 +1,7 @@
 import tensorflow as tf
 import tensorflow.python.keras as k
 from tensorflow.python.keras.metrics import SparseCategoricalAccuracy, CategoricalAccuracy
-from tensorflow.python.keras.callbacks import EarlyStopping, CSVLogger, ModelCheckpoint, TerminateOnNaN
+from tensorflow.python.keras.callbacks import CSVLogger
 from tensorflow.python.keras.callbacks_v1 import TensorBoard
 from tools.base import INFO, ERROR, NOTE
 from tools.facerec import TripletAccuracy
@@ -12,7 +12,8 @@ from datetime import datetime
 import numpy as np
 import argparse
 from tensorflow_model_optimization.python.core.api.sparsity import keras as sparsity
-from register import dict2obj, network_register, optimizer_register, helper_register, loss_register
+from register import dict2obj, network_register, optimizer_register,\
+    helper_register, loss_register, callback_register
 from yaml import safe_dump, safe_load
 from tensorflow.python import debug as tfdebug
 from typing import List
@@ -136,22 +137,24 @@ def main(config_file, new_cfg, mode, model, train, prune):
         lookahead.inject(train_model)  # inject to model
 
     """ Callbacks """
-    cbs = [SignalStopping()]
+    cbs = [SignalStopping(),
+           TensorBoard(str(log_dir), update_freq='batch', profile_batch=3),
+           CSVLogger(str(log_dir / 'training.csv'), '\t', True)]
+
     if prune.is_prune == True:
         cbs += [sparsity.UpdatePruningStep(),
                 sparsity.PruningSummaries(log_dir=str(log_dir), profile_batch=0)]
 
-    cbs.append(TensorBoard(str(log_dir), update_freq='batch', profile_batch=3))
-    cbs.append(CSVLogger(str(log_dir / 'training.csv'), '\t', True))
-    if train.earlystop == True:
-        cbs.append(EarlyStopping(**train.earlystop_kwarg))
-    if train.modelcheckpoint == True:
-        cbs.append(ModelCheckpoint(str(log_dir / 'auto_train_{epoch:d}.h5'),
-                                   **train.modelcheckpoint_kwarg))
-        cbs.append(TerminateOnNaN())
-
-    # NOTE avoid can't write graph, I don't know why..
-    # file_writer = tf.compat.v1.summary.FileWriter(str(log_dir), sess.graph)
+    for cbkparam in train.callbacks:
+        cbk_fn = callback_register[cbkparam.name]
+        if cbkparam.name == 'ModelCheckpoint':
+            cbs.append(cbk_fn(str(log_dir / 'auto_train_{epoch:d}.h5'), **cbkparam.kwarg))
+        elif cbkparam.name == 'MultiScaleTrain':
+            cbs.append(cbk_fn(h, **cbkparam.kwarg))
+        elif cbkparam.name == 'TerminateOnNaN':
+            cbs.append(cbk_fn())
+        else:
+            cbs.append(cbk_fn(**cbkparam.kwarg))
 
     """ Start Training """
     train_model.fit(train_ds, epochs=initial_epoch + train.epochs,
@@ -180,17 +183,16 @@ def main(config_file, new_cfg, mode, model, train, prune):
         k.models.save_model(infer_model, str(infer_ckpt))
         print(INFO, f' Save Infer Model as {str(infer_ckpt)}')
 
-        if train.modelcheckpoint == True:
-            # find best auto saved model, and save best infer model
-            auto_saved_list = list(log_dir.glob('auto_train_*.h5'))  # type:List[Path]
-            # use `int value`  for sort ~
-            auto_saved_list = list(zip(auto_saved_list, [int(p.stem.split('_')[-1]) for p in auto_saved_list]))
-            if len(auto_saved_list) > 0:
-                auto_saved_list.sort(key=lambda x: x[1])
-                train_model.load_weights(str(auto_saved_list[-1][0]))
-                infer_ckpt = str(auto_saved_list[-1][0]).replace('train', 'infer')
-                k.models.save_model(infer_model, infer_ckpt)
-            print(INFO, f' Save Best Infer Model as {infer_ckpt}')
+        # find best auto saved model, and save best infer model
+        auto_saved_list = list(log_dir.glob('auto_train_*.h5'))  # type:List[Path]
+        # use `int value`  for sort ~
+        auto_saved_list = list(zip(auto_saved_list, [int(p.stem.split('_')[-1]) for p in auto_saved_list]))
+        if len(auto_saved_list) > 0:
+            auto_saved_list.sort(key=lambda x: x[1])
+            train_model.load_weights(str(auto_saved_list[-1][0]))
+            infer_ckpt = str(auto_saved_list[-1][0]).replace('train', 'infer')
+            k.models.save_model(infer_model, infer_ckpt)
+        print(INFO, f' Save Best Infer Model as {infer_ckpt}')
 
 
 if __name__ == "__main__":
