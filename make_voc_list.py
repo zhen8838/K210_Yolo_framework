@@ -3,7 +3,7 @@ import re
 import numpy as np
 import sys
 import argparse
-import skimage
+from matplotlib.pyplot import imread
 
 
 def main(train_file: str, val_file: str, test_file: str, output_file: str):
@@ -27,7 +27,7 @@ def main(train_file: str, val_file: str, test_file: str, output_file: str):
             np.array([
                 image_path_list[i],  # image path
                 np.loadtxt(ann_list[i], dtype=float, ndmin=2),  # image ann [cls,x,y,w,h]
-                np.array(skimage.io.imread(image_path_list[i]).shape[0:2])]  # image [h w]
+                np.array(imread(image_path_list[i]).shape[0:2])]  # image [h w]
             ) for i in range(len(ann_list))])
 
     np.save(output_file, save_dict, allow_pickle=True)

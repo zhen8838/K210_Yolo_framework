@@ -2,7 +2,7 @@ from pathlib import Path
 import numpy as np
 from tools.aligndlib import AlignDlib
 from tools.base import INFO, ERROR, NOTE, colored
-from skimage.io import imread, imshow, imsave
+from matplotlib.pyplot import imread, imshow, imsave
 from yaml import safe_load, safe_dump
 import sys
 import argparse
