@@ -361,3 +361,37 @@ class SignalStopping(Callback):
     def on_batch_end(self, batch, logs=None):
         if self.signal_received:
             self.model.stop_training = True
+
+
+class StepLR(Callback):
+    def __init__(self, rates: list, steps: list):
+        """ Step learning rate setup callback
+                
+        eg. steps = [100, 200, 300]
+            rates = [0.5, 0.1, 0.8]
+            
+            in epoch  0  ~ 100 lr=0.5
+            in epoch 100 ~ 200 lr=0.1
+
+        Parameters
+        ----------
+        rates : list
+           
+        steps : list
+            
+        """
+        super().__init__()
+        self.rates = rates
+        self.steps = steps
+
+    def on_epoch_begin(self, epoch, logs=None):
+        if epoch < self.steps[0]:
+            K.set_value(self.model.optimizer.lr, self.rates[0])
+        elif epoch == self.steps[0]:
+            self.rates.pop(0)
+            self.steps.pop(0)
+            K.set_value(self.model.optimizer.lr, self.rates[0])
+
+    def on_epoch_end(self, epoch, logs=None):
+        logs = logs or {}
+        logs['lr'] = K.get_value(self.model.optimizer.lr)

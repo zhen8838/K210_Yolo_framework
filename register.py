@@ -6,7 +6,7 @@ from models.networks4k210 import yolo_mbv1_k210, yolo_mbv2_k210, yolo2_mbv1_k210
     mbv1_softmax_facerec_k210, mbv1_triplet_facerec_k210, mbv1_amsoftmax_facerec_k210, mbv1_imgnet_k210, mbv2_imgnet_k210
 from tensorflow.python.keras.optimizers import Adam, SGD, RMSprop
 from tensorflow.python.keras.callbacks import EarlyStopping, ModelCheckpoint, TerminateOnNaN
-from tools.custom import RAdam
+from tools.custom import RAdam, StepLR
 from tools.yolo import YOLOHelper, YOLO_Loss, yolo_infer, yolo_eval, MultiScaleTrain
 from tools.yoloalign import YOLOAlignHelper, YOLOAlign_Loss, yoloalgin_infer
 from tools.pfld import PFLDHelper, PFLD_Loss, pfld_infer
@@ -200,7 +200,8 @@ callback_register = {
     'MultiScaleTrain': MultiScaleTrain,
     'EarlyStopping': EarlyStopping,
     'ModelCheckpoint': ModelCheckpoint,
-    'TerminateOnNaN': TerminateOnNaN
+    'TerminateOnNaN': TerminateOnNaN,
+    'StepLR': StepLR
 }
 
 optimizer_register = {

@@ -555,20 +555,21 @@ class MultiScaleTrain(Callback):
         """
         super().__init__()
         self.h = h
-        self.batch_counter = 0
+        self.cur_scl = 0
         self.interval = interval
         self.scale_range = np.arange(scale_range[0], scale_range[1])
 
-    def on_train_batch_end(self, batch, logs=None):
-        if self.batch_counter == self.interval:
+    def on_epoch_begin(self, epoch, logs=None):
+        if epoch > 0 and epoch % self.interval == 0:
             # random choice resize scale
-            scl = np.random.choice(self.scale_range)
-            self.h.in_hw = self.h.org_in_hw + 32 * scl
-            self.h.out_hw = self.h.org_out_hw + np.power(2, np.arange(self.h.output_number))[:, None] * scl
+            self.cur_scl = np.random.choice(self.scale_range)
+            self.h.in_hw = self.h.org_in_hw + 32 * self.cur_scl
+            self.h.out_hw = self.h.org_out_hw + np.power(2, np.arange(self.h.output_number))[:, None] * self.cur_scl
             print(f'\n {NOTE} : Train input image size : [{self.h.in_hw[0]},{self.h.in_hw[1]}]\n')
-            self.batch_counter = 0
-        else:
-            self.batch_counter += 1
+        elif epoch > 0 and self.cur_scl != 0:
+            self.h.in_hw = self.h.org_in_hw + 32 * self.cur_scl
+            self.h.out_hw = self.h.org_out_hw + np.power(2, np.arange(self.h.output_number))[:, None] * self.cur_scl
+            print(f'\n {NOTE} : Train input image size : [{self.h.in_hw[0]},{self.h.in_hw[1]}]\n')
 
     def on_test_begin(self, logs=None):
         self.h.in_hw = self.h.org_in_hw
