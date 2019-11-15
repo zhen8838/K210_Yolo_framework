@@ -24,8 +24,9 @@ def main(config_file, new_cfg, mode, model, train, prune):
     # tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
     tfcfg = tf.compat.v1.ConfigProto()
     tfcfg.gpu_options.allow_growth = True
-    if train.jit is True:
-        tfcfg.graph_options.optimizer_options.global_jit_level = (tf.OptimizerOptions.ON_1)
+    if train.graph_optimizer is True:
+        tf.config.optimizer.set_experimental_options(train.graph_optimizer_kwarg)
+        tfcfg.graph_options.optimizer_options.opt_level = tf.OptimizerOptions.L1
     sess = tf.compat.v1.Session(config=tfcfg)
 
     if train.debug == True:

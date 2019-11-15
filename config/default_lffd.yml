@@ -21,9 +21,9 @@ model:
   network: rffacedetnet
   network_kwarg:
     input_shape:
-      - 640
-      - 640
       - 3
+      - 640
+      - 640
     num_filters:
       - 64
       - 128
@@ -31,12 +31,30 @@ model:
   loss_kwarg:
     hnm_ratio: 5
 train:
-  jit: false
+  graph_optimizer: true
+  graph_optimizer_kwarg: 
+    layout_optimizer: true
+    remapping: true
+    shape_optimization: true
+    loop_optimization: true
+    constant_folding: true
+    function_optimization: true
+    scoped_allocator_optimization: true
+    layout_optimizer: true
+  graph_optimizer_kwarg: 
+    layout_optimizer: true
+    remapping: true
+    shape_optimization: true
+    loop_optimization: true
+    constant_folding: true
+    function_optimization: true
+    scoped_allocator_optimization: true
+    layout_optimizer: true
   augmenter: false
   batch_size: 16
   pre_ckpt: null
   rand_seed: 10101
-  epochs: 100
+  epochs: 300
   log_dir: log
   sub_log_dir: lffd_exp
   debug: false
@@ -54,15 +72,15 @@ train:
     k: 5
     alpha: 0.5
   callbacks:
-    - name: EarlyStopping
-      kwarg:
-        monitor: val_loss
-        min_delta: 0
-        patience: 4
-        verbose: 0
-        mode: auto
-        baseline: null
-        restore_best_weights: false
+    # - name: EarlyStopping
+    #   kwarg:
+    #     monitor: val_loss
+    #     min_delta: 0
+    #     patience: 4
+    #     verbose: 0
+    #     mode: auto
+    #     baseline: null
+    #     restore_best_weights: false
     - name: ModelCheckpoint
       kwarg:
         monitor: val_loss

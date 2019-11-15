@@ -33,7 +33,16 @@ model:
     cls_weight: 1
     verbose: 1
 train:
-  jit: false
+  graph_optimizer: true
+  graph_optimizer_kwarg: 
+    layout_optimizer: true
+    remapping: true
+    shape_optimization: true
+    loop_optimization: true
+    constant_folding: true
+    function_optimization: true
+    scoped_allocator_optimization: true
+    layout_optimizer: true
   augmenter: true
   batch_size: 32
   pre_ckpt: null

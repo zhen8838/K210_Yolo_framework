@@ -25,7 +25,16 @@ model:
     batch_size: *BATCH_SIZE_REF
     alpha: 0.6
 train:
-  jit: true
+  graph_optimizer: true
+  graph_optimizer_kwarg: 
+    layout_optimizer: true
+    remapping: true
+    shape_optimization: true
+    loop_optimization: true
+    constant_folding: true
+    function_optimization: true
+    scoped_allocator_optimization: true
+    layout_optimizer: true
   augmenter: false
   batch_size: *BATCH_SIZE_REF
   pre_ckpt: null

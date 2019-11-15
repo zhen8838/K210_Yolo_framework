@@ -37,12 +37,21 @@ model:
     cls_weight: 1
     verbose: 1
 train:
-  jit: false
-  augmenter: false
-  batch_size: 16
+  graph_optimizer: true
+  graph_optimizer_kwarg: 
+    layout_optimizer: true
+    remapping: true
+    shape_optimization: true
+    loop_optimization: true
+    constant_folding: true
+    function_optimization: true
+    scoped_allocator_optimization: true
+    layout_optimizer: true
+  augmenter: true
+  batch_size: 24
   pre_ckpt: null
   rand_seed: 10101
-  epochs: 100
+  epochs: 80000
   log_dir: log
   sub_log_dir: null
   debug: false
@@ -60,15 +69,15 @@ train:
     k: 5
     alpha: 0.5
   callbacks:
-    - name: EarlyStopping
-      kwarg:
-        monitor: val_loss
-        min_delta: 0
-        patience: 4
-        verbose: 0
-        mode: auto
-        baseline: null
-        restore_best_weights: false
+    # - name: EarlyStopping
+    #   kwarg:
+    #     monitor: val_loss
+    #     min_delta: 0
+    #     patience: 4
+    #     verbose: 0
+    #     mode: auto
+    #     baseline: null
+    #     restore_best_weights: false
     - name: ModelCheckpoint
       kwarg:
         monitor: val_loss
@@ -82,7 +91,7 @@ train:
       kwarg: null
     - name: MultiScaleTrain
       kwarg:
-        interval: 10
+        interval: 3
         scale_range: [-3, 3]
     - name: StepLR
       kwarg:
