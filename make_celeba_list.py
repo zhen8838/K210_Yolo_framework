@@ -76,25 +76,38 @@ def main(args: dict):
     valid_croped_bbox = tmp['valid_croped_bbox']
     valid_croped_landmark = tmp['valid_croped_landmark']
     valid_croped_hw = tmp['valid_croped_hw']
-    lines = []
+
+    train_list = []
+    val_list = []
+    test_list = []
     print(INFO, 'Start Make Lists:')
-    for i in tqdm(range(len(valid_croped_img_paths))):
-        p = valid_croped_img_paths[i]
-        bbox = valid_croped_bbox[i].reshape((-1, 4))
-        hw = valid_croped_hw[i]
-        # rescale bbox
-        bbox[:, [0, 2]] /= hw[1]  # w
-        bbox[:, [1, 3]] /= hw[0]  # h
-        # landmark is all image scale [0-1]
-        landmark = valid_croped_landmark[i].reshape((-1, args.landmark_num, 2)) / hw[::-1]  # type : np.ndarray
+    all_num = len(valid_croped_img_paths)
+    train_range = range(0, int(0.6 * all_num))
+    val_range = range(int(0.6 * all_num), int(0.8 * all_num))
+    test_range = range(int(0.8 * all_num), all_num)
+    save_dict = {}
+    for name, image_path_list, rang in [('train_data', train_list, train_range),
+                                        ('val_data', val_list, val_range),
+                                        ('test_data', test_list, test_range)]:
+        for i in tqdm(rang):
+            p = valid_croped_img_paths[i]
+            bbox = valid_croped_bbox[i].reshape((-1, 4))
+            hw = valid_croped_hw[i]
+            # rescale bbox
+            bbox[:, [0, 2]] /= hw[1]  # w
+            bbox[:, [1, 3]] /= hw[0]  # h
+            # landmark is all image scale [0-1]
+            landmark = valid_croped_landmark[i].reshape((-1, args.landmark_num, 2)) / hw[::-1]  # type : np.ndarray
 
-        # make box
-        true_box = np.hstack((np.zeros((bbox.shape[0], 1)), bbox, landmark.reshape((-1, args.landmark_num * 2))))
+            # make box
+            true_box = np.hstack((np.zeros((bbox.shape[0], 1)), bbox, landmark.reshape((-1, args.landmark_num * 2))))
 
-        lines.append(np.array([p, true_box, hw]))
+            image_path_list.append(np.array([p, true_box, hw]))
+
+        save_dict[name] = np.array(image_path_list)
 
     print(INFO, f'Save Lists as {args.output_file}')
-    np.save(args.output_file, np.array(lines))
+    np.save(args.output_file, save_dict, allow_pickle=True)
 
 
 if __name__ == "__main__":

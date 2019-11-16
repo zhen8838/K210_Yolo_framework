@@ -1,9 +1,11 @@
-from models.networks import mbv1_softmax_facerec, mbv1_triplet_facerec, mbv1_amsoftmax_facerec,\
-    mbv2_ctdet, yolo, tiny_yolo, pfld, shuffle_ctdet, yolo3_nano, yolo_mbv1,\
-    mbv1_imgnet, mbv2_imgnet
+from models.networks import mbv1_softmax_facerec, mbv1_triplet_facerec,\
+    mbv1_amsoftmax_facerec, mbv2_ctdet, yolo, tiny_yolo, pfld,\
+    shuffle_ctdet, yolo3_nano, yolo_mbv1, mbv1_imgnet, mbv2_imgnet
 from models.receptivefieldnet import rffacedetnet
-from models.networks4k210 import yolo_mbv1_k210, yolo_mbv2_k210, yolo2_mbv1_k210, yolov2algin_mbv1_k210, pfld_k210,\
-    mbv1_softmax_facerec_k210, mbv1_triplet_facerec_k210, mbv1_amsoftmax_facerec_k210, mbv1_imgnet_k210, mbv2_imgnet_k210
+from models.networks4k210 import yolo_mbv1_k210, yolo_mbv2_k210, yolo2_mbv1_k210,\
+    yolov2algin_mbv1_k210, pfld_k210, mbv1_softmax_facerec_k210, \
+    mbv1_triplet_facerec_k210, mbv1_amsoftmax_facerec_k210, mbv1_imgnet_k210, \
+    mbv2_imgnet_k210, yoloalgin_mbv1_k210
 from tensorflow.python.keras.optimizers import Adam, SGD, RMSprop
 from tensorflow.python.keras.callbacks import EarlyStopping, ModelCheckpoint, TerminateOnNaN
 from tools.custom import RAdam, StepLR
@@ -178,6 +180,7 @@ network_register = {
     'yolo_mbv2_k210': yolo_mbv2_k210,
     'yolo2_mbv1_k210': yolo2_mbv1_k210,
     'yolov2algin_mbv1_k210': yolov2algin_mbv1_k210,
+    'yoloalgin_mbv1_k210': yoloalgin_mbv1_k210,
     'pfld_k210': pfld_k210,
     'mbv1_imgnet_k210': mbv1_imgnet_k210,
     'mbv2_imgnet_k210': mbv2_imgnet_k210,

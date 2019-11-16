@@ -82,14 +82,8 @@ def main(config_file, new_cfg, mode, model, train, prune):
 
         metrics = []
         for loss_obj in losses:
-            l = [DummyMetric(var, name) for (var, name) in loss_obj.prlookups]
-            if loss_obj.verbose == 2:
-                l.extend([DummyMetric(var, name) for (var, name) in loss_obj.lookups])
+            l = [DummyMetric(var, name) for (var, name) in loss_obj.lookups]
             metrics.append(l)
-
-        if model.name == 'yoloalign':
-            for i, m in enumerate(metrics):
-                m.append(DummyMetric(losses[i].landmark_error))
 
     elif model.name == 'pfld':
         loss_fn = loss_register[model.loss]  # type:PFLD_Loss

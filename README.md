@@ -165,12 +165,13 @@ python3 make_celeba_list.py xxxxx/img_celeba xxxxx/list_bbox_celeba.txt xxxxx/li
 
 ```sh
 python3 ./make_anchor_list.py \
-    celeba \
+    --ann_list_file data/celeba_img_ann.npy \
+    --anchor_file data/celeba_anchor.npy \
     --max_iters 10 \
     --is_random True \
     --in_hw 224 320 \
-    --out_hw 7 10 \
-    --anchor_num 5 \
+    --out_hw 7 10 14 20 \
+    --anchor_num 3 \
     --low .4 .4 \
     --high .5 .5
 ```

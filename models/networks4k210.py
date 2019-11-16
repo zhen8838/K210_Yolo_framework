@@ -223,6 +223,58 @@ def yolov2algin_mbv1_k210(input_shape: list, anchor_num: int,
     return yolo_model, yolo_model_warpper
 
 
+def yoloalgin_mbv1_k210(input_shape: list, anchor_num: int, class_num: int,
+                        landmark_num: int, alpha: float) -> [k.Model, k.Model]:
+    inputs = k.Input(input_shape)
+    base_model = MobileNet(input_tensor=inputs, input_shape=input_shape,
+                           include_top=False, weights=None, alpha=alpha)  # type: k.Model
+
+    if alpha == 0.25:
+        base_model.load_weights('data/mobilenet_v1_base_2.h5')
+    elif alpha == .5:
+        base_model.load_weights('data/mobilenet_v1_base_5.h5')
+    elif alpha == .75:
+        base_model.load_weights('data/mobilenet_v1_base_7.h5')
+    elif alpha == 1.:
+        base_model.load_weights('data/mobilenet_v1_base_10.h5')
+
+    x1 = base_model.get_layer('conv_pw_11_relu').output
+
+    x2 = base_model.output
+
+    if alpha == 0.25:
+        filters = 192
+    elif alpha == 0.5:
+        filters = 128
+    elif alpha == 0.75:
+        filters = 128
+    elif alpha == 1.0:
+        filters = 128
+
+    y1 = compose(
+        DarknetConv2D_BN_Leaky(filters, (3, 3)),
+        DarknetConv2D(anchor_num * (5 + landmark_num * 2 + class_num),
+                      (1, 1)))(x2)
+
+    x2 = compose(
+        DarknetConv2D_BN_Leaky(128, (1, 1)),
+        k.layers.UpSampling2D(2))(x2)
+
+    y2 = compose(
+        k.layers.Concatenate(),
+        DarknetConv2D_BN_Leaky(filters, (3, 3)),
+        DarknetConv2D(anchor_num * (5 + landmark_num * 2 + class_num),
+                      (1, 1)))([x2, x1])
+
+    y1_reshape = kl.Lambda(lambda x: x, name='l1')(y1)
+    y2_reshape = kl.Lambda(lambda x: x, name='l2')(y2)
+
+    yolo_model = k.Model(inputs, [y1, y2])
+    yolo_model_warpper = k.Model(inputs, [y1_reshape, y2_reshape])
+
+    return yolo_model, yolo_model_warpper
+
+
 def pfld_k210(input_shape: list, landmark_num: int,
               alpha=1., weight_decay=5e-5) -> [k.Model, k.Model]:
     """ pfld landmark model optimized to fit k210 chip.

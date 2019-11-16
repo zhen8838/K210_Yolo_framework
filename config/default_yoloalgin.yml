@@ -13,24 +13,26 @@ model:
     out_hw:
       - - 7
         - 10
+      - - 14
+        - 20
     validation_split: 0.3
-  network: yolov2algin_mbv1_k210
+  network: yoloalgin_mbv1_k210
   network_kwarg:
     input_shape:
     - 224
     - 320
     - 3
-    anchor_num: 5
+    anchor_num: 3
     class_num: 1
     landmark_num: 5
     alpha: 0.75
   loss: YOLOAlign_Loss
   loss_kwarg:
-    obj_thresh: 0.7
     iou_thresh: 0.5
     obj_weight: 1
     noobj_weight: 1
-    wh_weight: 1
+    xy_weight: 2
+    wh_weight: 3
     landmark_weight: 2
 train:
   graph_optimizer: true
@@ -55,7 +57,7 @@ train:
   vali_step_factor: 0.5
   optimizer: RAdam
   optimizer_kwarg:
-    lr: 0.001
+    lr: 0.0001
     beta_1: 0.9
     beta_2: 0.999
     epsilon: null

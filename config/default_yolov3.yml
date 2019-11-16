@@ -27,7 +27,6 @@ model:
     class_num: 20
   loss: YOLO_Loss
   loss_kwarg:
-    obj_thresh: 0.7
     iou_thresh: 0.5
     obj_weight: 1
     noobj_weight: 1

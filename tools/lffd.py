@@ -448,21 +448,19 @@ class LFFDHelper(BaseHelper):
                 _wapper, [idx, is_augment],
                 [tf.uint8] + [tf.float32] * self.scale_num, name='process_img')
 
-            return raw_img, tuple(labels)
-
-        def batch_parser(raw_img: tf.Tensor, labels: list):
             # normlize image
             if is_normlize:
                 img = self.normlize_img(raw_img)
             else:
                 img = tf.cast(raw_img, tf.float32)
 
-            img = tf.transpose(img, (0, 3, 1, 2))
+            img = tf.transpose(img, (2, 0, 1))
 
             for i, v in enumerate(self.featuremap_size):
-                labels[i].set_shape((None, v, v, self.out_channels + 2))
-            img.set_shape((None, 3, self.in_hw[0], self.in_hw[1]))
-            return img, labels
+                labels[i].set_shape((v, v, self.out_channels + 2))
+            img.set_shape((3, self.in_hw[0], self.in_hw[1]))
+
+            return img, tuple(labels)
 
         if is_training:
             pos_ds = (tf.data.Dataset.range(len(pos_list)).
@@ -473,7 +471,7 @@ class LFFDHelper(BaseHelper):
                 [pos_ds, neg_ds], [1 - self.neg_sample_ratio,
                                    self.neg_sample_ratio]).
                 map(sample_parser, -1).batch(batch_size, True).
-                map(batch_parser, -1).prefetch(-1))
+                prefetch(-1))
         else:
             raise NotImplementedError('No support to test eval')
 
