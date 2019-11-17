@@ -12,7 +12,7 @@ from tensorflow.python.keras.losses import Loss
 from tensorflow.python.keras.utils import losses_utils
 from tensorflow.python.keras.metrics import MeanMetricWrapper
 from tensorflow.python.keras.callbacks import Callback
-from tensorflow.python.ops.variables import RefVariable
+from tensorflow.python.ops.resource_variable_ops import ResourceVariable
 from matplotlib.pyplot import text
 from PIL import Image, ImageFont, ImageDraw
 from tools.base import BaseHelper, INFO, ERROR, NOTE
@@ -612,14 +612,19 @@ class YOLO_Loss(Loss):
         self.verbose = verbose
         self.op_list = []
         with tf.compat.v1.variable_scope(f'lookups_{self.layer}',
-                                         reuse=tf.AUTO_REUSE):
-            self.recall_cnt: RefVariable = tf.compat.v1.get_variable(
-                'recall_cnt', (), tf.float32,
+                                         reuse=tf.compat.v1.AUTO_REUSE):
+            self.r50: ResourceVariable = tf.compat.v1.get_variable(
+                'r50', (), tf.float32,
                 tf.zeros_initializer(),
                 trainable=False)
 
-            names = ['r']
-            self.lookups: Iterable[Tuple[RefVariable, AnyStr]] = [
+            self.r75: ResourceVariable = tf.compat.v1.get_variable(
+                'r75', (), tf.float32,
+                tf.zeros_initializer(),
+                trainable=False)
+
+            names = ['r50', 'r75']
+            self.lookups: Iterable[Tuple[ResourceVariable, AnyStr]] = [
                 (tf.compat.v1.get_variable(name, (), tf.float32,
                                            tf.zeros_initializer(),
                                            trainable=False),
@@ -628,7 +633,7 @@ class YOLO_Loss(Loss):
 
         if self.verbose == 2:
             with tf.compat.v1.variable_scope(f'lookups_{self.layer}',
-                                             reuse=tf.AUTO_REUSE):
+                                             reuse=tf.compat.v1.AUTO_REUSE):
                 names = ['xy', 'wh', 'obj', 'noobj', 'cls']
                 self.lookups.extend([
                     (tf.compat.v1.get_variable(name, (self.h.batch_size), tf.float32,
@@ -795,10 +800,9 @@ class YOLO_Loss(Loss):
             # NOTE this layer gt and pred iou score
             mask_iou_score = tf.reduce_max(tf.boolean_mask(iou_score, obj_mask_bool[bc]), -1)
 
-            with tf.control_dependencies([
-                self.recall_cnt.assign_add(
-                    tf.reduce_sum(tf.cast(mask_iou_score > self.iou_thresh,
-                                          tf.float32)))]):
+            with tf.control_dependencies(
+                    [self.r50.assign_add(tf.reduce_sum(tf.cast(mask_iou_score > .5, tf.float32))),
+                     self.r75.assign_add(tf.reduce_sum(tf.cast(mask_iou_score > .75, tf.float32)))]):
                 # if iou for any ground truth larger than iou_thresh, the pred is true.
                 match_num = tf.reduce_sum(tf.cast(iou_score > self.iou_thresh, tf.float32),
                                           -1, keepdims=True)
@@ -832,20 +836,22 @@ class YOLO_Loss(Loss):
                 labels=true_confidence, logits=pred_confidence), [1, 2, 3, 4])
 
         cls_loss = tf.reduce_sum(
-            obj_mask[..., 0] * self.cls_weight * tf.nn.softmax_cross_entropy_with_logits_v2(
+            obj_mask[..., 0] * self.cls_weight * tf.nn.softmax_cross_entropy_with_logits(
                 labels=true_cls, logits=pred_cls), [1, 2, 3])
 
         """ sum loss """
         self.op_list.extend([
-            self.lookups[0][0].assign(tf.math.divide_no_nan(self.recall_cnt, obj_cnt)),
-            self.recall_cnt.assign_sub(self.recall_cnt)
+            self.lookups[0][0].assign(tf.math.divide_no_nan(self.r50, obj_cnt)),
+            self.lookups[1][0].assign(tf.math.divide_no_nan(self.r75, obj_cnt)),
+            self.r50.assign(0),
+            self.r75.assign(0)
         ])
         if self.verbose == 2:
-            self.op_list.extend([self.lookups[1][0].assign(xy_loss),
-                                 self.lookups[2][0].assign(wh_loss),
-                                 self.lookups[3][0].assign(obj_loss),
-                                 self.lookups[4][0].assign(noobj_loss),
-                                 self.lookups[5][0].assign(cls_loss)])
+            self.op_list.extend([self.lookups[2][0].assign(xy_loss),
+                                 self.lookups[3][0].assign(wh_loss),
+                                 self.lookups[4][0].assign(obj_loss),
+                                 self.lookups[5][0].assign(noobj_loss),
+                                 self.lookups[6][0].assign(cls_loss)])
 
         with tf.control_dependencies(self.op_list):
             total_loss = obj_loss + noobj_loss + cls_loss + xy_loss + wh_loss

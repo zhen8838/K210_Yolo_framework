@@ -1,11 +1,10 @@
 import tensorflow as tf
-import tensorflow.python.keras as k
+k = tf.keras
+kcall = tf.keras.callbacks
 from tensorflow.python.keras.metrics import SparseCategoricalAccuracy, CategoricalAccuracy
-from tensorflow.python.keras.callbacks import CSVLogger
-from tensorflow.python.keras.callbacks_v1 import TensorBoard
 from tools.base import INFO, ERROR, NOTE
 from tools.facerec import TripletAccuracy
-from tools.custom import Yolo_P_R, Lookahead, PFLDMetric, DummyMetric, SignalStopping
+from tools.custom import Lookahead, PFLDMetric, DummyMetric, SignalStopping
 from tools.base import BaseHelper
 from pathlib import Path
 from datetime import datetime
@@ -21,21 +20,18 @@ from typing import List
 
 def main(config_file, new_cfg, mode, model, train, prune):
     """ config tensorflow backend """
-    # tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
-    tfcfg = tf.compat.v1.ConfigProto()
-    tfcfg.gpu_options.allow_growth = True
+    physical_devices = tf.config.experimental.list_physical_devices('GPU')
+    assert len(physical_devices) > 0, "Not enough GPU hardware devices available"
+    tf.config.experimental.set_memory_growth(physical_devices[0], True)
     if train.graph_optimizer is True:
         tf.config.optimizer.set_experimental_options(train.graph_optimizer_kwarg)
-        tfcfg.graph_options.optimizer_options.opt_level = tf.OptimizerOptions.L1
-    sess = tf.compat.v1.Session(config=tfcfg)
 
     if train.debug == True:
-        sess = tfdebug.LocalCLIDebugWrapperSession(sess)
-
-    k.backend.set_session(sess)
+        # sess = tfdebug.LocalCLIDebugWrapperSession(sess)
+        pass
 
     """ Set Golbal Paramter """
-    tf.compat.v1.set_random_seed(train.rand_seed)
+    tf.random.set_seed(train.rand_seed)
     np.random.seed(train.rand_seed)
     initial_epoch = 0
     log_dir = (Path(train.log_dir) / (datetime.strftime(datetime.now(), r'%Y%m%d-%H%M%S')
@@ -115,7 +111,6 @@ def main(config_file, new_cfg, mode, model, train, prune):
         losses = [loss_obj]
         metrics = []
 
-    sess.run([tf.compat.v1.global_variables_initializer()])
     train_model.compile(optimizer, loss=losses, metrics=metrics)
 
     """ Load Pre-Train Model Weights """
@@ -133,8 +128,8 @@ def main(config_file, new_cfg, mode, model, train, prune):
 
     """ Callbacks """
     cbs = [SignalStopping(),
-           TensorBoard(str(log_dir), update_freq='batch', profile_batch=3),
-           CSVLogger(str(log_dir / 'training.csv'), '\t', True)]
+           kcall.TensorBoard(str(log_dir), update_freq='batch', profile_batch=3),
+           kcall.CSVLogger(str(log_dir / 'training.csv'), '\t', True)]
 
     if prune.is_prune == True:
         cbs += [sparsity.UpdatePruningStep(),
@@ -159,7 +154,7 @@ def main(config_file, new_cfg, mode, model, train, prune):
                     initial_epoch=initial_epoch)
 
     """ Finish Training """
-    model_name = f'train_model_{initial_epoch+int(train_model.optimizer.iterations.eval(sess) / train_epoch_step)}.h5'
+    model_name = f'train_model_{initial_epoch+int(train_model.optimizer.iterations / train_epoch_step)}.h5'
     ckpt = log_dir / model_name
 
     if prune.is_prune == True:
@@ -173,7 +168,7 @@ def main(config_file, new_cfg, mode, model, train, prune):
         print()
         print(INFO, f' Save Train Model as {str(ckpt)}')
 
-        infer_model_name = f'infer_model_{initial_epoch+int(train_model.optimizer.iterations.eval(sess) / train_epoch_step)}.h5'
+        infer_model_name = f'infer_model_{initial_epoch+int(train_model.optimizer.iterations / train_epoch_step)}.h5'
         infer_ckpt = log_dir / infer_model_name
         k.models.save_model(infer_model, str(infer_ckpt))
         print(INFO, f' Save Infer Model as {str(infer_ckpt)}')

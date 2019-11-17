@@ -6,9 +6,9 @@ from models.networks4k210 import yolo_mbv1_k210, yolo_mbv2_k210, yolo2_mbv1_k210
     yolov2algin_mbv1_k210, pfld_k210, mbv1_softmax_facerec_k210, \
     mbv1_triplet_facerec_k210, mbv1_amsoftmax_facerec_k210, mbv1_imgnet_k210, \
     mbv2_imgnet_k210, yoloalgin_mbv1_k210
-from tensorflow.python.keras.optimizers import Adam, SGD, RMSprop
-from tensorflow.python.keras.callbacks import EarlyStopping, ModelCheckpoint, TerminateOnNaN
-from tools.custom import RAdam, StepLR
+
+import tensorflow as tf
+from tools.custom import StepLR
 from tools.yolo import YOLOHelper, YOLO_Loss, yolo_infer, yolo_eval, MultiScaleTrain
 from tools.yoloalign import YOLOAlignHelper, YOLOAlign_Loss, yoloalgin_infer
 from tools.pfld import PFLDHelper, PFLD_Loss, pfld_infer
@@ -201,17 +201,19 @@ loss_register = {
 
 callback_register = {
     'MultiScaleTrain': MultiScaleTrain,
-    'EarlyStopping': EarlyStopping,
-    'ModelCheckpoint': ModelCheckpoint,
-    'TerminateOnNaN': TerminateOnNaN,
+    'EarlyStopping': tf.keras.callbacks.EarlyStopping,
+    'ModelCheckpoint': tf.keras.callbacks.ModelCheckpoint,
+    'TerminateOnNaN': tf.keras.callbacks.TerminateOnNaN,
     'StepLR': StepLR
 }
 
 optimizer_register = {
-    'Adam': Adam,
-    'SGD': SGD,
-    'RMSprop': RMSprop,
-    'RAdam': RAdam
+    'Adam': tf.keras.optimizers.Adam,
+    'SGD': tf.keras.optimizers.SGD,
+    'RMSprop': tf.keras.optimizers.RMSprop,
+    'Adamax': tf.keras.optimizers.Adamax,
+    'Nadam': tf.keras.optimizers.Nadam,
+    'Ftrl': tf.keras.optimizers.Ftrl,
 }
 
 infer_register = {

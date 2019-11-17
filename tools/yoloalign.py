@@ -6,10 +6,7 @@ from imgaug import augmenters as iaa
 import tensorflow as tf
 from tensorflow.python.keras.losses import Loss
 import tensorflow.python.keras.backend as K
-from tensorflow.python.keras.utils import losses_utils
-from tensorflow.python.keras.engine.base_layer_utils import make_variable
-from tensorflow.python.ops.init_ops import zeros_initializer
-from tensorflow.python.keras.backend import switch
+from tensorflow.python.ops.resource_variable_ops import ResourceVariable
 from PIL import Image, ImageFont, ImageDraw
 from tools.base import ERROR, INFO, NOTE
 from pathlib import Path
@@ -291,9 +288,9 @@ class YOLOAlign_Loss(Loss):
         self.anchors = np.copy(self.h.anchors[self.layer])  # type:np.ndarray
         self.op_list = []
         with tf.compat.v1.variable_scope(f'lookups_{self.layer}',
-                                         reuse=tf.AUTO_REUSE):
+                                         reuse=tf.compat.v1.AUTO_REUSE):
             names = ['le']
-            self.lookups: Iterable[Tuple[RefVariable, AnyStr]] = [
+            self.lookups: Iterable[Tuple[ResourceVariable, AnyStr]] = [
                 (tf.compat.v1.get_variable(name, (), tf.float32,
                                            tf.zeros_initializer(),
                                            trainable=False),

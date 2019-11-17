@@ -45,13 +45,12 @@ train:
   debug: false
   verbose: 1
   vali_step_factor: 0.3
-  optimizer: RAdam
+  optimizer: Adam
   optimizer_kwarg:
-    lr: 0.0005
+    learning_rate: 0.001
     beta_1: 0.9
     beta_2: 0.999
-    epsilon: null
-    decay: 0.0
+    amsgrad: false
   Lookahead: true
   Lookahead_kwarg:
     k: 5

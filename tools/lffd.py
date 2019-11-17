@@ -577,7 +577,7 @@ class LFFD_Loss(tf.keras.losses.Loss):
 
         loss_mask = tf.cast(tf.cond(pos_num > 0, pos_fn, neg_fn), tf.float32)
 
-        loss = (tf.nn.softmax_cross_entropy_with_logits_v2(
+        loss = (tf.nn.softmax_cross_entropy_with_logits(
             labels=y_true_score, logits=y_pred_score, axis=-1)
             * loss_mask
             * tf.squeeze(mask_score, -1))

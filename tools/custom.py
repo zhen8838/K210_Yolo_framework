@@ -1,111 +1,26 @@
 import tensorflow as tf
 from tensorflow.python import keras
-from tensorflow.python.ops import init_ops
 from tensorflow.python.ops.math_ops import reduce_mean, reduce_sum,\
     sigmoid, sqrt, square, logical_and, cast, logical_not, div_no_nan, add
 from tensorflow.python.ops.gen_array_ops import reshape
-from tensorflow.python.keras.utils.generic_utils import to_list
-from tensorflow.python.keras.utils import metrics_utils
 from tensorflow.python.keras.metrics import Metric, MeanMetricWrapper
 from tensorflow.python.keras.callbacks import Callback
 from tensorflow.python.keras import backend as K
-from tensorflow.python.ops import state_ops
-from tensorflow.python.keras.optimizers import Optimizer
 import signal
 from tools.base import NOTE, colored
 import numpy as np
-from tensorflow.python.ops.variables import RefVariable
-
-
-YOLO_PRECISION = 0
-YOLO_RECALL = 1
-
-
-class Yolo_P_R(Metric):
-    def __init__(self, out_metric: int, thresholds: float, name=None, dtype=None):
-        """ yolo out_metric common class , set out_metric to return different metrics.
-
-            landmark to control calc different metrics.
-
-        YOLO_PRECISION = 0
-        YOLO_RECALL = 1
-
-        Parameters
-        ----------
-        Metric : [type]
-
-        out_metric : int
-            metric class
-        thresholds : float
-
-        name : [type], optional
-            by default None
-        dtype : [type], optional
-            by default None
-        """
-        super(Yolo_P_R, self).__init__(name=name, dtype=dtype)
-        self.out_metric = out_metric
-        self.thresholds = thresholds
-
-        if self.out_metric == YOLO_PRECISION:
-
-            self.tp = self.add_weight(
-                'tp', initializer=init_ops.zeros_initializer)  # type: RefVariable
-
-            self.fp = self.add_weight(
-                'fp', initializer=init_ops.zeros_initializer)  # type: RefVariable
-
-            self.fn = self.add_weight(
-                'fn', initializer=init_ops.zeros_initializer)  # type: RefVariable
-        else:
-            pass
-
-    def update_state(self, y_true, y_pred, sample_weight=None):
-        """
-        YOLO_PRECISION : will calc PRECISION,RECALL
-        YOLO_RECALL : not calc any thing.
-
-        """
-        if self.out_metric == YOLO_PRECISION:
-            true_confidence = y_true[..., 4:5]
-            pred_confidence = y_pred[..., 4:5]
-            pred_confidence_sigmoid = sigmoid(pred_confidence)
-
-            values = logical_and(true_confidence > self.thresholds, pred_confidence > self.thresholds)
-            values = cast(values, self.dtype)
-            self.tp.assign_add(reduce_sum(values))
-
-            values = logical_and(logical_not(true_confidence > self.thresholds),
-                                 pred_confidence > self.thresholds)
-            values = cast(values, self.dtype)
-            self.fp.assign_add(reduce_sum(values))
-
-            values = logical_and(true_confidence > self.thresholds,
-                                 logical_not(pred_confidence > self.thresholds))
-            values = cast(values, self.dtype)
-            self.fn.assign_add(reduce_sum(values))
-        else:
-            pass
-
-    def result(self):
-        if self.out_metric == YOLO_PRECISION:
-            return div_no_nan(self.tp, (add(self.tp, self.fp)))
-        elif self.out_metric == YOLO_RECALL:
-            return div_no_nan(self.tp, (add(self.tp, self.fn)))
-
-    def get_config(self):
-        return {'out_metric': self.out_metric, 'thresholds': self.thresholds, 'name': self.name, 'dtype': self.dtype}
+from tensorflow.python.ops.resource_variable_ops import ResourceVariable
 
 
 class DummyMetric(MeanMetricWrapper):
-    def __init__(self, var: RefVariable, name: str, dtype=tf.float32):
+    def __init__(self, var: ResourceVariable, name: str, dtype=tf.float32):
         """ Dummy_Metric from MeanMetricWrapper
 
         Parameters
         ----------
-        var : RefVariable
+        var : ResourceVariable
 
-            a variable from yoloalign loss
+            a variable from loss
 
         name : str
 
@@ -115,98 +30,13 @@ class DummyMetric(MeanMetricWrapper):
 
             by default None
         """
-        super().__init__(lambda y_true, y_pred, v: v, name=name, dtype=dtype, v=var.read_value())
-
-# NOTE From https://github.com/bojone/keras_radam
-
-
-class RAdam(Optimizer):
-    """RAdam optimizer.
-    Default parameters follow those provided in the original Adam paper.
-    # Arguments
-        lr: float >= 0. Learning rate.
-        beta_1: float, 0 < beta < 1. Generally close to 1.
-        beta_2: float, 0 < beta < 1. Generally close to 1.
-        epsilon: float >= 0. Fuzz factor. If `None`, defaults to `K.epsilon()`.
-        decay: float >= 0. Learning rate decay over each update.
-        amsgrad: boolean. Whether to apply the AMSGrad variant of this
-            algorithm from the paper "On the Convergence of Adam and
-            Beyond".
-    # References
-        - [RAdam - A Method for Stochastic Optimization]
-          (https://arxiv.org/abs/1908.03265)
-        - [On The Variance Of The Adaptive Learning Rate And Beyond]
-          (https://arxiv.org/abs/1908.03265)
-    """
-
-    def __init__(self, lr=0.001, beta_1=0.9, beta_2=0.999,
-                 epsilon=None, decay=0., **kwargs):
-        super(RAdam, self).__init__(**kwargs)
-        with K.name_scope(self.__class__.__name__):
-            self.iterations = K.variable(0, dtype='int64', name='iterations')
-            self.lr = K.variable(lr, name='lr')
-            self.beta_1 = K.variable(beta_1, name='beta_1')
-            self.beta_2 = K.variable(beta_2, name='beta_2')
-            self.decay = K.variable(decay, name='decay')
-        if epsilon is None:
-            epsilon = K.epsilon()
-        self.epsilon = epsilon
-        self.initial_decay = decay
-
-    def get_updates(self, loss, params):
-        grads = self.get_gradients(loss, params)
-        self.updates = [K.update_add(self.iterations, 1)]
-
-        lr = self.lr
-        if self.initial_decay > 0:
-            lr = lr * (1. / (1. + self.decay * K.cast(self.iterations,
-                                                      K.dtype(self.decay))))
-
-        t = K.cast(self.iterations, K.floatx()) + 1
-        beta_1_t = K.pow(self.beta_1, t)
-        beta_2_t = K.pow(self.beta_2, t)
-        rho = 2 / (1 - self.beta_2) - 1
-        rho_t = rho - 2 * t * beta_2_t / (1 - beta_2_t)
-        r_t = K.sqrt(
-            K.relu(rho_t - 4) * K.relu(rho_t - 2) * rho / ((rho - 4) * (rho - 2) * rho_t)
-        )
-        flag = K.cast(rho_t > 4, K.floatx())
-
-        ms = [K.zeros(K.int_shape(p), dtype=K.dtype(p)) for p in params]
-        vs = [K.zeros(K.int_shape(p), dtype=K.dtype(p)) for p in params]
-        self.weights = [self.iterations] + ms + vs
-
-        for p, g, m, v in zip(params, grads, ms, vs):
-            m_t = (self.beta_1 * m) + (1. - self.beta_1) * g
-            v_t = (self.beta_2 * v) + (1. - self.beta_2) * K.square(g)
-            mhat_t = m_t / (1 - beta_1_t)
-            vhat_t = K.sqrt(v_t / (1 - beta_2_t))
-            p_t = p - lr * mhat_t * (flag * r_t / (vhat_t + self.epsilon) + (1 - flag))
-
-            self.updates.append(K.update(m, m_t))
-            self.updates.append(K.update(v, v_t))
-            new_p = p_t
-
-            # Apply constraints.
-            if getattr(p, 'constraint', None) is not None:
-                new_p = p.constraint(new_p)
-
-            self.updates.append(K.update(p, new_p))
-        return self.updates
-
-    def get_config(self):
-        config = {'lr': float(K.get_value(self.lr)),
-                  'beta_1': float(K.get_value(self.beta_1)),
-                  'beta_2': float(K.get_value(self.beta_2)),
-                  'decay': float(K.get_value(self.decay)),
-                  'epsilon': self.epsilon}
-        base_config = super(RAdam, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
+        super().__init__(lambda y_true, y_pred, v: v, name=name, dtype=dtype, v=var)
 
 
 # NOTE from https://github.com/bojone/keras_lookahead
 class Lookahead(object):
-    """Add the [Lookahead Optimizer](https://arxiv.org/abs/1907.08610) functionality for [keras](https://keras.io/).
+    """Add the [Lookahead Optimizer](https://arxiv.org/abs/1907.08610)
+     functionality for [keras](https://keras.io/).
     """
 
     def __init__(self, k=5, alpha=0.5):
@@ -214,13 +44,19 @@ class Lookahead(object):
         self.alpha = alpha
         self.count = 0
 
-    def inject(self, model: keras.models.Model):
+    def inject(self, model: keras.Model):
         has_recompiled = model._recompile_weights_loss_and_weighted_metrics()
-        metrics_tensors = [
-            model._all_metrics_tensors[m] for m in model.metrics_names[1:]
-        ]
         model._check_trainable_weights_consistency()
-        if getattr(model, 'train_function') is None or has_recompiled:
+        if isinstance(model.optimizer, list):
+            raise ValueError('The `optimizer` in `compile` should be a single '
+                             'optimizer.')
+        # If we have re-compiled the loss/weighted metric sub-graphs then create
+        # train function even if one exists already. This is because
+        # `_feed_sample_weights` list has been updated on re-copmpile.
+        if getattr(model, 'train_function', None) is None or has_recompiled:
+            current_trainable_state = model._get_trainable_state()
+            model._set_trainable_state(model._compiled_trainable_state)
+
             inputs = (model._feed_inputs +
                       model._feed_targets +
                       model._feed_sample_weights)
@@ -240,6 +76,10 @@ class Lookahead(object):
                         model.get_updates_for(None) +
                         model.get_updates_for(model.inputs)
                     )
+                metrics = model._get_training_eval_metrics()
+                metrics_tensors = [
+                    m._call_result for m in metrics if hasattr(m, '_call_result')  # pylint: disable=protected-access
+                ]
 
             with K.name_scope('training'):
                 slow_updates, copy_updates = [], []
@@ -263,6 +103,8 @@ class Lookahead(object):
                     return R
 
                 setattr(model, 'train_function', F)
+            # Restore the current trainable state
+            model._set_trainable_state(current_trainable_state)
 
 
 class PFLDMetric(Metric):
@@ -289,15 +131,16 @@ class PFLDMetric(Metric):
         if self.calc_fr == False:
             self.landmark_num = landmark_num
             self.batch_size = batch_size
-            # NOTE if calculate landmark error , this variable will be use, When calculate failure rate , just return failure rate .
+            # NOTE if calculate landmark error , this variable will be use,
+            # When calculate failure rate , just return failure rate .
             self.landmark_error = self.add_weight(
-                'LE', initializer=init_ops.zeros_initializer)  # type: RefVariable
+                'LE', initializer=tf.zeros_initializer())  # type: ResourceVariable
 
             self.failure_num = self.add_weight(
-                'FR', initializer=init_ops.zeros_initializer)  # type: RefVariable
+                'FR', initializer=tf.zeros_initializer())  # type: ResourceVariable
 
             self.total = self.add_weight(
-                'total', initializer=init_ops.zeros_initializer)  # type: RefVariable
+                'total', initializer=tf.zeros_initializer())  # type: ResourceVariable
 
     def update_state(self, y_true, y_pred, sample_weight=None):
         if self.calc_fr == False:
@@ -366,19 +209,19 @@ class SignalStopping(Callback):
 class StepLR(Callback):
     def __init__(self, rates: list, steps: list):
         """ Step learning rate setup callback
-                
+
         eg. steps = [100, 200, 300]
             rates = [0.5, 0.1, 0.8]
-            
+
             in epoch  0  ~ 100 lr=0.5
             in epoch 100 ~ 200 lr=0.1
 
         Parameters
         ----------
         rates : list
-           
+
         steps : list
-            
+
         """
         super().__init__()
         self.rates = rates
