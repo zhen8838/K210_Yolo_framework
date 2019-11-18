@@ -34,7 +34,7 @@ model:
     cls_weight: 1
     verbose: 1
 train:
-  graph_optimizer: false
+  graph_optimizer: true
   graph_optimizer_kwarg: 
     layout_optimizer: true
     remapping: true
@@ -44,19 +44,19 @@ train:
     function_optimization: true
     scoped_allocator_optimization: true
     layout_optimizer: true
-  augmenter: false
+  augmenter: true
   batch_size: 16
   pre_ckpt: null
   rand_seed: 10101
-  epochs: 10
+  epochs: 500
   log_dir: log
-  sub_log_dir: null
+  sub_log_dir: yolo_k210_exp
   debug: false
   verbose: 1
   vali_step_factor: 0.5
   optimizer: Adam
   optimizer_kwarg:
-    learning_rate: 0.001
+    learning_rate: 0.0001
     beta_1: 0.9
     beta_2: 0.999
     amsgrad: false
@@ -65,15 +65,15 @@ train:
     k: 5
     alpha: 0.5
   callbacks:
-    - name: EarlyStopping
-      kwarg:
-        monitor: val_loss
-        min_delta: 0
-        patience: 4
-        verbose: 0
-        mode: auto
-        baseline: null
-        restore_best_weights: false
+    # - name: EarlyStopping
+    #   kwarg:
+    #     monitor: val_loss
+    #     min_delta: 0
+    #     patience: 4
+    #     verbose: 0
+    #     mode: auto
+    #     baseline: null
+    #     restore_best_weights: false
     - name: ModelCheckpoint
       kwarg:
         monitor: val_loss
@@ -87,12 +87,12 @@ train:
       kwarg: null
     - name: MultiScaleTrain
       kwarg:
-        interval: 10
-        scale_range: [-3, 3]
+        interval: 20
+        scale_range: [-1, 2]
     - name: StepLR
       kwarg:
-        steps: [400, 700, 900, 1000, 40000, 60000]
-        rates: [0.0005, 0.001, 0.002, 0.02, 0.002, 0.0002]
+        steps: [100, 200, 300]
+        rates: [0.0001, 0.0002, 0.0001]
 prune:
   is_prune: false
   init_sparsity: 0.5

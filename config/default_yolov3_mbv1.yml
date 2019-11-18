@@ -25,7 +25,7 @@ model:
       - 3
     anchor_num: 3
     class_num: 20
-    alpha: 0.5
+    alpha: 1.0
   loss: YOLO_Loss
   loss_kwarg:
     iou_thresh: 0.5
@@ -47,10 +47,10 @@ train:
     scoped_allocator_optimization: true
     layout_optimizer: true
   augmenter: true
-  batch_size: 24
+  batch_size: 16
   pre_ckpt: null
   rand_seed: 10101
-  epochs: 80000
+  epochs: 156
   log_dir: log
   sub_log_dir: null
   debug: false
@@ -89,12 +89,12 @@ train:
       kwarg: null
     - name: MultiScaleTrain
       kwarg:
-        interval: 3
+        interval: 50
         scale_range: [-3, 3]
     - name: StepLR
       kwarg:
-        steps: [400, 700, 900, 1000, 40000, 60000]
-        rates: [0.0005, 0.001, 0.002, 0.02, 0.002, 0.0002]
+        steps: [5, 10, 15, 20, 100, 150]
+        rates: [0.0001, 0.0005, 0.001, 0.002, 0.001, 0.0002]
 prune:
   is_prune: false
   init_sparsity: 0.5

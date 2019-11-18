@@ -538,7 +538,8 @@ class MultiScaleTrain(Callback):
     def __init__(self, h: YOLOHelper, interval: int = 10, scale_range: list = [-3, 3]):
         """ Multi-scale training callback
 
-            NOTE This implementation will lead to the lack of multi-scale training in several batches after the end of validation
+            NOTE This implementation will lead to the lack of multi-scale 
+                 training in several batches after the end of validation
 
         Parameters
         ----------
@@ -551,30 +552,49 @@ class MultiScaleTrain(Callback):
         scale_range : list, optional
 
             change scale range, by default [-3, 3]
-
+            eg. 
+            ```
+                org_input_size = 416
+                x = 2 # in range(-3,3)
+                input_size = org_input_size + (x * 32)
+                           = 416 + (2 * 32)
+                           = 480
+            ``` 
         """
         super().__init__()
         self.h = h
-        self.cur_scl = 0
         self.interval = interval
         self.scale_range = np.arange(scale_range[0], scale_range[1])
+        self.cur_scl = scale_range[1]  # default max size
+        self.flag = True  # change flag
+        self.count = 1
+
+    def on_train_begin(self, logs=None):
+        self.h.in_hw = self.h.org_in_hw + 32 * self.cur_scl
+        self.h.out_hw = self.h.org_out_hw + np.power(2, np.arange(self.h.output_number))[:, None] * self.cur_scl
+        print(f'\n {NOTE} : Train input image size : [{self.h.in_hw[0]},{self.h.in_hw[1]}]')
 
     def on_epoch_begin(self, epoch, logs=None):
-        if epoch > 0 and epoch % self.interval == 0:
-            # random choice resize scale
-            self.cur_scl = np.random.choice(self.scale_range)
-            self.h.in_hw = self.h.org_in_hw + 32 * self.cur_scl
-            self.h.out_hw = self.h.org_out_hw + np.power(2, np.arange(self.h.output_number))[:, None] * self.cur_scl
-            print(f'\n {NOTE} : Train input image size : [{self.h.in_hw[0]},{self.h.in_hw[1]}]\n')
-        elif epoch > 0 and self.cur_scl != 0:
-            self.h.in_hw = self.h.org_in_hw + 32 * self.cur_scl
-            self.h.out_hw = self.h.org_out_hw + np.power(2, np.arange(self.h.output_number))[:, None] * self.cur_scl
-            print(f'\n {NOTE} : Train input image size : [{self.h.in_hw[0]},{self.h.in_hw[1]}]\n')
+        self.flag = True
+
+    def on_train_batch_begin(self, batch, logs=None):
+        if self.flag == True:
+            if self.count % self.interval == 0:
+                # random choice resize scale
+                self.cur_scl = np.random.choice(self.scale_range)
+                self.h.in_hw = self.h.org_in_hw + 32 * self.cur_scl
+                self.h.out_hw = self.h.org_out_hw + np.power(2, np.arange(self.h.output_number))[:, None] * self.cur_scl
+                self.count = 1
+                print(f'\n {NOTE} : Train input image size : [{self.h.in_hw[0]},{self.h.in_hw[1]}]')
+            else:
+                self.count += 1
 
     def on_test_begin(self, logs=None):
-        self.h.in_hw = self.h.org_in_hw
-        self.h.out_hw = self.h.org_out_hw
-        print(f'\n {NOTE} : Test input image size : [{self.h.in_hw[0]},{self.h.in_hw[1]}]\n')
+        """ change to orginal image size """
+        if self.flag == True:
+            self.flag = False
+            self.h.in_hw = self.h.org_in_hw
+            self.h.out_hw = self.h.org_out_hw
 
 
 class YOLO_Loss(Loss):
