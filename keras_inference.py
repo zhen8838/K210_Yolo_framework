@@ -1,18 +1,10 @@
 import tensorflow as tf
-from tensorflow.python import keras
 from pathlib import Path
 from tools.base import INFO, ERROR, NOTE
 import argparse
 import numpy as np
 from register import dict2obj, network_register, optimizer_register, helper_register, infer_register
 from yaml import safe_load
-
-tf.enable_v2_behavior()
-config = tf.compat.v1.ConfigProto()
-config.gpu_options.allow_growth = True
-sess = tf.compat.v1.InteractiveSession(config=config)
-keras.backend.set_session(sess)
-keras.backend.set_learning_phase(0)
 
 
 def main(ckpt_path: Path, argmap: dict2obj, images_path: Path, results_path: Path):
@@ -29,6 +21,9 @@ def main(ckpt_path: Path, argmap: dict2obj, images_path: Path, results_path: Pat
     results_path : Path
         nncase infer path, 'Path' or None
     """
+    physical_devices = tf.config.experimental.list_physical_devices('GPU')
+    assert len(physical_devices) > 0, "Not enough GPU hardware devices available"
+    tf.config.experimental.set_memory_growth(physical_devices[0], True)
     model, train, inference = argmap.model, argmap.train, argmap.inference
     h = helper_register[model.helper](**model.helper_kwarg)
 

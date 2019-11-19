@@ -156,20 +156,14 @@ def runkMeans(X: np.ndarray, initial_centroids: np.ndarray, max_iters: int,
     # build tensorflow graph
     new_x, new_c = tile_x(X, k), tile_c(initial_centroids, m)
     assert new_x.shape == new_c.shape
-    in_x, in_c, idx = build_kmeans_graph(new_x, new_c)
 
     """ run kmeans """
-    config = tf.compat.v1.ConfigProto()
-    config.gpu_options.allow_growth = True
-    sess = tf.compat.v1.Session(config=config)
-
     for i in range(max_iters):
-        idx_ = sess.run(idx, feed_dict={in_x: new_x, in_c: new_c})
+        idx_ = findClosestCentroids(new_x, new_c).numpy()
         new_centrois = computeCentroids(X, idx_, k)
         centroid_history.append(new_centrois.copy())
         new_c = tile_c(new_centrois, m)
 
-    sess.close()
     if plot_progress:
         plt.figure()
         plotProgresskMeans(X, centroid_history, idx_, k, max_iters)
@@ -218,7 +212,7 @@ def main(ann_list_file: str, anchor_file: str, max_iters: int,
     centroids = np.array(sorted(centroids, key=lambda x: (-x[0])))
     centroids = np.reshape(centroids, (layers, anchor_num, 2))
     # centroids between layers [large -> small] , in layers [small -> large]
-    centroids=np.array([np.array(sorted(centroid, key=lambda x: (x[0]))) for centroid in centroids]) 
+    centroids = np.array([np.array(sorted(centroid, key=lambda x: (x[0]))) for centroid in centroids])
     for l in range(layers):
         centroids[l] = centroids[l]  # grid_wh[l]  # NOTE centroids是相对于全局的0-1
     if np.any(np.isnan(centroids)):

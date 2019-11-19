@@ -1,5 +1,4 @@
 import tensorflow as tf
-import tensorflow.python.keras as k
 from pathlib import Path
 from tools.base import INFO, ERROR, NOTE
 import argparse
@@ -7,15 +6,11 @@ import numpy as np
 from register import dict2obj, network_register, helper_register, eval_register
 from yaml import safe_load
 
-tf.enable_v2_behavior()
-config = tf.ConfigProto()
-config.gpu_options.allow_growth = True
-sess = tf.InteractiveSession(config=config)
-k.backend.set_session(sess)
-k.backend.set_learning_phase(0)
-
 
 def main(ckpt_path: Path, argmap: dict2obj):
+    physical_devices = tf.config.experimental.list_physical_devices('GPU')
+    assert len(physical_devices) > 0, "Not enough GPU hardware devices available"
+    tf.config.experimental.set_memory_growth(physical_devices[0], True)
 
     model, evaluate = argmap.model, argmap.evaluate
     h = helper_register[model.helper](**model.helper_kwarg)
