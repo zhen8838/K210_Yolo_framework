@@ -27,7 +27,7 @@ wget http://host.robots.ox.ac.uk/pascal/VOC/voc2007/VOCtest_06-Nov-2007.tar
 tar xf VOCtrainval_11-May-2012.tar
 tar xf VOCtrainval_06-Nov-2007.tar
 tar xf VOCtest_06-Nov-2007.tar
-wget https://pjreddie.com/media/files/voc_label.py
+wget https://raw.githubusercontent.com/zhen8838/Bin/master/voc_label.py
 python3 voc_label.py
 cat *_train.txt  > train.txt
 cat *_val.txt  > val.txt

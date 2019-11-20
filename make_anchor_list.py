@@ -189,16 +189,16 @@ def main(ann_list_file: str, anchor_file: str, max_iters: int,
 
         """ calculate the affine transform factor """
         scale = in_wh / img_wh  # NOTE affine tranform sacle is [w,h]
-        scale[:] = np.min(scale)
-        # NOTE translation is [w offset,h offset]
+        scale = np.min(scale)
+        # NOTE translation is [x offset,y offset]
         translation = ((in_wh - img_wh * scale) / 2).astype(int)
 
         """ calculate the box transform matrix """
-        X[i, 1][:, 1:3] = (X[i, 1][:, 1:3] * img_wh * scale + translation) / in_wh
-        X[i, 1][:, 3:5] = (X[i, 1][:, 3:5] * img_wh * scale) / in_wh
+        X[i, 1][:, 1:3] = (X[i, 1][:, 1:3] * scale + translation) / in_wh
+        X[i, 1][:, 3:5] = (X[i, 1][:, 3:5] * scale + translation) / in_wh
 
     x = np.vstack(X[:, 1])
-    x = x[:, 3:5]
+    x = x[:, 3:5] - x[:, 1:3]
     layers = len(out_hw) // 2
     if is_random == 'True':
         initial_centroids = np.hstack((np.random.uniform(low[0], high[0], (layers * anchor_num, 1)),

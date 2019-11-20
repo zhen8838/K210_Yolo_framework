@@ -26,7 +26,7 @@ def main(train_file: str, val_file: str, test_file: str, output_file: str):
         save_dict[name] = np.array([
             np.array([
                 image_path_list[i],  # image path
-                np.loadtxt(ann_list[i], dtype=float, ndmin=2),  # image ann [cls,x,y,w,h]
+                np.loadtxt(ann_list[i], dtype=float, ndmin=2),  # image ann [cls,x1,y1,x2,y2]
                 np.array(imread(image_path_list[i]).shape[0:2])]  # image [h w]
             ) for i in range(len(ann_list))])
 

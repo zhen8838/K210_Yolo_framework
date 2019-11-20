@@ -7,7 +7,8 @@ from tensorflow.python.keras.metrics import Metric, MeanMetricWrapper
 from tensorflow.python.keras.callbacks import Callback
 from tensorflow.python.keras import backend as K
 import signal
-from tools.base import NOTE, colored
+from tools.base import NOTE, colored, ERROR
+from toolz import reduce
 import numpy as np
 from tensorflow.python.ops.resource_variable_ops import ResourceVariable
 
@@ -224,16 +225,18 @@ class StepLR(Callback):
 
         """
         super().__init__()
-        self.rates = rates
-        self.steps = steps
+        assert len(rates) == len(steps), f'{ERROR} the len(rates) must equal len(steps)'
+        assert steps[0] > 0, f'{ERROR} the steps[0] can\'t <= 0'
+        self.rates = []
+        steps.insert(0, 0)
+        for i in range(len(rates)):
+            self.rates += [rates[i]] * (steps[i + 1] - steps[i])
 
     def on_epoch_begin(self, epoch, logs=None):
-        if epoch < self.steps[0]:
-            K.set_value(self.model.optimizer.lr, self.rates[0])
-        elif epoch == self.steps[0]:
-            self.rates.pop(0)
-            self.steps.pop(0)
-            K.set_value(self.model.optimizer.lr, self.rates[0])
+        if epoch < len(self.rates):
+            K.set_value(self.model.optimizer.lr, self.rates[epoch])
+        else:
+            K.set_value(self.model.optimizer.lr, self.rates[-1])
 
     def on_epoch_end(self, epoch, logs=None):
         logs = logs or {}

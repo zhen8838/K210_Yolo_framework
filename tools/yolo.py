@@ -3,6 +3,7 @@ import os
 import cv2
 from matplotlib.pyplot import imshow, show
 from math import cos, sin
+import imgaug as ia
 import imgaug.augmenters as iaa
 from imgaug import BoundingBoxesOnImage
 import tensorflow as tf
@@ -145,6 +146,196 @@ def corner_to_center(xyxy_ann: np.ndarray, from_all_scale=True, in_hw=None) -> n
     return xywh_ann
 
 
+def bbox_iou(bbox_a: np.ndarray, bbox_b: np.ndarray, offset: int = 0) -> np.ndarray:
+    """Calculate Intersection-Over-Union(IOU) of two bounding boxes.
+        NOTE form gluon-cv
+
+    Parameters
+    ----------
+    bbox_a : np.ndarray
+
+        (n,4) x1,y1,x2,y2
+
+    bbox_b : np.ndarray
+
+        (m,4) x1,y1,x2,y2
+
+
+    offset : int, optional
+        by default 0
+
+    Returns
+    -------
+    np.ndarray
+
+        iou (n,m)
+    """
+    tl = np.maximum(bbox_a[:, None, :2], bbox_b[:, :2])
+    br = np.minimum(bbox_a[:, None, 2:4], bbox_b[:, 2:4])
+
+    area_i = np.prod(br - tl + offset, axis=2) * (tl < br).all(axis=2)
+    area_a = np.prod(bbox_a[:, 2:4] - bbox_a[:, :2] + offset, axis=1)
+    area_b = np.prod(bbox_b[:, 2:4] - bbox_b[:, :2] + offset, axis=1)
+    return area_i / (area_a[:, None] + area_b - area_i)
+
+
+def bbox_crop(ann: np.ndarray, crop_box=None, allow_outside_center=True) -> np.ndarray:
+    """ Crop bounding boxes according to slice area.
+
+    Parameters
+    ----------
+    ann : np.ndarray
+
+        (n,5) [p,x1,y1,x2,y1]
+
+    crop_box : optional
+
+        crop_box [x1,y1,x2,y2] , by default None
+
+    allow_outside_center : bool, optional
+
+        by default True
+
+    Returns
+    -------
+    np.ndarray
+
+        ann
+        Cropped bounding boxes with shape (M, 4+) where M <= N.
+    """
+    ann = ann.copy()
+    if crop_box is None:
+        return ann
+    if sum([int(c is None) for c in crop_box]) == 4:
+        return ann
+
+    l, t, r, b = crop_box
+
+    left = l if l else 0
+    top = t if t else 0
+    right = r if r else np.inf
+    bottom = b if b else np.inf
+    crop_bbox = np.array((left, top, right, bottom))
+
+    if allow_outside_center:
+        mask = np.ones(ann.shape[0], dtype=bool)
+    else:
+        centers = (ann[:, 1:3] + ann[:, 3:5]) / 2
+        mask = np.logical_and(crop_bbox[:2] <= centers, centers < crop_bbox[2:]).all(axis=1)
+
+    # transform borders
+    ann[:, 1:3] = np.maximum(ann[:, 1:3], crop_bbox[:2])
+    ann[:, 3:5] = np.minimum(ann[:, 3:5], crop_bbox[2:4])
+    ann[:, 1:3] -= crop_bbox[:2]
+    ann[:, 3:5] -= crop_bbox[:2]
+
+    mask = np.logical_and(mask, (ann[:, 1:3] < ann[:, 3:5]).all(axis=1))
+    ann = ann[mask]
+    return ann
+
+
+def random_crop_with_constraints(ann: np.ndarray, im_wh: np.ndarray,
+                                 min_scale: float = 0.3, max_scale: float = 1,
+                                 max_aspect_ratio: float = 2,
+                                 constraints: float = None,
+                                 max_trial: float = 50) -> [np.ndarray, list]:
+    """
+        Crop an image randomly with bounding box constraints.
+
+        [#] Wei Liu, Dragomir Anguelov, Dumitru Erhan, Christian Szegedy,
+       Scott Reed, Cheng-Yang Fu, Alexander C. Berg.
+       SSD: Single Shot MultiBox Detector. ECCV 2016.
+
+    Parameters
+    ----------
+    ann : np.ndarray
+
+        (n,5) [p,x1,y1,x2,y1]
+
+    im_wh : np.ndarray
+
+        im wh
+
+    min_scale : float, optional
+
+        The minimum ratio between a cropped region and the original image. by default 0.3
+
+    max_scale : float, optional
+
+        The maximum ratio between a cropped region and the original image. by default 1
+
+    max_aspect_ratio : float, optional
+
+        The maximum aspect ratio of cropped region. by default 2
+
+    constraints : float, optional
+
+        by default None
+
+    max_trial : float, optional
+
+        Maximum number of trials for each constraint before exit no matter what. by default 50
+
+    Returns
+    -------
+    [np.ndarray, list]
+
+        new ann, crop idx : (0, 0, w, h)
+
+    """
+    # default params in paper
+    if constraints is None:
+        constraints = (
+            (0.1, None),
+            (0.3, None),
+            (0.5, None),
+            (0.7, None),
+            (0.9, None),
+            (None, 1),
+        )
+
+    w, h = im_wh
+
+    candidates = [(0, 0, w, h)]
+    for min_iou, max_iou in constraints:
+        min_iou = -np.inf if min_iou is None else min_iou
+        max_iou = np.inf if max_iou is None else max_iou
+
+        for _ in range(max_trial):
+            scale = np.random.uniform(min_scale, max_scale)
+            aspect_ratio = np.random.uniform(
+                max(1 / max_aspect_ratio, scale * scale),
+                min(max_aspect_ratio, 1 / (scale * scale)))
+            crop_h = int(h * scale / np.sqrt(aspect_ratio))
+            crop_w = int(w * scale * np.sqrt(aspect_ratio))
+
+            crop_t = np.random.randint(h - crop_h)
+            crop_l = np.random.randint(w - crop_w)
+            crop_bb = np.array((crop_l, crop_t, crop_l + crop_w, crop_t + crop_h))
+
+            if len(ann) == 0:
+                top, bottom = crop_t, crop_t + crop_h
+                left, right = crop_l, crop_l + crop_w
+                return ann, (left, top, right, bottom)
+
+            iou = bbox_iou(ann[:, 1:], crop_bb[np.newaxis])
+            if min_iou <= iou.min() and iou.max() <= max_iou:
+                top, bottom = crop_t, crop_t + crop_h
+                left, right = crop_l, crop_l + crop_w
+                candidates.append((left, top, right, bottom))
+                break
+
+    # random select one
+    while candidates:
+        crop = candidates.pop(np.random.randint(0, len(candidates)))
+        new_ann = bbox_crop(ann, crop, allow_outside_center=False)
+        if new_ann.size < 1:
+            continue
+        new_crop = (crop[0], crop[1], crop[2], crop[3])
+        return new_ann, new_crop
+    return ann, (0, 0, w, h)
+
+
 class YOLOHelper(BaseHelper):
     def __init__(self, image_ann: str, class_num: int, anchors: str,
                  in_hw: tuple, out_hw: tuple, validation_split: float = 0.1):
@@ -192,11 +383,18 @@ class YOLOHelper(BaseHelper):
             self.grid_wh = (1 / self.out_hw)[:, [1, 0]]  # hw => wh
             self.xy_offset = coordinate_offset(self.anchors, self.out_hw)  # type:np.ndarray
 
-        self.iaaseq = iaa.OneOf([
-            iaa.Fliplr(0.5),  # 50% 镜像
-            iaa.Affine(rotate=(-10, 10)),  # 随机旋转
-            iaa.Affine(translate_percent={"x": (-0.1, 0.1), "y": (-0.1, 0.1)})  # 随机平移
-        ])  # type: iaa.meta.OneOf
+        self.iaaseq = iaa.Sequential([
+            iaa.Fliplr(0.5),
+            iaa.SomeOf([1, 4], [
+                iaa.Affine(scale={"x": (0.8, 1.2), "y": (0.8, 1.2)},
+                           backend='cv2', order=[0, 1], cval=(0, 255), mode=ia.ALL),
+                iaa.Affine(translate_percent={"x": (-0.2, 0.2), "y": (-0.2, 0.2)},
+                           backend='cv2', order=[0, 1], cval=(0, 255), mode=ia.ALL),
+                iaa.Affine(rotate=(-30, 30),
+                           backend='cv2', order=[0, 1], cval=(0, 255), mode=ia.ALL),
+                iaa.Crop(percent=([0.05, 0.1], [0.05, 0.1], [0.05, 0.1], [0.05, 0.1]))
+            ], True)
+        ])  # type: iaa.meta.Sequential
 
         self.colormap = [
             (255, 82, 0), (0, 255, 245), (0, 61, 255), (0, 255, 112), (0, 255, 133),
@@ -231,7 +429,7 @@ class YOLOHelper(BaseHelper):
         np.ndarray
             label xy grid scale, shape = [out h, out w,anchor num,2]
         """
-        return (xy * self.out_hw[layer][::-1]) - self.xy_offset[layer]
+        return (xy * self.out_hw[layer][:: -1]) - self.xy_offset[layer]
 
     def _xy_grid_index(self, box_xy: np.ndarray, layer: int) -> [np.ndarray, np.ndarray]:
         """ get xy index in grid scale
@@ -249,7 +447,7 @@ class YOLOHelper(BaseHelper):
 
             index xy : = [idx,idy]
         """
-        return np.floor(box_xy * self.out_hw[layer][::-1]).astype('int')
+        return np.floor(box_xy * self.out_hw[layer][:: -1]).astype('int')
 
     def _get_anchor_index(self, wh: np.ndarray) -> [np.ndarray, np.ndarray]:
         """get the max iou anchor index
@@ -272,13 +470,71 @@ class YOLOHelper(BaseHelper):
         best_anchor = np.argsort(-iou, -1)  # shape = [num_box, num_anchor]
         return np.divmod(best_anchor, self.anchor_number)
 
+    @staticmethod
+    def corner_to_center(ann: np.ndarray, in_hw: np.ndarray) -> np.ndarray:
+        """ conrner ann to center ann
+            xyxy ann to xywh ann
+
+        Parameters
+        ----------
+        ann : np.ndarray
+
+            xyxyann n*[p,x1,y1,x2,y2]
+            NOTE all pixel scale
+
+        in_hw : np.ndarray
+
+        Returns
+        -------
+        np.ndarray
+
+            xywhann n*[p,x,y,w,h]
+
+            NOTE scale = [0~1] x,y is center point
+        """
+        return np.hstack([
+            ann[:, 0:1],
+            ((ann[:, 1:2] + ann[:, 3:4]) / 2) / in_hw[1],
+            ((ann[:, 2:3] + ann[:, 4:5]) / 2) / in_hw[0],
+            (ann[:, 3:4] - ann[:, 1:2]) / in_hw[1],
+            (ann[:, 4:5] - ann[:, 2:3]) / in_hw[0]])
+
+    @staticmethod
+    def center_to_corner(ann: np.ndarray, in_hw: np.ndarray) -> np.ndarray:
+        """ center ann to conrner ann
+            xywh ann to xyxy ann
+
+        Parameters
+        ----------
+        ann : np.ndarray
+
+            xywhann n*[p,x,y,w,h]
+            NOTE scale = [0~1] x,y is center point
+
+        in_hw : np.ndarray
+
+        Returns
+        -------
+        np.ndarray
+
+            xyxyann n*[p,x1,y1,x2,y2]
+            NOTE all pixel scale
+
+        """
+        return np.hstack([
+            ann[:, 0:1],
+            (ann[:, 1:2] - ann[:, 3:4] / 2) * in_hw[1],
+            (ann[:, 2:3] - ann[:, 4:5] / 2) * in_hw[0],
+            (ann[:, 1:2] + ann[:, 3:4] / 2) * in_hw[1],
+            (ann[:, 2:3] + ann[:, 4:5] / 2) * in_hw[0]])
+
     def ann_to_label(self, ann: np.ndarray) -> tuple:
         """convert the annotaion to yolo v3 label~
 
         Parameters
         ----------
         ann : np.ndarray
-            annotation shape :[n,5] value :[n*[p,x,y,w,h]]
+            annotation shape :[n,5] value : n*[p,x1,y1,x2,y2]
 
         Returns
         -------
@@ -301,19 +557,20 @@ class YOLOHelper(BaseHelper):
         labels = [np.zeros((self.out_hw[i][0], self.out_hw[i][1], len(self.anchors[i]),
                             5 + self.class_num + 1), dtype='float32') for i in range(self.output_number)]
 
-        layer_idx, anchor_idx = self._get_anchor_index(ann[:, 3:5])
+        ann = self.corner_to_center(ann, self.in_hw)
+        layer_idx, anchor_idx = self._get_anchor_index(ann[:, 3: 5])
         for box, l, n in zip(ann, layer_idx, anchor_idx):
             # NOTE box [x y w h] are relative to the size of the entire image [0~1]
             # clip box avoid width or heigh == 0 ====> loss = inf
-            bb = np.clip(box[1:5], 1e-8, 0.99999999)
+            bb = np.clip(box[1: 5], 1e-8, 0.99999999)
             cnt = np.zeros(self.output_number, np.bool)  # assigned flag
             for i in range(len(l)):
-                x, y = self._xy_grid_index(bb[0:2], l[i])  # [x index , y index]
+                x, y = self._xy_grid_index(bb[0: 2], l[i])  # [x index , y index]
                 if cnt[l[i]] or labels[l[i]][y, x, n[i], 4] == 1.:
                     # 1. when this output layer already have ground truth, skip
                     # 2. when this grid already being assigned, skip
                     continue
-                labels[l[i]][y, x, n[i], 0:4] = bb
+                labels[l[i]][y, x, n[i], 0: 4] = bb
                 labels[l[i]][y, x, n[i], 4] = (0. if cnt.any() else 1.)
                 labels[l[i]][y, x, n[i], 5 + int(box[0])] = 1.
                 labels[l[i]][y, x, n[i], -1] = 1.  # set gt flag = 1
@@ -331,7 +588,7 @@ class YOLOHelper(BaseHelper):
         labels : tuple
         """
         for i in range(len(labels)):
-            labels[i][..., 0:2] = labels[i][..., 0:2] * self.grid_wh[i] + self.xy_offset[i]
+            labels[i][..., 0: 2] = labels[i][..., 0: 2] * self.grid_wh[i] + self.xy_offset[i]
 
     def _wh_to_all(self, labels: tuple):
         """convert wh scale to all image
@@ -341,7 +598,7 @@ class YOLOHelper(BaseHelper):
         labels : tuple
         """
         for i in range(len(labels)):
-            labels[i][..., 2:4] = np.exp(labels[i][..., 2: 4]) * self.anchors[i]
+            labels[i][..., 2: 4] = np.exp(labels[i][..., 2: 4]) * self.anchors[i]
 
     def label_to_ann(self, labels: tuple, thersh=.7) -> np.ndarray:
         """reverse the labels to annotation
@@ -357,6 +614,7 @@ class YOLOHelper(BaseHelper):
         """
         new_ann = np.vstack([label[np.where(label[..., 4] > thersh)] for label in labels])
         new_ann = np.c_[np.argmax(new_ann[:, 5:], axis=-1), new_ann[:, :4]]
+        new_ann = self.center_to_corner(new_ann, self.in_hw)
         return new_ann
 
     def data_augmenter(self, img: np.ndarray, ann: np.ndarray) -> tuple:
@@ -365,30 +623,54 @@ class YOLOHelper(BaseHelper):
         Parameters
         ----------
         img : np.ndarray
+
             img src
+
         ann : np.ndarray
+
             one annotation
+            [p,x1,y1,x2,y2]
 
         Returns
         -------
         tuple
-            [image src,box] after data augmenter
+
+            [image src,ann] after data augmenter
             image src dtype is uint8
         """
-        p = ann[:, 0:1]
-        xywh_box = ann[:, 1:]
+        p = ann[:, 0: 1]
+        box = ann[:, 1:]
 
-        bbs = BoundingBoxesOnImage.from_xyxy_array(
-            center_to_corner(xywh_box, in_hw=img.shape[0:2]), shape=img.shape)
+        bbs = BoundingBoxesOnImage.from_xyxy_array(box, shape=img.shape)
 
         image_aug, bbs_aug = self.iaaseq(image=img, bounding_boxes=bbs)
         bbs_aug = bbs_aug.remove_out_of_image().clip_out_of_image()
 
-        xyxy_box = bbs_aug.to_xyxy_array()
-        new_ann = corner_to_center(xyxy_box, in_hw=img.shape[0:2])
-        new_ann = np.hstack((p[0:new_ann.shape[0], :], new_ann))
+        new_box = bbs_aug.to_xyxy_array()
+        new_ann = np.hstack((p[0: len(new_box), :], new_box))
 
         return image_aug, new_ann
+
+    def resize_train_img(self, img: np.ndarray, ann: np.ndarray
+                         ) -> [np.ndarray, np.ndarray]:
+        """ when training first crop image and resize image and keep ratio
+
+        Parameters
+        ----------
+        img : np.ndarray
+
+        ann : np.ndarray
+
+        Returns
+        -------
+        [np.ndarray, np.ndarray]
+            img, ann
+        """
+        if np.random.uniform(0, 1) > 0.5:
+            ann, (x1, y1, x2, y2) = random_crop_with_constraints(ann, img.shape[1::-1])
+            img = img[y1:y2, x1:x2, :]
+
+        return self.resize_img(img, ann)
 
     def resize_img(self, img: np.ndarray, ann: np.ndarray
                    ) -> [np.ndarray, np.ndarray]:
@@ -405,7 +687,7 @@ class YOLOHelper(BaseHelper):
         Returns
         -------
         [np.ndarray, np.ndarray]
-            img, ann [uint8,float64]
+            img, ann [ uint8 , float64 ]
         """
         im_in = np.zeros((self.in_hw[0], self.in_hw[1], 3), np.uint8)
 
@@ -413,17 +695,17 @@ class YOLOHelper(BaseHelper):
         img_hw = np.array(img.shape[:2])
         scale = np.min(self.in_hw / img_hw)
 
-        # NOTE hw_off is [h offset,w offset]
-        hw_off = ((self.in_hw - img_hw * scale) / 2).astype(int)
+        # NOTE xy_off is [x offset,y offset]
+        x_off, y_off = ((self.in_hw[::-1] - img_hw[::-1] * scale) / 2).astype(int)
         img = cv2.resize(img, None, fx=scale, fy=scale)
 
-        im_in[hw_off[0]:hw_off[0] + img.shape[0],
-              hw_off[1]:hw_off[1] + img.shape[1], :] = img[...]
+        im_in[y_off:y_off + img.shape[0],
+              x_off:x_off + img.shape[1], :] = img[...]
 
         """ calculate the box transform matrix """
         if isinstance(ann, np.ndarray):
-            ann[:, 1:3] = (ann[:, 1:3] * img_hw[::-1] * scale + hw_off[::-1]) / self.in_hw[::-1]
-            ann[:, 3:5] = (ann[:, 3:5] * img_hw[::-1] * scale) / self.in_hw[::-1]
+            ann[:, 1:3] = ann[:, 1:3] * scale + [x_off, y_off]
+            ann[:, 3:5] = ann[:, 3:5] * scale + [x_off, y_off]
 
         return im_in, ann
 
@@ -440,7 +722,40 @@ class YOLOHelper(BaseHelper):
         np.ndarray
             image src
         """
-        return cv2.imread(img_path)[..., ::-1]
+        return cv2.cvtColor(cv2.imread(img_path), cv2.COLOR_BGR2RGB)
+
+    def process_img(self, img: np.ndarray, ann: np.ndarray,
+                    is_augment: bool, is_resize: bool,
+                    is_normlize: bool) -> [tf.Tensor, tf.Tensor]:
+        """ process image and true box , if is training then use data augmenter
+
+        Parameters
+        ----------
+        img : np.ndarray
+            image srs
+        ann : np.ndarray
+            one annotation
+        is_augment : bool
+            wether to use data augmenter
+        is_resize : bool
+            wether to resize the image
+        is_normlize : bool
+            wether to normlize the image
+
+        Returns
+        -------
+        tuple
+            image src , true box
+        """
+        if is_resize and is_augment:
+            img, ann = self.resize_train_img(img, ann)
+        elif is_resize:
+            img, ann = self.resize_img(img, ann)
+        if is_augment:
+            img, ann = self.data_augmenter(img, ann)
+        if is_normlize:
+            img = self.normlize_img(img)
+        return img, ann
 
     def build_datapipe(self, image_ann_list: np.ndarray, batch_size: int, is_augment: bool,
                        is_normlize: bool, is_training: bool) -> tf.data.Dataset:
@@ -454,8 +769,8 @@ class YOLOHelper(BaseHelper):
                                               [i], [tf.dtypes.string, tf.float64])
             # tf.numpy_function(lambda x: print('img id:', x), [i],[])
             # load image
-            raw_img = tf.image.decode_image(tf.io.read_file(img_path),
-                                            channels=3, expand_animations=False)
+            raw_img = tf.image.decode_jpeg(tf.io.read_file(img_path),
+                                           channels=3)
             # resize image -> image augmenter
             raw_img, ann = tf.numpy_function(self.process_img,
                                              [raw_img, ann, is_augment, True, False],
@@ -503,7 +818,8 @@ class YOLOHelper(BaseHelper):
 
         ann : np.ndarray
 
-           shape : [p,x,y,w,h]
+            scale is all image pixal scale
+            shape : [p,x1,y1,x2,y2]
 
         is_show : bool
 
@@ -511,7 +827,7 @@ class YOLOHelper(BaseHelper):
         """
         if isinstance(ann, np.ndarray):
             p = ann[:, 0]
-            xyxybox = center_to_corner(ann[:, 1:], in_hw=img.shape[:2])
+            xyxybox = ann[:, 1:]
             for i, a in enumerate(xyxybox):
                 classes = int(p[i])
                 r_top = tuple(a[0:2].astype(int))
@@ -538,7 +854,7 @@ class MultiScaleTrain(Callback):
     def __init__(self, h: YOLOHelper, interval: int = 10, scale_range: list = [-3, 3]):
         """ Multi-scale training callback
 
-            NOTE This implementation will lead to the lack of multi-scale 
+            NOTE This implementation will lead to the lack of multi-scale
                  training in several batches after the end of validation
 
         Parameters
@@ -552,14 +868,14 @@ class MultiScaleTrain(Callback):
         scale_range : list, optional
 
             change scale range, by default [-3, 3]
-            eg. 
+            eg.
             ```
                 org_input_size = 416
                 x = 2 # in range(-3,3)
                 input_size = org_input_size + (x * 32)
                            = 416 + (2 * 32)
                            = 480
-            ``` 
+            ```
         """
         super().__init__()
         self.h = h
@@ -599,7 +915,8 @@ class MultiScaleTrain(Callback):
 
 class YOLO_Loss(Loss):
     def __init__(self, h: YOLOHelper, iou_thresh: float,
-                 obj_weight: float, noobj_weight: float, wh_weight: float, xy_weight: float, cls_weight: float, layer: int, verbose=1,
+                 obj_weight: float, noobj_weight: float, wh_weight: float,
+                 xy_weight: float, cls_weight: float, layer: int, verbose=1,
                  reduction=losses_utils.ReductionV2.AUTO, name=None):
         """ yolo loss obj
 
@@ -856,8 +1173,8 @@ class YOLO_Loss(Loss):
                 labels=true_confidence, logits=pred_confidence), [1, 2, 3, 4])
 
         cls_loss = tf.reduce_sum(
-            obj_mask[..., 0] * self.cls_weight * tf.nn.softmax_cross_entropy_with_logits(
-                labels=true_cls, logits=pred_cls), [1, 2, 3])
+            obj_mask * self.cls_weight * tf.nn.sigmoid_cross_entropy_with_logits(
+                labels=true_cls, logits=pred_cls), [1, 2, 3, 4])
 
         """ sum loss """
         self.op_list.extend([
@@ -1136,7 +1453,7 @@ def voc_ap(recall: np.ndarray, precision: np.ndarray) -> float:
 
 def yolo_eval(infer_model: k.Model, h: YOLOHelper, det_obj_thresh: float,
               det_iou_thresh: float, mAp_iou_thresh: float, class_name: list,
-              save_result: bool = False):
+              save_result: bool = False, save_result_dir: str = 'tmp'):
     """ calc yolo pre-class Ap and mAp
 
     Parameters
@@ -1160,6 +1477,10 @@ def yolo_eval(infer_model: k.Model, h: YOLOHelper, det_obj_thresh: float,
     save_result : bool
 
         when save result, while save `tmp/detection-results` and `tmp/ground-truth`.
+
+    save_result_dir : str
+
+        default `tmp`
     """
     p_img_ids = [[] for i in range(h.class_num)]
     p_scores = [[] for i in range(h.class_num)]
@@ -1168,8 +1489,8 @@ def yolo_eval(infer_model: k.Model, h: YOLOHelper, det_obj_thresh: float,
     class_name = np.array(class_name)
     t_npos = np.zeros((h.class_num, 1))
     if save_result == True:
-        res_path = Path('tmp/detection-results')
-        gt_path = Path('tmp/ground-truth')
+        res_path = Path(save_result_dir + '/detection-results')
+        gt_path = Path(save_result_dir + '/ground-truth')
         if gt_path.exists():
             shutil.rmtree(str(gt_path))
         if res_path.exists():
@@ -1199,11 +1520,8 @@ def yolo_eval(infer_model: k.Model, h: YOLOHelper, det_obj_thresh: float,
             res_arr = np.concatenate([p_c, p_s, p_x], -1)
             np.savetxt(str(res_path / f'{img_name}.txt'), res_arr, fmt='%s')
 
-            true_clas, true_box = np.split(true_ann, [1], -1)
-            true_xyxy = center_to_corner(true_box, in_hw=img_hw)
-            true_clas = np.ravel(true_clas).astype(np.int)
-
-            t_c = class_name[true_clas[:, None].astype(np.int)]
+            true_clas, true_xyxy = np.split(true_ann, [1], -1)
+            t_c = class_name[true_clas.astype(np.int)]
             t_x = true_xyxy.astype(np.int32).astype('<U6')
             t_arr = np.concatenate([t_c, t_x], -1)
             np.savetxt(str(gt_path / f'{img_name}.txt'), t_arr, fmt='%s')
