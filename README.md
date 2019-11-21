@@ -29,8 +29,8 @@ tar xf VOCtrainval_06-Nov-2007.tar
 tar xf VOCtest_06-Nov-2007.tar
 wget https://raw.githubusercontent.com/zhen8838/Bin/master/voc_label.py
 python3 voc_label.py
-cat *_train.txt  > train.txt
-cat *_val.txt  > val.txt
+cat *_train.txt *_val.txt  > train.txt
+cat *_test.txt  > val.txt
 cat *_test.txt  > test.txt
 ```
 
@@ -331,7 +331,6 @@ mkdir xxx/imagenetval
 tar -xf ILSVRC2012_img_val.tar -C ~/zhengqihang/imagenetval
 cd xxx/imagenetval/
 wget https://raw.githubusercontent.com/tensorflow/models/master/research/slim/datasets/imagenet_2012_validation_synset_labels.txt
-
 python make_imgenet_list.py --input_train_path xxx/imagenet --input_val_path xxx/imagenetval
 ```
 

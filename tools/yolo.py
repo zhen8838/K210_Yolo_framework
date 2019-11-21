@@ -387,11 +387,14 @@ class YOLOHelper(BaseHelper):
             iaa.Fliplr(0.5),
             iaa.SomeOf([1, 4], [
                 iaa.Affine(scale={"x": (0.8, 1.2), "y": (0.8, 1.2)},
-                           backend='cv2', order=[0, 1], cval=(0, 255), mode=ia.ALL),
+                           backend='cv2', order=[0, 1], cval=(0, 255),
+                           mode=['constant', 'edge', 'reflect', 'wrap']),
                 iaa.Affine(translate_percent={"x": (-0.2, 0.2), "y": (-0.2, 0.2)},
-                           backend='cv2', order=[0, 1], cval=(0, 255), mode=ia.ALL),
+                           backend='cv2', order=[0, 1], cval=(0, 255),
+                           mode=['constant', 'edge', 'reflect', 'wrap']),
                 iaa.Affine(rotate=(-30, 30),
-                           backend='cv2', order=[0, 1], cval=(0, 255), mode=ia.ALL),
+                           backend='cv2', order=[0, 1], cval=(0, 255),
+                           mode=['constant', 'edge', 'reflect', 'wrap']),
                 iaa.Crop(percent=([0.05, 0.1], [0.05, 0.1], [0.05, 0.1], [0.05, 0.1]))
             ], True)
         ])  # type: iaa.meta.Sequential

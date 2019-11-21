@@ -46,14 +46,14 @@ train:
     layout_optimizer: true
   augmenter: true
   batch_size: 24
-  pre_ckpt: log/default_exp/train_model_116.h5
+  pre_ckpt: null
   rand_seed: 10101
-  epochs: 30
+  epochs: 150
   log_dir: log
   sub_log_dir: default_exp
   debug: false
   verbose: 1
-  vali_step_factor: 0.5
+  vali_step_factor: 0.9
   optimizer: Adam
   optimizer_kwarg:
     learning_rate: 0.0001
@@ -91,8 +91,8 @@ train:
     #     scale_range: [-3, 5]
     - name: StepLR
       kwarg:
-        steps: [10     , 20   ,  30   ,   50  ,  60  , 80    ,   90  ,  100   ]
-        rates: [0.001, 0.0005,  0.0003, 0.0003,0.0002, 0.0005, 0.0002,  0.0002]
+        steps: [ 50  ,  80    ,  120   ]
+        rates: [0.0001, 0.0004,  0.0001]
 prune:
   is_prune: false
   init_sparsity: 0.5
