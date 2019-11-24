@@ -52,7 +52,7 @@ class ImgnetHelper(BaseHelper):
         img = tf.image.resize_image_with_pad(img, self.in_hw[0], self.in_hw[1])
         return img, ann
 
-    def data_augmenter(self, img: tf.Tensor, ann: tf.Tensor) -> [tf.Tensor, tf.Tensor]:
+    def augment_img(self, img: tf.Tensor, ann: tf.Tensor) -> [tf.Tensor, tf.Tensor]:
         img = tf.image.random_flip_left_right(img)
         img = tf.image.random_flip_up_down(img)
         img = tf.image.random_brightness(img, 0.5)
@@ -66,7 +66,7 @@ class ImgnetHelper(BaseHelper):
             img = self.read_img(img_path)
             img, ann = self.resize_img(img, ann)
             if is_augment:
-                img, ann = self.data_augmenter(img, ann)
+                img, ann = self.augment_img(img, ann)
             if is_normlize:
                 img = self.normlize_img(img)
             label = tf.one_hot(ann, self.class_num)

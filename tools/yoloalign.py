@@ -161,7 +161,7 @@ class YOLOAlignHelper(YOLOHelper):
             imshow(img)
             show()
 
-    def data_augmenter(self, img: np.ndarray, ann: np.ndarray) -> tuple:
+    def augment_img(self, img: np.ndarray, ann: np.ndarray) -> tuple:
         """ augmenter for image with bbox and landmark
 
         Parameters

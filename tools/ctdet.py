@@ -99,7 +99,7 @@ class CtdetHelper(BaseHelper):
         if min(masked_gaussian.shape) > 0 and min(masked_heatmap.shape) > 0:
             np.maximum(masked_heatmap, masked_gaussian * k, out=masked_heatmap)
 
-    def data_augmenter(self, img: np.ndarray, ann: np.ndarray) -> [np.ndarray, np.ndarray]:
+    def augment_img(self, img: np.ndarray, ann: np.ndarray) -> [np.ndarray, np.ndarray]:
         """ augmenter for image
 
         Parameters
