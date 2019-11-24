@@ -87,10 +87,10 @@ train:
         load_weights_on_restart: false
     - name: TerminateOnNaN
       kwarg: null
-    - name: MultiScaleTrain
-      kwarg:
-        interval: 50
-        scale_range: [-3, 3]
+    # - name: MultiScaleTrain
+    #   kwarg:
+    #     interval: 50
+    #     scale_range: [-3, 3]
     - name: StepLR
       kwarg:
         steps: [5, 10, 15, 20, 100, 150]

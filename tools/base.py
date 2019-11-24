@@ -79,7 +79,7 @@ class BaseHelper(object):
         NotImplementedError('Must be implemented in subclasses.')
 
     @abc.abstractmethod
-    def data_augmenter(self, img: np.ndarray, ann: np.ndarray) -> [np.ndarray, np.ndarray]:
+    def augment_img(self, img: np.ndarray, ann: np.ndarray) -> [np.ndarray, np.ndarray]:
         NotImplementedError('Must be implemented in subclasses.')
 
     def normlize_img(self, img: tf.Tensor) -> tf.Tensor:
@@ -112,7 +112,7 @@ class BaseHelper(object):
         if is_resize:
             img, ann = self.resize_img(img, ann)
         if is_augment:
-            img, ann = self.data_augmenter(img, ann)
+            img, ann = self.augment_img(img, ann)
         if is_normlize:
             img = self.normlize_img(img)
         return img, ann

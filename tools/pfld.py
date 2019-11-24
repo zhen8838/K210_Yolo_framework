@@ -43,7 +43,7 @@ class PFLDHelper(BaseHelper):
     def resize_img(self, raw_img: tf.Tensor) -> tf.Tensor:
         return tf.image.resize(raw_img, self.in_hw, method=0)
 
-    def data_augmenter(self, img, ann):
+    def augment_img(self, img, ann):
         """ No implement """
         return img, ann
 

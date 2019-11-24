@@ -620,7 +620,7 @@ class YOLOHelper(BaseHelper):
         new_ann = self.center_to_corner(new_ann, self.in_hw)
         return new_ann
 
-    def data_augmenter(self, img: np.ndarray, ann: np.ndarray) -> tuple:
+    def augment_img(self, img: np.ndarray, ann: np.ndarray) -> tuple:
         """ augmenter for image
 
         Parameters
@@ -755,7 +755,7 @@ class YOLOHelper(BaseHelper):
         elif is_resize:
             img, ann = self.resize_img(img, ann)
         if is_augment:
-            img, ann = self.data_augmenter(img, ann)
+            img, ann = self.augment_img(img, ann)
         if is_normlize:
             img = self.normlize_img(img)
         return img, ann
@@ -896,7 +896,7 @@ class MultiScaleTrain(Callback):
     def on_epoch_begin(self, epoch, logs=None):
         self.flag = True
 
-    def on_train_batch_begin(self, batch, logs=None):
+    def on_train_batch_end(self, batch, logs=None):
         if self.flag == True:
             if self.count % self.interval == 0:
                 # random choice resize scale
@@ -912,8 +912,8 @@ class MultiScaleTrain(Callback):
         """ change to orginal image size """
         if self.flag == True:
             self.flag = False
-            self.h.in_hw = self.h.org_in_hw
-            self.h.out_hw = self.h.org_out_hw
+            self.h.in_hw = np.copy(self.h.org_in_hw)
+            self.h.out_hw = np.copy(self.h.org_out_hw)
 
 
 class YOLO_Loss(Loss):

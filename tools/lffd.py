@@ -253,7 +253,7 @@ class LFFDHelper(BaseHelper):
             self._resize_neg_img(im_in, img)
             return im_in, boxes
 
-    def data_augmenter(self, img: np.ndarray,
+    def augment_img(self, img: np.ndarray,
                        boxes: tuple = 0.) -> [np.ndarray, np.ndarray]:
         """ data augmenter
 
