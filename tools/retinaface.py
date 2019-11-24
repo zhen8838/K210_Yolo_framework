@@ -3,6 +3,7 @@ import numpy as np
 from numpy import random
 import cv2
 from tools.yolo import center_to_corner, bbox_iou
+from tools.base import BaseHelper
 
 
 def encode(matches, anchors, variances):
@@ -29,10 +30,24 @@ def encode_landm(matched, anchors, variances):
     return g_cxcy
 
 
-class RetinaFaceHelper():
+def bbox_iof(a, b):
+    """
+    return iof of a and b, numpy version for data augenmentation
+    """
+    lt = np.maximum(a[:, np.newaxis, :2], b[:, :2])
+    rb = np.minimum(a[:, np.newaxis, 2:], b[:, 2:])
+
+    area_i = np.prod(rb - lt, axis=2) * (lt < rb).all(axis=2)
+    area_a = np.prod(a[:, 2:] - a[:, :2], axis=1)
+    return area_i / np.maximum(area_a[:, np.newaxis], 1)
+
+
+class RetinaFaceHelper(BaseHelper):
     def __init__(self, image_ann: str, in_hw: tuple,
                  anchor_min_size: list,
-                 anchor_steps: list):
+                 anchor_steps: list,
+                 pos_thresh: float,
+                 variances: float):
         self.train_dataset: tf.data.Dataset = None
         self.val_dataset: tf.data.Dataset = None
         self.test_dataset: tf.data.Dataset = None
@@ -45,9 +60,9 @@ class RetinaFaceHelper():
 
         if isinstance(img_ann_list[()], dict):
             # NOTE can use dict set trian and test dataset
-            self.train_list = img_ann_list[()]['train_data']  # type:np.ndarray
-            self.val_list = img_ann_list[()]['val_data']  # type:np.ndarray
-            self.test_list = img_ann_list[()]['test_data']  # type:np.ndarray
+            self.train_list = img_ann_list[()]['train']  # type:np.ndarray
+            self.val_list = img_ann_list[()]['val']  # type:np.ndarray
+            self.test_list = img_ann_list[()]['test']  # type:np.ndarray
         elif isinstance(img_ann_list[()], np.ndarray):
             self.train_list, self.val_list, self.test_list = np.split(
                 img_ann_list,
@@ -61,6 +76,8 @@ class RetinaFaceHelper():
 
         self.anchors = self._get_anchors(in_hw, anchor_min_size, anchor_steps)
         self.in_hw: np.ndarray = in_hw
+        self.pos_thresh: float = pos_thresh
+        self.variances: np.ndarray = variances
 
     @staticmethod
     def _get_anchors(image_size=[640, 640],
@@ -91,22 +108,20 @@ class RetinaFaceHelper():
         return anchors
 
     @staticmethod
-    def _crop(image, boxes, labels, landm, img_dim):
-        height, width, _ = image.shape
-        pad_image_flag = True
+    def _crop_with_constraints(img, bbox, landm, clses, in_hw):
+        """ random crop with constraints
+
+            make sure that the cropped img contains at least one face > 16 pixel at training image scale
+        """
+        height, width, _ = img.shape
+        in_h, in_w = in_hw
 
         for _ in range(250):
-            """
-            if random.uniform(0, 1) <= 0.2:
-                scale = 1.0
-            else:
-                scale = random.uniform(0.3, 1.0)
-            """
             PRE_SCALES = [0.3, 0.45, 0.6, 0.8, 1.0]
             scale = random.choice(PRE_SCALES)
-            short_side = min(width, height)
-            w = int(scale * short_side)
-            h = w
+            # short_side = min(width, height)
+            w = int(scale * width)
+            h = int(scale * height)
 
             if width == w:
                 l = 0
@@ -118,182 +133,82 @@ class RetinaFaceHelper():
                 t = random.randint(height - h)
             roi = np.array((l, t, l + w, t + h))
 
-            value = matrix_iof(boxes, roi[np.newaxis])
+            value = bbox_iof(bbox, roi[np.newaxis])
             flag = (value >= 1)
             if not flag.any():
                 continue
 
-            centers = (boxes[:, :2] + boxes[:, 2:]) / 2
+            centers = (bbox[:, :2] + bbox[:, 2:]) / 2
             mask_a = np.logical_and(roi[:2] < centers, centers < roi[2:]).all(axis=1)
-            boxes_t = boxes[mask_a].copy()
-            labels_t = labels[mask_a].copy()
-            landms_t = landm[mask_a].copy()
-            landms_t = landms_t.reshape([-1, 5, 2])
+            bbox_t = bbox[mask_a].copy()
+            clses_t = clses[mask_a].copy()
+            landm_t = landm[mask_a].copy()
+            landm_t = landm_t.reshape([-1, 5, 2])
 
-            if boxes_t.shape[0] == 0:
+            if bbox_t.shape[0] == 0:
                 continue
 
-            image_t = image[roi[1]:roi[3], roi[0]:roi[2]]
+            image_t = img[roi[1]:roi[3], roi[0]:roi[2]]
 
-            boxes_t[:, :2] = np.maximum(boxes_t[:, :2], roi[:2])
-            boxes_t[:, :2] -= roi[:2]
-            boxes_t[:, 2:] = np.minimum(boxes_t[:, 2:], roi[2:])
-            boxes_t[:, 2:] -= roi[:2]
+            bbox_t[:, :2] = np.maximum(bbox_t[:, :2], roi[:2])
+            bbox_t[:, :2] -= roi[:2]
+            bbox_t[:, 2:] = np.minimum(bbox_t[:, 2:], roi[2:])
+            bbox_t[:, 2:] -= roi[:2]
 
             # landm
-            landms_t[:, :, :2] = landms_t[:, :, :2] - roi[:2]
-            landms_t[:, :, :2] = np.maximum(landms_t[:, :, :2], np.array([0, 0]))
-            landms_t[:, :, :2] = np.minimum(landms_t[:, :, :2], roi[2:] - roi[:2])
-            landms_t = landms_t.reshape([-1, 10])
+            landm_t[:, :, :2] = landm_t[:, :, :2] - roi[:2]
+            landm_t[:, :, :2] = np.maximum(landm_t[:, :, :2], np.array([0, 0]))
+            landm_t[:, :, :2] = np.minimum(landm_t[:, :, :2], roi[2:] - roi[:2])
+            landm_t = landm_t.reshape([-1, 10])
 
-        # make sure that the cropped image contains at least one face > 16 pixel at training image scale
-            b_w_t = (boxes_t[:, 2] - boxes_t[:, 0] + 1) / w * img_dim
-            b_h_t = (boxes_t[:, 3] - boxes_t[:, 1] + 1) / h * img_dim
+            # make sure that the cropped img contains at least one face > 16 pixel at training image scale
+            b_w_t = (bbox_t[:, 2] - bbox_t[:, 0] + 1) / w * in_w
+            b_h_t = (bbox_t[:, 3] - bbox_t[:, 1] + 1) / h * in_h
             mask_b = np.minimum(b_w_t, b_h_t) > 0.0
-            boxes_t = boxes_t[mask_b]
-            labels_t = labels_t[mask_b]
-            landms_t = landms_t[mask_b]
+            bbox_t = bbox_t[mask_b]
+            clses_t = clses_t[mask_b]
+            landm_t = landm_t[mask_b]
 
-            if boxes_t.shape[0] == 0:
+            if bbox_t.shape[0] == 0:
                 continue
 
-            pad_image_flag = False
+            return image_t, bbox_t, landm_t, clses_t
 
-            return image_t, boxes_t, labels_t, landms_t, pad_image_flag
-        return image, boxes, labels, landm, pad_image_flag
+        return img, bbox, landm, clses
 
-    @staticmethod
-    def _distort(image):
+    def reszie_img(self, img, bbox, landm, clses, in_hw):
+        im_in = np.zeros((in_hw[0], in_hw[1], 3), np.uint8)
 
-        def _convert(image, alpha=1, beta=0):
-            tmp = image.astype(float) * alpha + beta
-            tmp[tmp < 0] = 0
-            tmp[tmp > 255] = 255
-            image[:] = tmp
+        """ transform factor """
+        img_hw = np.array(img.shape[:2])
+        img_wh = img_hw[::-1]
+        in_wh = in_hw[::-1]
+        scale = np.min(in_hw / img_hw)
 
-        image = image.copy()
+        # NOTE hw_off is [h offset,w offset]
+        hw_off = ((in_hw - img_hw * scale) / 2).astype(int)
+        img = cv2.resize(img, None, fx=scale, fy=scale,
+                         interpolation=np.random.choice(
+                             [cv2.INTER_LINEAR, cv2.INTER_CUBIC, cv2.INTER_AREA,
+                              cv2.INTER_NEAREST, cv2.INTER_LANCZOS4]))
 
-        if random.randint(2):
+        im_in[hw_off[0]:hw_off[0] + img.shape[0],
+              hw_off[1]:hw_off[1] + img.shape[1], :] = img[...]
 
-            # brightness distortion
-            if random.randint(2):
-                _convert(image, beta=random.uniform(-32, 32))
+        """ calc the point transform """
+        bbox[:, 0::2] = bbox[:, 0::2] * scale + hw_off[1]
+        bbox[:, 1::2] = bbox[:, 1::2] * scale + hw_off[0]
+        landm[:, 0::2] = landm[:, 0::2] * scale + hw_off[1]
+        landm[:, 1::2] = landm[:, 1::2] * scale + hw_off[0]
 
-            # contrast distortion
-            if random.randint(2):
-                _convert(image, alpha=random.uniform(0.5, 1.5))
+        return im_in, bbox, landm, clses
 
-            image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-
-            # saturation distortion
-            if random.randint(2):
-                _convert(image[:, :, 1], alpha=random.uniform(0.5, 1.5))
-
-            # hue distortion
-            if random.randint(2):
-                tmp = image[:, :, 0].astype(int) + random.randint(-18, 18)
-                tmp %= 180
-                image[:, :, 0] = tmp
-
-            image = cv2.cvtColor(image, cv2.COLOR_HSV2BGR)
-
-        else:
-
-            # brightness distortion
-            if random.randint(2):
-                _convert(image, beta=random.uniform(-32, 32))
-
-            image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-
-            # saturation distortion
-            if random.randint(2):
-                _convert(image[:, :, 1], alpha=random.uniform(0.5, 1.5))
-
-            # hue distortion
-            if random.randint(2):
-                tmp = image[:, :, 0].astype(int) + random.randint(-18, 18)
-                tmp %= 180
-                image[:, :, 0] = tmp
-
-            image = cv2.cvtColor(image, cv2.COLOR_HSV2BGR)
-
-            # contrast distortion
-            if random.randint(2):
-                _convert(image, alpha=random.uniform(0.5, 1.5))
-
-        return image
+    def resize_train_img(self, img, bbox, landm, clses, in_hw):
+        img, bbox, landm, clses = self._crop_with_constraints(img, bbox, landm, clses, in_hw)
+        return self.reszie_img(img, bbox, landm, clses)
 
     @staticmethod
-    def _expand(image, boxes, fill, p):
-        if random.randint(2):
-            return image, boxes
-
-        height, width, depth = image.shape
-
-        scale = random.uniform(1, p)
-        w = int(scale * width)
-        h = int(scale * height)
-
-        left = random.randint(0, w - width)
-        top = random.randint(0, h - height)
-
-        boxes_t = boxes.copy()
-        boxes_t[:, :2] += (left, top)
-        boxes_t[:, 2:] += (left, top)
-        expand_image = np.empty(
-            (h, w, depth),
-            dtype=image.dtype)
-        expand_image[:, :] = fill
-        expand_image[top:top + height, left:left + width] = image
-        image = expand_image
-
-        return image, boxes_t
-
-    @staticmethod
-    def _mirror(image, boxes, landms):
-        _, width, _ = image.shape
-        if random.randint(2):
-            image = image[:, ::-1]
-            boxes = boxes.copy()
-            boxes[:, 0::2] = width - boxes[:, 2::-2]
-
-            # landm
-            landms = landms.copy()
-            landms = landms.reshape([-1, 5, 2])
-            landms[:, :, 0] = width - landms[:, :, 0]
-            tmp = landms[:, 1, :].copy()
-            landms[:, 1, :] = landms[:, 0, :]
-            landms[:, 0, :] = tmp
-            tmp1 = landms[:, 4, :].copy()
-            landms[:, 4, :] = landms[:, 3, :]
-            landms[:, 3, :] = tmp1
-            landms = landms.reshape([-1, 10])
-
-        return image, boxes, landms
-
-    @staticmethod
-    def _pad_to_square(image, rgb_mean, pad_image_flag):
-        if not pad_image_flag:
-            return image
-        height, width, _ = image.shape
-        long_side = max(width, height)
-        image_t = np.empty((long_side, long_side, 3), dtype=image.dtype)
-        image_t[:, :] = rgb_mean
-        image_t[0:0 + height, 0:0 + width] = image
-        return image_t
-
-    @staticmethod
-    def _resize(image, insize):
-        interp_methods = [cv2.INTER_LINEAR, cv2.INTER_CUBIC, cv2.INTER_AREA,
-                          cv2.INTER_NEAREST, cv2.INTER_LANCZOS4]
-        interp_method = interp_methods[random.randint(5)]
-        image = cv2.resize(image, (insize, insize), interpolation=interp_method)
-        image = image.astype(np.float32)
-        image = (image / 255. - 0.5) / 1
-        return image
-
-    @staticmethod
-    def match(threshold, bbox, anchors, variances, clses, landms):
+    def match(bbox, clses, landms, anchors, pos_thresh, variances):
         overlaps = bbox_iou(bbox, center_to_corner(anchors, False))
         best_prior_overlap = np.max(overlaps, 1)
         best_prior_idx = np.argmax(overlaps, 1)
@@ -310,44 +225,38 @@ class RetinaFaceHelper():
 
         matches = bbox[best_truth_idx]
         conf = clses[best_truth_idx]
-        conf[best_truth_overlap < threshold] = 0    # label as background
+        conf[best_truth_overlap < pos_thresh] = 0    # label as background
         loc = encode(matches, anchors, variances)
 
         matches_landm = landms[best_truth_idx]
         matches_landm.shape
 
         landm = encode_landm(matches_landm, anchors, variances)
-        return loc, conf, landm
+        return loc, landm, conf
 
-    def process_train_img(self, img: np.ndarray, ann: np.ndarray):
-        rgb_means = (104, 117, 123)
-        boxes = ann[:, :4].copy()
-        landm = ann[:, 4:-1].copy()
-        labels = ann[:, -1].copy()
-        image_t, boxes_t, labels_t, landm_t, pad_image_flag = self._crop(img, boxes, labels, landm, self.in_hw)
-        image_t = self._distort(image_t)
-        image_t = self._pad_to_square(image_t, rgb_means, pad_image_flag)
-        image_t, boxes_t, landm_t = self._mirror(image_t, boxes_t, landm_t)
-        height, width, _ = image_t.shape
-        new_img = self._resize(image_t, self.in_hw)
-        boxes_t[:, 0::2] /= width
-        boxes_t[:, 1::2] /= height
+    def process_img(self, img: np.ndarray, ann: np.ndarray, in_hw: np.ndarray,
+                    is_augment: bool, is_resize: bool, is_normlize: bool):
+        bbox, landm, clses = np.split(ann, [4, -1], 1)
+        if is_resize and is_augment:
+            img, bbox, landm, clses = self.resize_train_img(img, bbox, landm, clses, in_hw)
+        elif is_resize:
+            img, bbox, landm, clses = self.resize_img(img, bbox, landm, clses, in_hw)
+        if is_augment:
+            img, ann = self.augment_img(img, ann)
+        if is_normlize:
+            img = self.normlize_img(img)
+        return img, ann
 
-        landm_t[:, 0::2] /= width
-        landm_t[:, 1::2] /= height
-
-        labels_t = np.expand_dims(labels_t, 1)
-        new_ann = np.hstack((boxes_t, landm_t, labels_t))
-        return new_img, new_ann
-
-    def ann_to_label(self, ann: np.ndarray):
-        num_anchors = len(self.anchors)
+    def ann_to_train_label(self, ann: np.ndarray):
         bbox = ann[:, :4]
         landms = ann[:, 4:14]
         clses = ann[:, -1]
+        label_loc, label_landm, label_conf = self.match(bbox, clses, landms,
+                                                        self.anchors, self.pos_thresh,
+                                                        self.variances)
+        return label_loc, label_conf, label_landm
 
     def build_datapipe(self, image_ann_list: np.ndarray, batch_size: int,
                        is_augment: bool, is_normlize: bool,
                        is_training: bool) -> tf.data.Dataset:
         pass
-        
