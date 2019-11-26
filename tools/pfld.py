@@ -222,7 +222,7 @@ def rotationMatrixToEulerAngles(R):
     return np.array([x, y, z])
 
 
-class PFLD_Loss(Loss):
+class PFLDLoss(Loss):
     def __init__(self, h: PFLDHelper, landmark_weight=1., eular_weight=1.,
                  reduction=losses_utils.ReductionV2.AUTO, name=None):
         super().__init__(reduction=reduction, name=name)

@@ -27,7 +27,7 @@ model:
     num_filters:
       - 64
       - 128
-  loss: LFFD_Loss
+  loss: LFFDLoss
   loss_kwarg:
     hnm_ratio: 5
 train:

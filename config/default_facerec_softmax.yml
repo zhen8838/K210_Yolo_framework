@@ -20,7 +20,7 @@ model:
     class_num: 10178
     embedding_size: 128
     depth_multiplier: 1.0
-  loss: Sparse_Softmax_Loss
+  loss: Sparse_SoftmaxLoss
   loss_kwarg:
     scale: 30
 train:

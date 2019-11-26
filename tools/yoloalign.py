@@ -1,4 +1,5 @@
-from tools.yolo import YOLOHelper, center_to_corner, corner_to_center
+from tools.yolo import YOLOHelper
+from tools.bbox_utils import center_to_corner, corner_to_center
 import cv2
 import numpy as np
 from imgaug import BoundingBoxesOnImage, KeypointsOnImage
@@ -247,7 +248,7 @@ class YOLOAlignHelper(YOLOHelper):
         return dataset
 
 
-class YOLOAlign_Loss(Loss):
+class YOLOAlignLoss(Loss):
     def __init__(self, h: YOLOAlignHelper, obj_thresh: float,
                  iou_thresh: float, obj_weight: float,
                  noobj_weight: float, xy_weight: float,
@@ -555,7 +556,7 @@ def yoloalgin_infer(img_path: Path, infer_model: tf.keras.Model,
         # obj_mask = pred_confidence_score[..., 0] > model.obj_thresh
         """ reshape box  """
         # NOTE tf_xywh_to_all will auto use sigmoid function
-        pred_xy_A, pred_wh_A, pred_landmark_A = YOLOAlign_Loss.xywh_to_all(
+        pred_xy_A, pred_wh_A, pred_landmark_A = YOLOAlignLoss.xywh_to_all(
             pred_xy, pred_wh, pred_landmark, h.out_hw[l],
             h.xy_offset[l], h.anchors[l])
         boxes, landmarkes = correct_algin_box(pred_xy_A, pred_wh_A, pred_landmark_A, in_hw, image_hw)

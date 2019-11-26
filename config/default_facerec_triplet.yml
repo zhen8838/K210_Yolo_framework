@@ -20,7 +20,7 @@ model:
       - 3
     embedding_size: 128
     depth_multiplier: 1.0
-  loss: Triplet_Loss
+  loss: TripletLoss
   loss_kwarg:
     batch_size: *BATCH_SIZE_REF
     alpha: 0.6

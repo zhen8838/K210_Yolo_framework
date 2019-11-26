@@ -19,7 +19,7 @@ model:
     landmark_num: 98
     alpha: 1.
     weight_decay: 0.00005
-  loss: PFLD_Loss
+  loss: PFLDLoss
   loss_kwarg:
     landmark_weight: 1.
     eular_weight: 1.

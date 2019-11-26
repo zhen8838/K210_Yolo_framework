@@ -254,7 +254,7 @@ class LFFDHelper(BaseHelper):
             return im_in, boxes
 
     def augment_img(self, img: np.ndarray,
-                       boxes: tuple = 0.) -> [np.ndarray, np.ndarray]:
+                    boxes: tuple = 0.) -> [np.ndarray, np.ndarray]:
         """ data augmenter
 
         Parameters
@@ -532,7 +532,7 @@ class LFFDHelper(BaseHelper):
             plt.show()
 
 
-class LFFD_Loss(tf.keras.losses.Loss):
+class LFFDLoss(tf.keras.losses.Loss):
     def __init__(self, h: LFFDHelper, hnm_ratio: int, reduction='auto', name=None):
         """ LFFD loss obj
 

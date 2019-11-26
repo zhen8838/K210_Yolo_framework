@@ -49,6 +49,8 @@ def main(root, output_file):
                                         annotation[0, 14] = -1
                                     else:
                                         annotation[0, 14] = 1
+                                elif name == 'val':
+                                    annotation[0, 14] = -1
 
                                 annotations = np.append(annotations, annotation, axis=0)
 
@@ -62,7 +64,7 @@ def main(root, output_file):
                     label = [float(x) for x in line]
                     labels.append(label)
 
-        meta[name] = np.array([(a, b) for a, b in zip(img_paths, anns)])
+        meta[name] = np.array([(a, b.astype('float32')) for a, b in zip(img_paths, anns)])
 
     np.save(output_file, meta, allow_pickle=True)
 

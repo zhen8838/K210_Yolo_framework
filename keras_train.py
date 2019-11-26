@@ -72,9 +72,9 @@ def main(config_file, new_cfg, mode, model, train, prune):
     """ Comile Model """
     optimizer = optimizer_register[train.optimizer](**train.optimizer_kwarg)
     if 'yolo' in model.name:
-        loss_fn = loss_register[model.loss]  # type:YOLOAlign_Loss
+        loss_fn = loss_register[model.loss]  # type:YOLOAlignLoss
         losses = [loss_fn(h=h, layer=layer, name='loss', **model.loss_kwarg)
-                  for layer in range(len(train_model.output) if isinstance(train_model.output, list) else 1)]  # type: List[YOLOAlign_Loss]
+                  for layer in range(len(train_model.output) if isinstance(train_model.output, list) else 1)]  # type: List[YOLOAlignLoss]
 
         metrics = []
         for loss_obj in losses:
@@ -82,7 +82,7 @@ def main(config_file, new_cfg, mode, model, train, prune):
             metrics.append(l)
 
     elif model.name == 'pfld':
-        loss_fn = loss_register[model.loss]  # type:PFLD_Loss
+        loss_fn = loss_register[model.loss]  # type:PFLDLoss
         losses = [loss_fn(h=h, **model.loss_kwarg)]
         # NOTE share the variable avoid more repeated calculation
         le = PFLDMetric(False, model.helper_kwarg['landmark_num'],

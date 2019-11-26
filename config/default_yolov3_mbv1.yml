@@ -26,7 +26,7 @@ model:
     anchor_num: 3
     class_num: 20
     alpha: 1.0
-  loss: YOLO_Loss
+  loss: YOLOLoss
   loss_kwarg:
     iou_thresh: 0.5
     obj_weight: 1

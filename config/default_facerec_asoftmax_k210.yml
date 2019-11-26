@@ -21,7 +21,7 @@ model:
     class_num: 10178
     embedding_size: 128
     depth_multiplier: 1.0
-  loss: Sparse_Asoftmax_Loss
+  loss: Sparse_AsoftmaxLoss
   loss_kwarg:
     batch_size: *BATCH_SIZE_REF
     scale: 30

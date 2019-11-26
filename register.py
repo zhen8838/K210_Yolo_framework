@@ -1,6 +1,7 @@
 from models.networks import mbv1_softmax_facerec, mbv1_triplet_facerec,\
     mbv1_amsoftmax_facerec, mbv2_ctdet, yolo, tiny_yolo, pfld,\
-    shuffle_ctdet, yolo3_nano, yolo_mbv1, mbv1_imgnet, mbv2_imgnet
+    shuffle_ctdet, yolo3_nano, yolo_mbv1, mbv1_imgnet, mbv2_imgnet,\
+    retinafacenet
 from models.receptivefieldnet import rffacedetnet
 from models.networks4k210 import yolo_mbv1_k210, yolo_mbv2_k210, yolo2_mbv1_k210,\
     yolov2algin_mbv1_k210, pfld_k210, mbv1_softmax_facerec_k210, \
@@ -9,14 +10,15 @@ from models.networks4k210 import yolo_mbv1_k210, yolo_mbv2_k210, yolo2_mbv1_k210
 
 import tensorflow as tf
 from tools.custom import StepLR
-from tools.yolo import YOLOHelper, YOLO_Loss, yolo_infer, yolo_eval, MultiScaleTrain
-from tools.yoloalign import YOLOAlignHelper, YOLOAlign_Loss, yoloalgin_infer
-from tools.pfld import PFLDHelper, PFLD_Loss, pfld_infer
-from tools.ctdet import CtdetHelper, Ctdet_Loss, ctdet_infer
-from tools.lffd import LFFDHelper, LFFD_Loss
+from tools.yolo import YOLOHelper, YOLOLoss, yolo_infer, yolo_eval, MultiScaleTrain
+from tools.yoloalign import YOLOAlignHelper, YOLOAlignLoss, yoloalgin_infer
+from tools.pfld import PFLDHelper, PFLDLoss, pfld_infer
+from tools.ctdet import CtdetHelper, CtdetLoss, ctdet_infer
+from tools.lffd import LFFDHelper, LFFDLoss
+from tools.retinaface import RetinaFaceHelper, RetinaFaceLoss
 from tools.tinyimgnet import TinyImgnetHelper
-from tools.imgnet import ImgnetHelper, Classify_Loss
-from tools.facerec import FcaeRecHelper, Triplet_Loss, Sparse_Softmax_Loss, Sparse_Amsoftmax_Loss, Sparse_Asoftmax_Loss
+from tools.imgnet import ImgnetHelper, ClassifyLoss
+from tools.facerec import FcaeRecHelper, TripletLoss, Sparse_SoftmaxLoss, Sparse_AmsoftmaxLoss, Sparse_AsoftmaxLoss
 from yaml import safe_dump
 
 
@@ -64,7 +66,7 @@ ArgDict = {
         },
 
 
-        'loss': 'YOLO_Loss',
+        'loss': 'YOLOLoss',
         'loss_kwarg': {
             'obj_thresh': 0.7,
             'iou_thresh': 0.5,
@@ -155,7 +157,8 @@ helper_register = {
     'FcaeRecHelper': FcaeRecHelper,
     'LFFDHelper': LFFDHelper,
     'TinyImgnetHelper': TinyImgnetHelper,
-    'ImgnetHelper': ImgnetHelper
+    'ImgnetHelper': ImgnetHelper,
+    'RetinaFaceHelper': RetinaFaceHelper
 }
 
 
@@ -175,6 +178,7 @@ network_register = {
     'yolo_mbv1': yolo_mbv1,
     'pfld': pfld,
     'rffacedetnet': rffacedetnet,
+    'retinafacenet': retinafacenet,
     'shuffle_ctdet': shuffle_ctdet,
     'yolo_mbv1_k210': yolo_mbv1_k210,
     'yolo_mbv2_k210': yolo_mbv2_k210,
@@ -187,16 +191,17 @@ network_register = {
 }
 
 loss_register = {
-    'YOLO_Loss': YOLO_Loss,
-    'YOLOAlign_Loss': YOLOAlign_Loss,
-    'PFLD_Loss': PFLD_Loss,
-    'Ctdet_Loss': Ctdet_Loss,
-    'Triplet_Loss': Triplet_Loss,
-    'Sparse_Softmax_Loss': Sparse_Softmax_Loss,
-    'Sparse_Amsoftmax_Loss': Sparse_Amsoftmax_Loss,
-    'Sparse_Asoftmax_Loss': Sparse_Asoftmax_Loss,
-    'LFFD_Loss': LFFD_Loss,
-    'Classify_Loss': Classify_Loss
+    'YOLOLoss': YOLOLoss,
+    'YOLOAlignLoss': YOLOAlignLoss,
+    'PFLDLoss': PFLDLoss,
+    'CtdetLoss': CtdetLoss,
+    'TripletLoss': TripletLoss,
+    'Sparse_SoftmaxLoss': Sparse_SoftmaxLoss,
+    'Sparse_AmsoftmaxLoss': Sparse_AmsoftmaxLoss,
+    'Sparse_AsoftmaxLoss': Sparse_AsoftmaxLoss,
+    'LFFDLoss': LFFDLoss,
+    'ClassifyLoss': ClassifyLoss,
+    'RetinaFaceLoss': RetinaFaceLoss
 }
 
 callback_register = {

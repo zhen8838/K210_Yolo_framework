@@ -88,7 +88,7 @@ class ImgnetHelper(BaseHelper):
         return ds
 
 
-class Classify_Loss(LossFunctionWrapper):
+class ClassifyLoss(LossFunctionWrapper):
     def __init__(self,
                  from_logits=False,
                  label_smoothing=0,

@@ -17,6 +17,7 @@ from tensorflow.python.ops.resource_variable_ops import ResourceVariable
 from matplotlib.pyplot import text
 from PIL import Image, ImageFont, ImageDraw
 from tools.base import BaseHelper, INFO, ERROR, NOTE
+from tools.bbox_utils import bbox_iou, center_to_corner
 from pathlib import Path
 import shutil
 from tqdm import trange
@@ -80,103 +81,6 @@ def coordinate_offset(anchors: np.ndarray, out_hw: np.ndarray) -> np.array:
         grid_x = np.tile(np.reshape(np.arange(0, stop=out_hw[l][1]), [1, -1, 1, 1]), [out_hw[l][0], 1, 1, 1])
         grid.append(np.concatenate([grid_x, grid_y], axis=-1))
     return np.array(grid)
-
-
-def center_to_corner(xywh_ann: np.ndarray, to_all_scale=True, in_hw=None) -> np.ndarray:
-    """convert box coordinate from center to corner
-
-    Parameters
-    ----------
-    xywh_ann : np.ndarray
-        true box
-    to_all_scale : bool, optional
-        weather to all image scale, by default True
-    in_hw : np.ndarray, optional
-        in hw, by default None
-
-    Returns
-    -------
-    np.ndarray
-        xyxy annotation
-    """
-    if to_all_scale:
-        x1 = (xywh_ann[:, 0:1] - xywh_ann[:, 2:3] / 2) * in_hw[1]
-        y1 = (xywh_ann[:, 1:2] - xywh_ann[:, 3:4] / 2) * in_hw[0]
-        x2 = (xywh_ann[:, 0:1] + xywh_ann[:, 2:3] / 2) * in_hw[1]
-        y2 = (xywh_ann[:, 1:2] + xywh_ann[:, 3:4] / 2) * in_hw[0]
-    else:
-        x1 = (xywh_ann[:, 0:1] - xywh_ann[:, 2:3] / 2)
-        y1 = (xywh_ann[:, 1:2] - xywh_ann[:, 3:4] / 2)
-        x2 = (xywh_ann[:, 0:1] + xywh_ann[:, 2:3] / 2)
-        y2 = (xywh_ann[:, 1:2] + xywh_ann[:, 3:4] / 2)
-
-    xyxy_ann = np.hstack([x1, y1, x2, y2])
-    return xyxy_ann
-
-
-def corner_to_center(xyxy_ann: np.ndarray, from_all_scale=True, in_hw=None) -> np.ndarray:
-    """convert box coordinate from corner to center
-
-    Parameters
-    ----------
-    xyxy_ann : np.ndarray
-        xyxy box (upper left,bottom right)
-    to_all_scale : bool, optional
-        weather to all image scale, by default True
-    in_hw : np.ndarray, optional
-        in hw, by default None
-
-    Returns
-    -------
-    np.ndarray
-        xywh annotation
-    """
-    if from_all_scale:
-        x = ((xyxy_ann[:, 2:3] + xyxy_ann[:, 0:1]) / 2) / in_hw[1]
-        y = ((xyxy_ann[:, 3:4] + xyxy_ann[:, 1:2]) / 2) / in_hw[0]
-        w = (xyxy_ann[:, 2:3] - xyxy_ann[:, 0:1]) / in_hw[1]
-        h = (xyxy_ann[:, 3:4] - xyxy_ann[:, 1:2]) / in_hw[0]
-    else:
-        x = ((xyxy_ann[:, 2:3] + xyxy_ann[:, 0:1]) / 2)
-        y = ((xyxy_ann[:, 3:4] + xyxy_ann[:, 1:2]) / 2)
-        w = (xyxy_ann[:, 2:3] - xyxy_ann[:, 0:1])
-        h = (xyxy_ann[:, 3:4] - xyxy_ann[:, 1:2])
-
-    xywh_ann = np.hstack([x, y, w, h])
-    return xywh_ann
-
-
-def bbox_iou(bbox_a: np.ndarray, bbox_b: np.ndarray, offset: int = 0) -> np.ndarray:
-    """Calculate Intersection-Over-Union(IOU) of two bounding boxes.
-        NOTE form gluon-cv
-
-    Parameters
-    ----------
-    bbox_a : np.ndarray
-
-        (n,4) x1,y1,x2,y2
-
-    bbox_b : np.ndarray
-
-        (m,4) x1,y1,x2,y2
-
-
-    offset : int, optional
-        by default 0
-
-    Returns
-    -------
-    np.ndarray
-
-        iou (n,m)
-    """
-    tl = np.maximum(bbox_a[:, None, :2], bbox_b[:, :2])
-    br = np.minimum(bbox_a[:, None, 2:4], bbox_b[:, 2:4])
-
-    area_i = np.prod(br - tl + offset, axis=2) * (tl < br).all(axis=2)
-    area_a = np.prod(bbox_a[:, 2:4] - bbox_a[:, :2] + offset, axis=1)
-    area_b = np.prod(bbox_b[:, 2:4] - bbox_b[:, :2] + offset, axis=1)
-    return area_i / (area_a[:, None] + area_b - area_i)
 
 
 def bbox_crop(ann: np.ndarray, crop_box=None, allow_outside_center=True) -> np.ndarray:
@@ -914,7 +818,7 @@ class MultiScaleTrain(Callback):
             K.set_value(self.h.out_hw, self.h.org_out_hw)
 
 
-class YOLO_Loss(Loss):
+class YOLOLoss(Loss):
     def __init__(self, h: YOLOHelper, iou_thresh: float,
                  obj_weight: float, noobj_weight: float, wh_weight: float,
                  xy_weight: float, cls_weight: float, layer: int, verbose=1,
@@ -1296,8 +1200,8 @@ def yolo_parser_one(img: tf.Tensor, img_hw: np.ndarray, infer_model: k.Model,
 
         """ reshape box  """
         # NOTE tf_xywh_to_all will auto use sigmoid function
-        pred_xy_A, pred_wh_A = YOLO_Loss.xywh_to_all(pred_xy, pred_wh, h.org_out_hw[l],
-                                                     h.xy_offset[l], h.anchors[l])
+        pred_xy_A, pred_wh_A = YOLOLoss.xywh_to_all(pred_xy, pred_wh, h.org_out_hw[l],
+                                                    h.xy_offset[l], h.anchors[l])
         boxes = correct_box(pred_xy_A, pred_wh_A, h.org_in_hw, img_hw)
         boxes = tf.reshape(boxes, (-1, 4))
         box_scores = tf.reshape(box_scores, (-1, h.class_num))

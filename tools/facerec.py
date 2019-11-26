@@ -118,7 +118,7 @@ class FcaeRecHelper(BaseHelper):
         return ds
 
 
-class Triplet_Loss(kls.Loss):
+class TripletLoss(kls.Loss):
     def __init__(self, batch_size: int, alpha: float,
                  reduction=ReductionV2.AUTO, name=None):
         super().__init__(reduction=reduction, name=name)
@@ -136,7 +136,7 @@ class Triplet_Loss(kls.Loss):
         return total_loss + 0 * self.dist_var.assign(dist_diff)
 
 
-class Sparse_Softmax_Loss(kls.Loss):
+class Sparse_SoftmaxLoss(kls.Loss):
     def __init__(self, scale=30, reduction=ReductionV2.AUTO, name=None):
         """ sparse softmax loss with scale
 
@@ -162,7 +162,7 @@ class Sparse_Softmax_Loss(kls.Loss):
         return k.backend.sparse_categorical_crossentropy(y_true, self.scale * y_pred, True)
 
 
-class Sparse_Amsoftmax_Loss(kls.Loss):
+class Sparse_AmsoftmaxLoss(kls.Loss):
     def __init__(self, batch_size: int, scale: int = 30, margin: int = 0.35,
                  reduction=ReductionV2.AUTO, name=None):
         """ sparse addivate margin softmax
@@ -215,7 +215,7 @@ class Sparse_Amsoftmax_Loss(kls.Loss):
         return - y_true_pred_margin * self.scale + logZ
 
 
-class Sparse_Asoftmax_Loss(kls.Loss):
+class Sparse_AsoftmaxLoss(kls.Loss):
     def __init__(self, batch_size: int, scale: int = 30, margin: int = 0.35,
                  reduction=ReductionV2.AUTO, name=None):
         """ sparse addivate softmax

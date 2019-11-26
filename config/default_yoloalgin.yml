@@ -26,7 +26,7 @@ model:
     class_num: 1
     landmark_num: 5
     alpha: 0.75
-  loss: YOLOAlign_Loss
+  loss: YOLOAlignLoss
   loss_kwarg:
     iou_thresh: 0.5
     obj_weight: 1

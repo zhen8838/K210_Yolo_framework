@@ -2,7 +2,7 @@ import tensorflow as tf
 from tensorflow.python.keras.utils.losses_utils import ReductionV2
 import numpy as np
 from tools.base import BaseHelper
-from tools.yolo import center_to_corner, corner_to_center
+from tools.bbox_utils import center_to_corner, corner_to_center
 import imgaug.augmenters as iaa
 from imgaug import BoundingBoxesOnImage
 import cv2
@@ -347,7 +347,7 @@ class CtdetHelper(BaseHelper):
             show()
 
 
-class Ctdet_Loss(tf.keras.losses.Loss):
+class CtdetLoss(tf.keras.losses.Loss):
     def __init__(self, h: CtdetHelper, obj_thresh: float, hm_weight: float,
                  wh_weight: float, offset_weight: float,
                  reduction=ReductionV2.AUTO, name=None):
