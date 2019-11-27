@@ -84,8 +84,10 @@ class RetinaFaceHelper(BaseHelper):
         self.train_total_data: int = len(self.train_list)
         self.val_total_data: int = len(self.val_list)
         self.test_total_data: int = len(self.test_list)
-
+        self.anchor_widths = anchor_widths
+        self.anchor_steps = anchor_steps
         self.anchors = self._get_anchors(in_hw, anchor_widths, anchor_steps)
+        self.corner_anchors = center_to_corner(self.anchors, False)
         self.anchors_num: int = len(self.anchors)
         self.org_in_hw: np.ndarray = np.array(in_hw)
         self.in_hw = tf.Variable(self.org_in_hw, trainable=False)
@@ -94,7 +96,7 @@ class RetinaFaceHelper(BaseHelper):
 
         self.iaaseq = iaa.Sequential([
             iaa.Fliplr(0.5),
-            iaa.SomeOf([1, None], [
+            iaa.SomeOf([1, 3], [
                 iaa.Affine(scale={"x": (0.8, 1.2), "y": (0.8, 1.2)},
                            backend='cv2', order=[0, 1], cval=(0, 255), mode=ia.ALL),
                 iaa.Affine(translate_percent={"x": (-0.2, 0.2), "y": (-0.2, 0.2)},
@@ -103,13 +105,13 @@ class RetinaFaceHelper(BaseHelper):
                            backend='cv2', order=[0, 1], cval=(0, 255), mode=ia.ALL),
                 iaa.Crop(percent=([0.05, 0.1], [0.05, 0.1], [0.05, 0.1], [0.05, 0.1]))
             ], True),
-            iaa.SomeOf([0, None], [
+            iaa.SomeOf([1, 3], [
                 iaa.LinearContrast((0.5, 1.5)),  # contrast distortion
                 iaa.AddToHue((-18, 18)),  # hue distortion
                 iaa.MultiplySaturation((0.5, 1.5)),  # saturation distortion
                 iaa.AddToSaturation((-32, 32))  # brightness distortion
             ], True),
-        ], random_order=True)  # type: iaa.meta.Sequential
+        ], random_order=True)
 
     @staticmethod
     def _get_anchors(in_hw: List[int],
@@ -260,19 +262,21 @@ class RetinaFaceHelper(BaseHelper):
         image_aug, bbs_aug, kps_aug = self.iaaseq(image=img,
                                                   bounding_boxes=bbs,
                                                   keypoints=kps)
-        # remove out of bound bbox
         new_bbox = bbs_aug.to_xyxy_array()
-        bbs_x, bbs_y = np.split((new_bbox[:, :2] + new_bbox[:, 2:]) / 2,
-                                [1], axis=1)
-        mask_t = bbs_y > img.shape[0]
-        mask_b = bbs_y < 0
-        mask_r = bbs_x > img.shape[1]
-        mask_l = bbs_x < 0
-
-        mask = np.logical_or(np.logical_or(mask_t, mask_b),
-                             np.logical_or(mask_r, mask_l))
-        clses[mask] = -1
         new_landm = np.reshape(kps_aug.to_xy_array(), (-1, 5 * 2))
+        # remove out of bound bbox
+        bbs_xy = (new_bbox[:, :2] + new_bbox[:, 2:]) / 2
+        bbs_x, bbs_y = bbs_xy[:, 0], bbs_xy[:, 1]
+        mask_t = bbs_y < img.shape[0]
+        mask_b = bbs_y > 0
+        mask_r = bbs_x < img.shape[1]
+        mask_l = bbs_x > 0
+
+        mask = np.logical_and(np.logical_and(mask_t, mask_b),
+                              np.logical_and(mask_r, mask_l))
+        clses = clses[mask]
+        new_bbox = new_bbox[mask]
+        new_landm = new_landm[mask]
         return image_aug, [new_bbox, new_landm, clses]
 
     def normlize_img(self, img: np.ndarray) -> tf.Tensor:
@@ -303,7 +307,7 @@ class RetinaFaceHelper(BaseHelper):
         landm[:, 1::2] /= in_hw[0]
 
         # find vaild bbox
-        overlaps = bbox_iou(bbox, center_to_corner(self.anchors, False))
+        overlaps = bbox_iou(bbox, self.corner_anchors)
         best_prior_overlap = np.max(overlaps, 1)
         best_prior_idx = np.argmax(overlaps, 1)
         valid_gt_idx = best_prior_overlap >= 0.2
