@@ -22,6 +22,7 @@ class DummyMetric(MeanMetricWrapper):
         var : ResourceVariable
 
             a variable from loss
+            NOTE only support shape : ()
 
         name : str
 
