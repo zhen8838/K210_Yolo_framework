@@ -80,6 +80,12 @@ def main(config_file, new_cfg, mode, model, train, prune):
         for loss_obj in losses:
             l = [DummyMetric(var, name) for (var, name) in loss_obj.lookups]
             metrics.append(l)
+    elif model.name == 'retinaface':
+        loss_obj = loss_register[model.loss](h=h, **model.loss_kwarg)
+        losses = [loss_obj]
+        metrics = []
+        l = [DummyMetric(var, name) for (var, name) in loss_obj.lookups]
+        metrics.append(l)
 
     elif model.name == 'pfld':
         loss_fn = loss_register[model.loss]  # type:PFLDLoss

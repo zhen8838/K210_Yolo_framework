@@ -8,7 +8,8 @@ import cv2
 from matplotlib.pyplot import imshow, show
 from tools.bbox_utils import center_to_corner, bbox_iou, bbox_iof
 from tools.base import BaseHelper
-from typing import List, Iterable, Tuple
+from typing import List, Tuple, AnyStr, Iterable
+from tensorflow.python.ops.resource_variable_ops import ResourceVariable
 
 
 def encode_bbox(matches, anchors, variances):
@@ -404,6 +405,12 @@ class RetinaFaceLoss(tf.keras.losses.Loss):
         self.h = h
         self.anchors = self.h.anchors
         self.anchors_num = self.h.anchors_num
+        self.op_list = []
+        names = ['loc', 'landm', 'conf']
+        self.lookups: Iterable[Tuple[ResourceVariable, AnyStr]] = [
+            (tf.Variable(0, name=name, shape=(),
+                         dtype=tf.float32, trainable=False), name)
+            for name in names]
 
     def call(self, y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
         bc_num = tf.shape(y_pred)[0]
@@ -463,4 +470,10 @@ class RetinaFaceLoss(tf.keras.losses.Loss):
         loss_loc /= num_pos_conf
         loss_conf /= num_pos_conf
         loss_landm /= num_pos_landm
-        return loss_loc + loss_conf + loss_landm
+        self.op_list.extend([
+            self.lookups[0][0].assign(loss_loc),
+            self.lookups[1][0].assign(loss_landm),
+            self.lookups[2][0].assign(loss_conf)])
+        with tf.control_dependencies(self.op_list):
+            total_loss = loss_loc + loss_landm + loss_conf
+        return total_loss
