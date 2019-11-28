@@ -974,7 +974,7 @@ class YOLO_Loss(Loss):
                                              reuse=tf.compat.v1.AUTO_REUSE):
                 names = ['xy', 'wh', 'obj', 'noobj', 'cls']
                 self.lookups.extend([
-                    (tf.compat.v1.get_variable(name, (self.h.batch_size), tf.float32,
+                    (tf.compat.v1.get_variable(name, (), tf.float32,
                                                tf.zeros_initializer(),
                                                trainable=False),
                      name)
@@ -1185,11 +1185,11 @@ class YOLO_Loss(Loss):
             self.r75.assign(0)
         ])
         if self.verbose == 2:
-            self.op_list.extend([self.lookups[2][0].assign(xy_loss),
-                                 self.lookups[3][0].assign(wh_loss),
-                                 self.lookups[4][0].assign(obj_loss),
-                                 self.lookups[5][0].assign(noobj_loss),
-                                 self.lookups[6][0].assign(cls_loss)])
+            self.op_list.extend([self.lookups[2][0].assign(tf.reduce_mean(xy_loss)),
+                                 self.lookups[3][0].assign(tf.reduce_mean(wh_loss)),
+                                 self.lookups[4][0].assign(tf.reduce_mean(obj_loss)),
+                                 self.lookups[5][0].assign(tf.reduce_mean(noobj_loss)),
+                                 self.lookups[6][0].assign(tf.reduce_mean(cls_loss))])
 
         with tf.control_dependencies(self.op_list):
             total_loss = obj_loss + noobj_loss + cls_loss + xy_loss + wh_loss
