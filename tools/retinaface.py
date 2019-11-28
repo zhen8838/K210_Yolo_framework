@@ -322,6 +322,8 @@ class RetinaFaceHelper(BaseHelper):
         best_truth_overlap = np.max(overlaps, 0)
         best_truth_idx = np.argmax(overlaps, 0)
         best_truth_overlap[best_prior_idx_filter] = 2
+        for j in range(len(best_prior_idx)):
+            best_truth_idx[best_prior_idx[j]] = j
         matches = bbox[best_truth_idx]
         label_conf = clses[best_truth_idx]
         # filter gt and anchor overlap less than pos_thresh, set as background
