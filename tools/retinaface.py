@@ -120,24 +120,16 @@ class RetinaFaceHelper(BaseHelper):
         self.pos_thresh: float = pos_thresh
         self.variances: tf.Tensor = tf.constant(variances, tf.float32)
 
-        self.iaaseq = iaa.Sequential([
+        self.iaaseq = iaa.SomeOf([1, 3], [
             iaa.Fliplr(0.5),
-            iaa.SomeOf([1, 3], [
-                iaa.Affine(scale={"x": (0.8, 1.2), "y": (0.8, 1.2)},
-                           backend='cv2', order=[0, 1], cval=(0, 255), mode=ia.ALL),
-                iaa.Affine(translate_percent={"x": (-0.2, 0.2), "y": (-0.2, 0.2)},
-                           backend='cv2', order=[0, 1], cval=(0, 255), mode=ia.ALL),
-                iaa.Affine(rotate=(-30, 30),
-                           backend='cv2', order=[0, 1], cval=(0, 255), mode=ia.ALL),
-                iaa.Crop(percent=([0.05, 0.1], [0.05, 0.1], [0.05, 0.1], [0.05, 0.1]))
-            ], True),
-            iaa.SomeOf([1, 3], [
-                iaa.LinearContrast((0.5, 1.5)),  # contrast distortion
-                iaa.AddToHue((-18, 18)),  # hue distortion
-                iaa.MultiplySaturation((0.5, 1.5)),  # saturation distortion
-                iaa.AddToSaturation((-32, 32))  # brightness distortion
-            ], True),
-        ], random_order=True)
+            iaa.Affine(scale={"x": (0.8, 1.2), "y": (0.8, 1.2)},
+                       backend='cv2', order=[0, 1], cval=(0, 255), mode=ia.ALL),
+            iaa.Affine(translate_percent={"x": (-0.2, 0.2), "y": (-0.2, 0.2)},
+                       backend='cv2', order=[0, 1], cval=(0, 255), mode=ia.ALL),
+            iaa.Affine(rotate=(-30, 30),
+                       backend='cv2', order=[0, 1], cval=(0, 255), mode=ia.ALL),
+            iaa.Crop(percent=([0.05, 0.1], [0.05, 0.1], [0.05, 0.1], [0.05, 0.1]))
+        ], True)
 
     @staticmethod
     def _get_anchors(in_hw: List[int],
@@ -298,6 +290,22 @@ class RetinaFaceHelper(BaseHelper):
         new_landm = new_landm[mask]
         return image_aug, new_bbox, new_landm, clses
 
+    def augment_img_color(self, img: tf.Tensor):
+
+        img = tf.cond(tf.random.uniform([], 0., 1.) < 0.5,
+                      lambda: img,
+                      lambda: tf.image.random_hue(img, 0.08))
+        img = tf.cond(tf.random.uniform([], 0., 1.) < 0.5,
+                      lambda: img,
+                      lambda: tf.image.random_saturation(img, 0.8, 1.1))
+        img = tf.cond(tf.random.uniform([], 0., 1.) < 0.5,
+                      lambda: img,
+                      lambda: tf.image.random_brightness(img, 0.05))
+        img = tf.cond(tf.random.uniform([], 0., 1.) < 0.5,
+                      lambda: img,
+                      lambda: tf.image.random_contrast(img, 0.8, 1.1))
+        return img
+
     def process_img(self, img: np.ndarray, ann: np.ndarray, in_hw: np.ndarray,
                     is_augment: bool, is_resize: bool, is_normlize: bool
                     ) -> [np.ndarray, List[np.ndarray]]:
@@ -311,6 +319,7 @@ class RetinaFaceHelper(BaseHelper):
         if is_augment:
             img, *ann = tf.numpy_function(self.augment_img, [img, *ann],
                                           [tf.uint8, tf.float32, tf.float32, tf.float32])
+            img = self.augment_img_color(img)
         if is_normlize:
             img = self.normlize_img(img)
         return (img, *ann)
@@ -397,6 +406,7 @@ class RetinaFaceHelper(BaseHelper):
             if is_augment:
                 img, *ann = tf.numpy_function(self.augment_img, [img, *ann],
                                               [tf.uint8, tf.float32, tf.float32, tf.float32])
+                img = self.augment_img_color(img)
             if is_normlize:
                 img = self.normlize_img(img)
 

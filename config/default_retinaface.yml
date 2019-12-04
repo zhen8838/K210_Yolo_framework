@@ -48,7 +48,7 @@ train:
     function_optimization: true
     scoped_allocator_optimization: true
     layout_optimizer: true
-  augmenter: false
+  augmenter: true
   batch_size: 16
   pre_ckpt: null
   rand_seed: 10101
@@ -57,7 +57,7 @@ train:
   sub_log_dir: default_retinaface_exp
   debug: false
   verbose: 1
-  vali_step_factor: 0.9
+  vali_step_factor: 0.1
   optimizer: Adam
   optimizer_kwarg:
     learning_rate: 0.0001
