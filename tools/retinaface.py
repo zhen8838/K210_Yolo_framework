@@ -231,40 +231,38 @@ class RetinaFaceHelper(BaseHelper):
     def read_img(self, img_path: tf.string) -> tf.Tensor:
         return tf.image.decode_jpeg(tf.io.read_file(img_path), 3)
 
-    def resize_img(self, img: np.ndarray,
-                   bbox: np.ndarray, landm: np.ndarray, clses: np.ndarray,
-                   in_hw: np.ndarray
-                   ) -> List[np.ndarray]:
-        im_in = np.zeros((in_hw[0], in_hw[1], 3), np.uint8)
-
+    def resize_img(self, img: tf.Tensor,
+                   bbox: tf.Tensor, landm: tf.Tensor, clses: tf.Tensor,
+                   in_hw: tf.Tensor
+                   ) -> List[tf.Tensor]:
+        img.set_shape((None, None, 3))
         """ transform factor """
-        img_hw = np.array(img.shape[:2])
-        img_wh = img_hw[::-1]
-        in_wh = in_hw[::-1]
-        scale = np.min(in_hw / img_hw)
+        img_hw = tf.cast(tf.shape(img)[:2], tf.float32)
+        in_hw = tf.cast(in_hw, tf.float32)
+        scale = tf.reduce_min(in_hw / img_hw)
 
         # NOTE calc the x,y offset
-        y_off, x_off = ((in_hw - img_hw * scale) / 2).astype(int)
-        img = cv2.resize(img, None, fx=scale, fy=scale,
-                         interpolation=np.random.choice(
-                             [cv2.INTER_LINEAR, cv2.INTER_CUBIC, cv2.INTER_AREA,
-                              cv2.INTER_NEAREST, cv2.INTER_LANCZOS4]))
+        yx_off = tf.cast((in_hw - img_hw * scale) / 2, tf.int32)
 
-        im_in[y_off:y_off + img.shape[0],
-              x_off:x_off + img.shape[1], :] = img[...]
+        img_hw = tf.cast(img_hw * scale, tf.int32)
+
+        in_hw = tf.cast(in_hw, tf.int32)
+
+        img = tf.cond(
+            tf.random.uniform((), 0, 1) < 0.5,
+            lambda: tf.image.resize(img, img_hw, 'nearest'),
+            lambda: tf.cast(tf.image.resize(img, img_hw, 'bilinear'), tf.uint8))
+
+        img = tf.pad(img, [[yx_off[0], in_hw[0] - img_hw[0] - yx_off[0]],
+                           [yx_off[1], in_hw[1] - img_hw[1] - yx_off[1]],
+                           [0, 0]])
 
         """ calc the point transform """
-        bbox[:, 0::2] = bbox[:, 0::2] * scale + x_off
-        bbox[:, 1::2] = bbox[:, 1::2] * scale + y_off
-        landm[:, 0::2] = landm[:, 0::2] * scale + x_off
-        landm[:, 1::2] = landm[:, 1::2] * scale + y_off
 
-        return im_in, bbox, landm, clses
+        bbox = bbox * scale + tf.tile(tf.cast(yx_off[::-1], tf.float32), [2])
+        landm = landm * scale + tf.tile(tf.cast(yx_off[::-1], tf.float32), [5])
 
-    def resize_train_img(self, img: np.ndarray, bbox, landm, clses,
-                         in_hw: np.ndarray) -> List[np.ndarray]:
-        img, *ann = self._crop_with_constraints(img, bbox, landm, clses, in_hw)
-        return self.resize_img(img, *ann, in_hw)
+        return img, bbox, landm, clses
 
     def augment_img(self, img: np.ndarray, bbox, landm, clses) -> List[np.ndarray]:
         bbs = ia.BoundingBoxesOnImage.from_xyxy_array(bbox, shape=img.shape)
@@ -291,31 +289,29 @@ class RetinaFaceHelper(BaseHelper):
         return image_aug, new_bbox, new_landm, clses
 
     def augment_img_color(self, img: tf.Tensor):
-
-        img = tf.cond(tf.random.uniform([], 0., 1.) < 0.5,
-                      lambda: img,
-                      lambda: tf.image.random_hue(img, 0.08))
-        img = tf.cond(tf.random.uniform([], 0., 1.) < 0.5,
-                      lambda: img,
-                      lambda: tf.image.random_saturation(img, 0.8, 1.1))
-        img = tf.cond(tf.random.uniform([], 0., 1.) < 0.5,
-                      lambda: img,
-                      lambda: tf.image.random_brightness(img, 0.05))
-        img = tf.cond(tf.random.uniform([], 0., 1.) < 0.5,
-                      lambda: img,
-                      lambda: tf.image.random_contrast(img, 0.8, 1.1))
+        l = tf.random.categorical(tf.math.log([[0.5, 0.5]]), 4, tf.int32)[0]
+        img = tf.cond(l[0] == 1, lambda: img,
+                      lambda: tf.image.random_hue(img, 0.15))
+        img = tf.cond(l[1] == 1, lambda: img,
+                      lambda: tf.image.random_saturation(img, 0.6, 1.6))
+        img = tf.cond(l[2] == 1, lambda: img,
+                      lambda: tf.image.random_brightness(img, 0.1))
+        img = tf.cond(l[3] == 1, lambda: img,
+                      lambda: tf.image.random_contrast(img, 0.7, 1.3))
         return img
 
     def process_img(self, img: np.ndarray, ann: np.ndarray, in_hw: np.ndarray,
                     is_augment: bool, is_resize: bool, is_normlize: bool
                     ) -> [np.ndarray, List[np.ndarray]]:
         ann = tf.split(ann, [4, 10, 1], 1)
+
         if is_resize and is_augment:
-            img, *ann = tf.numpy_function(self.resize_train_img, [img, *ann, in_hw],
+            img, *ann = tf.numpy_function(self._crop_with_constraints, [img, *ann, in_hw],
                                           [tf.uint8, tf.float32, tf.float32, tf.float32])
+            img, *ann = self.resize_img(img, *ann, in_hw=in_hw)
         elif is_resize:
-            img, *ann = tf.numpy_function(self.resize_img, [img, *ann, in_hw],
-                                          [tf.uint8, tf.float32, tf.float32, tf.float32])
+            img, *ann = self.resize_img(img, *ann, in_hw=in_hw)
+
         if is_augment:
             img, *ann = tf.numpy_function(self.augment_img, [img, *ann],
                                           [tf.uint8, tf.float32, tf.float32, tf.float32])
@@ -365,7 +361,7 @@ class RetinaFaceHelper(BaseHelper):
 
         return tf.cond(tf.less_equal(tf.size(best_prior_idx_filter), 0), t_fn, f_fn)
 
-    def draw_image(self, img: np.ndarray, ann,
+    def draw_image(self, img: tf.Tensor, ann: List[tf.Tensor],
                    is_show: bool = True):
         bbox, landm, clses = ann
         if isinstance(img, EagerTensor):
@@ -395,23 +391,9 @@ class RetinaFaceHelper(BaseHelper):
             path, ann = tf.numpy_function(lambda idx: tuple(image_ann_list[idx]),
                                           [i], [tf.string, tf.float32])
             img = self.read_img(path)
-            ann = tf.split(ann, [4, 10, 1], 1)
-
-            if is_augment:
-                img, *ann = tf.numpy_function(self.resize_train_img, [img, *ann, self.in_hw],
-                                              [tf.uint8, tf.float32, tf.float32, tf.float32])
-            else:
-                img, *ann = tf.numpy_function(self.resize_img, [img, *ann, self.in_hw],
-                                              [tf.uint8, tf.float32, tf.float32, tf.float32])
-            if is_augment:
-                img, *ann = tf.numpy_function(self.augment_img, [img, *ann],
-                                              [tf.uint8, tf.float32, tf.float32, tf.float32])
-                img = self.augment_img_color(img)
-            if is_normlize:
-                img = self.normlize_img(img)
+            img, *ann = self.process_img(img, ann, self.in_hw, is_augment, True, is_normlize)
 
             img = tf.transpose(img, [2, 0, 1])
-
             label = tf.concat(self.ann_to_label(*ann, in_hw=self.in_hw), -1)
 
             img.set_shape((3, None, None))
