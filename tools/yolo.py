@@ -614,7 +614,7 @@ class YOLOHelper(BaseHelper):
         """
         new_ann = np.vstack([label[np.where(label[..., 4] > thersh)] for label in labels])
         new_ann = np.c_[np.argmax(new_ann[:, 5:], axis=-1), new_ann[:, :4]]
-        new_ann = self.center_to_corner(new_ann, self.in_hw)
+        new_ann = self.center_to_corner(new_ann, self.org_in_hw)
         return new_ann
 
     def augment_img(self, img: np.ndarray, ann: np.ndarray) -> tuple:
