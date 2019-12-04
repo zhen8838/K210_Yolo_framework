@@ -1,4 +1,5 @@
 import numpy as np
+import tensorflow as tf
 
 
 def center_to_corner(bbox: np.ndarray, to_all_scale=True, in_hw=None) -> np.ndarray:
@@ -94,6 +95,38 @@ def bbox_iou(a: np.ndarray, b: np.ndarray, offset: int = 0) -> np.ndarray:
     area_i = np.prod(br - tl + offset, axis=2) * (tl < br).all(axis=2)
     area_a = np.prod(a[:, 2:4] - a[:, :2] + offset, axis=1)
     area_b = np.prod(b[:, 2:4] - b[:, :2] + offset, axis=1)
+    return area_i / (area_a[:, None] + area_b - area_i)
+
+
+def tf_bbox_iou(a: tf.Tensor, b: tf.Tensor, offset: int = 0) -> tf.Tensor:
+    """Calculate Intersection-Over-Union(IOU) of two bounding boxes.
+
+    Parameters
+    ----------
+    a : tf.Tensor
+
+        (n,4) x1,y1,x2,y2
+
+    b : tf.Tensor
+
+        (m,4) x1,y1,x2,y2
+
+
+    offset : int, optional
+        by default 0
+
+    Returns
+    -------
+    tf.Tensor
+
+        iou (n,m)
+    """
+    tl = tf.maximum(a[:, None, :2], b[:, :2])
+    br = tf.minimum(a[:, None, 2:4], b[:, 2:4])
+
+    area_i = tf.reduce_prod(br - tl + offset, axis=2) * tf.cast(tf.reduce_all(tf.less(tl, br), axis=2), tf.float32)
+    area_a = tf.reduce_prod(a[:, 2:4] - a[:, :2] + offset, axis=1)
+    area_b = tf.reduce_prod(b[:, 2:4] - b[:, :2] + offset, axis=1)
     return area_i / (area_a[:, None] + area_b - area_i)
 
 

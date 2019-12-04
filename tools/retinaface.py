@@ -6,10 +6,11 @@ import imgaug as ia
 import imgaug.augmenters as iaa
 import cv2
 from matplotlib.pyplot import imshow, show
-from tools.bbox_utils import center_to_corner, bbox_iou, bbox_iof
+from tools.bbox_utils import center_to_corner, bbox_iou, bbox_iof, tf_bbox_iou
 from tools.base import BaseHelper
 from typing import List, Tuple, AnyStr, Iterable
 from tensorflow.python.ops.resource_variable_ops import ResourceVariable
+from tensorflow.python.framework.ops import EagerTensor
 
 
 def encode_bbox(matches, anchors, variances):
@@ -32,6 +33,30 @@ def encode_landm(matches, anchors, variances):
     g_cxcy /= (variances[0] * anchors[:, :, 2:])
     # g_cxcy /= priors[:, :, 2:]
     g_cxcy = g_cxcy.reshape(-1, 5 * 2)
+    # return target for smooth_l1_loss
+    return g_cxcy
+
+
+def tf_encode_bbox(matches: tf.Tensor, anchors: tf.Tensor, variances) -> tf.Tensor:
+    g_cxcy = (matches[:, :2] + matches[:, 2:]) / 2 - anchors[:, :2]
+    g_cxcy = g_cxcy / (variances[0] * anchors[:, 2:])
+    g_wh = (tf.clip_by_value(matches[:, 2:] - matches[:, :2], 1e-6, 0.999999)) / anchors[:, 2:]
+    g_wh = tf.math.log(g_wh) / variances[1]
+    # return target for smooth_l1_loss
+    return tf.concat([g_cxcy, g_wh], 1)  # [num_priors,4]
+
+
+def tf_encode_landm(matches: tf.Tensor, anchors: tf.Tensor, variances) -> tf.Tensor:
+    matches = tf.reshape(matches, (-1, 5, 2))
+    anchors = tf.concat([tf.tile(anchors[:, 0:1, None], [1, 5, 1]),
+                         tf.tile(anchors[:, 1:2, None], [1, 5, 1]),
+                         tf.tile(anchors[:, 2:3, None], [1, 5, 1]),
+                         tf.tile(anchors[:, 3:4, None], [1, 5, 1])], 2)
+    g_cxcy = matches[:, :, :2] - anchors[:, :, :2]
+    # encode variance
+    g_cxcy = g_cxcy / (variances[0] * anchors[:, :, 2:])
+    # g_cxcy /= priors[:, :, 2:]
+    g_cxcy = tf.reshape(g_cxcy, (-1, 5 * 2))
     # return target for smooth_l1_loss
     return g_cxcy
 
@@ -87,13 +112,13 @@ class RetinaFaceHelper(BaseHelper):
         self.test_total_data: int = len(self.test_list)
         self.anchor_widths = anchor_widths
         self.anchor_steps = anchor_steps
-        self.anchors = self._get_anchors(in_hw, anchor_widths, anchor_steps)
-        self.corner_anchors = center_to_corner(self.anchors, False)
+        self.anchors: tf.Tensor = tf.constant(self._get_anchors(in_hw, anchor_widths, anchor_steps), tf.float32)
+        self.corner_anchors: tf.Tensor = tf.constant(center_to_corner(self.anchors, False), tf.float32)
         self.anchors_num: int = len(self.anchors)
         self.org_in_hw: np.ndarray = np.array(in_hw)
         self.in_hw = tf.Variable(self.org_in_hw, trainable=False)
         self.pos_thresh: float = pos_thresh
-        self.variances: np.ndarray = variances
+        self.variances: tf.Tensor = tf.constant(variances, tf.float32)
 
         self.iaaseq = iaa.Sequential([
             iaa.Fliplr(0.5),
@@ -143,14 +168,13 @@ class RetinaFaceHelper(BaseHelper):
 
     @staticmethod
     def _crop_with_constraints(img: np.ndarray,
-                               ann: List[np.ndarray],
+                               bbox, landm, clses,
                                in_hw: np.ndarray
-                               ) -> [np.ndarray, List[np.ndarray]]:
+                               ) -> List[np.ndarray]:
         """ random crop with constraints
 
             make sure that the cropped img contains at least one face > 16 pixel at training image scale
         """
-        bbox, landm, clses = ann
         im_h, im_w, _ = img.shape
         in_h, in_w = in_hw
 
@@ -208,18 +232,17 @@ class RetinaFaceHelper(BaseHelper):
             if bbox_t.shape[0] == 0:
                 continue
 
-            return image_t, [bbox_t, landm_t, clses_t]
+            return image_t, bbox_t, landm_t, clses_t
 
-        return img, [bbox, landm, clses]
+        return img, bbox, landm, clses
 
-    def read_img(self, img_path: str) -> np.ndarray:
-        return cv2.cvtColor(cv2.imread(img_path, cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB)
+    def read_img(self, img_path: tf.string) -> tf.Tensor:
+        return tf.image.decode_jpeg(tf.io.read_file(img_path), 3)
 
     def resize_img(self, img: np.ndarray,
-                   ann: List[np.ndarray],
+                   bbox: np.ndarray, landm: np.ndarray, clses: np.ndarray,
                    in_hw: np.ndarray
-                   ) -> [np.ndarray, List[np.ndarray]]:
-        bbox, landm, clses = ann
+                   ) -> List[np.ndarray]:
         im_in = np.zeros((in_hw[0], in_hw[1], 3), np.uint8)
 
         """ transform factor """
@@ -244,19 +267,14 @@ class RetinaFaceHelper(BaseHelper):
         landm[:, 0::2] = landm[:, 0::2] * scale + x_off
         landm[:, 1::2] = landm[:, 1::2] * scale + y_off
 
-        return im_in, [bbox, landm, clses]
+        return im_in, bbox, landm, clses
 
-    def resize_train_img(self, img: np.ndarray,
-                         ann: List[np.ndarray],
-                         in_hw: np.ndarray
-                         ) -> [np.ndarray, List[np.ndarray]]:
-        img, ann = self._crop_with_constraints(img, ann, in_hw)
-        return self.resize_img(img, ann, in_hw)
+    def resize_train_img(self, img: np.ndarray, bbox, landm, clses,
+                         in_hw: np.ndarray) -> List[np.ndarray]:
+        img, *ann = self._crop_with_constraints(img, bbox, landm, clses, in_hw)
+        return self.resize_img(img, *ann, in_hw)
 
-    def augment_img(self, img: np.ndarray,
-                    ann: List[np.ndarray],
-                    ) -> [np.ndarray, List[np.ndarray]]:
-        bbox, landm, clses = ann
+    def augment_img(self, img: np.ndarray, bbox, landm, clses) -> List[np.ndarray]:
         bbs = ia.BoundingBoxesOnImage.from_xyxy_array(bbox, shape=img.shape)
         kps = ia.KeypointsOnImage.from_xy_array(landm.reshape(-1, 2), shape=img.shape)
 
@@ -278,68 +296,74 @@ class RetinaFaceHelper(BaseHelper):
         clses = clses[mask]
         new_bbox = new_bbox[mask]
         new_landm = new_landm[mask]
-        return image_aug, [new_bbox, new_landm, clses]
-
-    def normlize_img(self, img: np.ndarray) -> tf.Tensor:
-        return (img.astype(np.float32) / 255. - 0.5) / 1
+        return image_aug, new_bbox, new_landm, clses
 
     def process_img(self, img: np.ndarray, ann: np.ndarray, in_hw: np.ndarray,
                     is_augment: bool, is_resize: bool, is_normlize: bool
                     ) -> [np.ndarray, List[np.ndarray]]:
-        temp_ann = np.split(ann, [4, -1], 1)
+        ann = tf.split(ann, [4, 10, 1], 1)
         if is_resize and is_augment:
-            img, temp_ann = self.resize_train_img(img, temp_ann, in_hw)
+            img, *ann = tf.numpy_function(self.resize_train_img, [img, *ann, in_hw],
+                                          [tf.uint8, tf.float32, tf.float32, tf.float32])
         elif is_resize:
-            img, temp_ann = self.resize_img(img, temp_ann, in_hw)
+            img, *ann = tf.numpy_function(self.resize_img, [img, *ann, in_hw],
+                                          [tf.uint8, tf.float32, tf.float32, tf.float32])
         if is_augment:
-            img, temp_ann = self.augment_img(img, temp_ann)
+            img, *ann = tf.numpy_function(self.augment_img, [img, *ann],
+                                          [tf.uint8, tf.float32, tf.float32, tf.float32])
         if is_normlize:
             img = self.normlize_img(img)
-        return img, temp_ann
+        return (img, *ann)
 
-    def ann_to_label(self, ann: List[np.ndarray], in_hw: np.ndarray
-                     ) -> List[np.ndarray]:
-        bbox, landm, clses = ann
+    def ann_to_label(self, bbox, landm, clses, in_hw: tf.Tensor) -> List[tf.Tensor]:
 
-        # convert bbox and landmark scale to 0~1
-        bbox[:, 0::2] /= in_hw[1]
-        bbox[:, 1::2] /= in_hw[0]
-        landm[:, 0::2] /= in_hw[1]
-        landm[:, 1::2] /= in_hw[0]
+        bbox = bbox / tf.tile(tf.cast(in_hw, tf.float32), [2])
+        landm = landm / tf.tile(tf.cast(in_hw, tf.float32), [5])
 
-        # find vaild bbox
-        overlaps = bbox_iou(bbox, self.corner_anchors)
-        best_prior_overlap = np.max(overlaps, 1)
-        best_prior_idx = np.argmax(overlaps, 1)
-        valid_gt_idx = best_prior_overlap >= 0.2
-        best_prior_idx_filter = best_prior_idx[valid_gt_idx]
-        if len(best_prior_idx_filter) <= 0:
-            label_loc = np.zeros((self.anchors_num, 4), np.float32)
-            label_landm = np.zeros((self.anchors_num, 10), np.float32)
-            label_conf = np.zeros((self.anchors_num, 1), np.float32)
+        overlaps = tf_bbox_iou(bbox, self.corner_anchors)
+        best_prior_overlap = tf.reduce_max(overlaps, 1)
+        best_prior_idx = tf.argmax(overlaps, 1, tf.int32)
+        valid_gt_idx = tf.greater_equal(best_prior_overlap, 0.2)
+        valid_gt_idx.set_shape([None])
+        best_prior_idx_filter = tf.boolean_mask(best_prior_idx, valid_gt_idx, axis=0)
+
+        def t_fn():
+            label_loc = tf.zeros((self.anchors_num, 4))
+            label_landm = tf.zeros((self.anchors_num, 10))
+            label_conf = tf.zeros((self.anchors_num, 1))
             return label_loc, label_landm, label_conf
 
-        # calc best gt for each anchors.
-        best_truth_overlap = np.max(overlaps, 0)
-        best_truth_idx = np.argmax(overlaps, 0)
-        best_truth_overlap[best_prior_idx_filter] = 2
-        for j in range(len(best_prior_idx)):
-            best_truth_idx[best_prior_idx[j]] = j
-        matches = bbox[best_truth_idx]
-        label_conf = clses[best_truth_idx]
-        # filter gt and anchor overlap less than pos_thresh, set as background
-        label_conf[best_truth_overlap < self.pos_thresh] = 0
+        def f_fn():
+            best_truth_overlap = tf.reduce_max(overlaps, 0)
+            best_truth_idx = tf.argmax(overlaps, 0, tf.int32)
+            best_truth_overlap = tf.tensor_scatter_nd_update(
+                best_truth_overlap, best_prior_idx_filter[:, None],
+                tf.ones_like(best_prior_idx_filter, tf.float32) * 2.)
+            best_truth_idx = tf.tensor_scatter_nd_update(
+                best_truth_idx, best_prior_idx[:, None],
+                tf.range(tf.size(best_prior_idx), dtype=tf.int32))
 
-        # encode matches gt to network label
-        label_loc = encode_bbox(matches, self.anchors, self.variances)
-        matches_landm = landm[best_truth_idx]
-        label_landm = encode_landm(matches_landm, self.anchors, self.variances)
+            matches = tf.gather(bbox, best_truth_idx)
+            label_conf = tf.gather(clses, best_truth_idx)
+            # filter gt and anchor overlap less than pos_thresh, set as background
+            label_conf = tf.where(best_truth_overlap[:, None] < self.pos_thresh,
+                                  tf.zeros_like(label_conf), label_conf)
+            # encode matches gt to network label
+            label_loc = tf_encode_bbox(matches, self.anchors, self.variances)
+            matches_landm = tf.gather(landm, best_truth_idx)
+            label_landm = tf_encode_landm(matches_landm, self.anchors, self.variances)
+            return label_loc, label_landm, label_conf
 
-        return label_loc, label_landm, label_conf
+        return tf.cond(tf.less_equal(tf.size(best_prior_idx_filter), 0), t_fn, f_fn)
 
-    def draw_image(self, img: np.ndarray, ann: List[np.ndarray],
+    def draw_image(self, img: np.ndarray, ann,
                    is_show: bool = True):
         bbox, landm, clses = ann
+        if isinstance(img, EagerTensor):
+            img = img.numpy()
+            bbox = bbox.numpy()
+            landm = landm.numpy()
+            clses = clses.numpy()
         for i, flag in enumerate(clses):
             if flag == 1:
                 cv2.rectangle(img, tuple(bbox[i][:2].astype(int)),
@@ -358,24 +382,31 @@ class RetinaFaceHelper(BaseHelper):
                        is_augment: bool, is_normlize: bool,
                        is_training: bool) -> tf.data.Dataset:
 
-        def _py_wrapper(i: int, in_hw: np.ndarray,
-                        is_augment: bool, is_resize: bool,
-                        is_normlize: bool) -> np.ndarray:
-            path, ann = np.copy(image_ann_list[i])
-            img = self.read_img(path)
-            new_img, new_ann = self.process_img(
-                img, ann, in_hw,
-                is_augment=is_augment,
-                is_resize=is_resize, is_normlize=is_normlize)
-            return np.transpose(new_img, [2, 0, 1]), np.concatenate(self.ann_to_label(new_ann, in_hw), -1)
-
         def _wrapper(i: tf.Tensor) -> tf.Tensor:
-            img, label = tf.numpy_function(_py_wrapper,
-                                           [i, self.in_hw, is_augment,
-                                            True, is_normlize],
-                                           [tf.float32, tf.float32])
+            path, ann = tf.numpy_function(lambda idx: tuple(image_ann_list[idx]),
+                                          [i], [tf.string, tf.float32])
+            img = self.read_img(path)
+            ann = tf.split(ann, [4, 10, 1], 1)
+
+            if is_augment:
+                img, *ann = tf.numpy_function(self.resize_train_img, [img, *ann, self.in_hw],
+                                              [tf.uint8, tf.float32, tf.float32, tf.float32])
+            else:
+                img, *ann = tf.numpy_function(self.resize_img, [img, *ann, self.in_hw],
+                                              [tf.uint8, tf.float32, tf.float32, tf.float32])
+            if is_augment:
+                img, *ann = tf.numpy_function(self.augment_img, [img, *ann],
+                                              [tf.uint8, tf.float32, tf.float32, tf.float32])
+            if is_normlize:
+                img = self.normlize_img(img)
+
+            img = tf.transpose(img, [2, 0, 1])
+
+            label = tf.concat(self.ann_to_label(*ann, in_hw=self.in_hw), -1)
+
             img.set_shape((3, None, None))
             label.set_shape((None, 15))
+
             return img, label
 
         if is_training:

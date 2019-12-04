@@ -2,6 +2,8 @@ CFG = config/default.yml
 CKPT = None
 IMG = None
 RES = None
+PY = None
+
 all:
 	@echo please use \"make train\" or other ...
 
@@ -16,3 +18,7 @@ infer:
 	
 eval:
 	python3 ./keras_eval.py ${CKPT}
+	
+time_profile:
+	kernprof -l ${PY} && python -m line_profiler $(notdir ${PY}).lprof
+	
