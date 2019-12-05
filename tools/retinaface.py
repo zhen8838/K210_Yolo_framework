@@ -248,10 +248,7 @@ class RetinaFaceHelper(BaseHelper):
 
         in_hw = tf.cast(in_hw, tf.int32)
 
-        img = tf.cond(
-            tf.random.uniform((), 0, 1) < 0.5,
-            lambda: tf.image.resize(img, img_hw, 'nearest'),
-            lambda: tf.cast(tf.image.resize(img, img_hw, 'bilinear'), tf.uint8))
+        img = tf.image.resize(img, img_hw, 'nearest', antialias=True)
 
         img = tf.pad(img, [[yx_off[0], in_hw[0] - img_hw[0] - yx_off[0]],
                            [yx_off[1], in_hw[1] - img_hw[1] - yx_off[1]],
@@ -322,8 +319,8 @@ class RetinaFaceHelper(BaseHelper):
 
     def ann_to_label(self, bbox, landm, clses, in_hw: tf.Tensor) -> List[tf.Tensor]:
 
-        bbox = bbox / tf.tile(tf.cast(in_hw, tf.float32), [2])
-        landm = landm / tf.tile(tf.cast(in_hw, tf.float32), [5])
+        bbox = bbox / tf.tile(tf.cast(in_hw[::-1], tf.float32), [2])
+        landm = landm / tf.tile(tf.cast(in_hw[::-1], tf.float32), [5])
 
         overlaps = tf_bbox_iou(bbox, self.corner_anchors)
         best_prior_overlap = tf.reduce_max(overlaps, 1)
