@@ -136,7 +136,7 @@ class RetinaFaceHelper(BaseHelper):
                      anchor_widths: Iterable[Tuple[int, int]],
                      anchor_steps: List[int]) -> np.ndarray:
         """ get anchors """
-        feature_maps = [[int(in_hw[0] / step), int(in_hw[1] / step)] for step in anchor_steps]
+        feature_maps = [[round(in_hw[0] / step), round(in_hw[1] / step)] for step in anchor_steps]
         anchors = []
         for k, f in enumerate(feature_maps):
             anchor_width = anchor_widths[k]
@@ -390,10 +390,9 @@ class RetinaFaceHelper(BaseHelper):
             img = self.read_img(path)
             img, *ann = self.process_img(img, ann, self.in_hw, is_augment, True, is_normlize)
 
-            img = tf.transpose(img, [2, 0, 1])
             label = tf.concat(self.ann_to_label(*ann, in_hw=self.in_hw), -1)
 
-            img.set_shape((3, None, None))
+            img.set_shape((None, None, 3))
             label.set_shape((None, 15))
 
             return img, label

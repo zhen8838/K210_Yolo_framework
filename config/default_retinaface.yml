@@ -28,9 +28,9 @@ model:
   network: retinafacenet
   network_kwarg:
     input_shape:
+      - null
+      - null
       - 3
-      - null
-      - null
     anchor_num: 2
     filters: 64
     alpha: 0.25

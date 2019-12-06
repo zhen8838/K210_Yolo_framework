@@ -6,7 +6,8 @@ kl = tf.keras.layers
 
 
 def Conv2D_BN_Leaky(*args, **kwargs):
-    """Darknet Convolution2D followed by BatchNormalization and LeakyReLU."""
+    """Darknet Convolution2D followed by BatchNormalization and LeakyReLU.
+    """
     no_bias_kwargs = {'use_bias': False}
     no_bias_kwargs.update(kwargs)
     channel_axis = 1 if k.backend.image_data_format() == 'channels_first' else -1
@@ -16,8 +17,21 @@ def Conv2D_BN_Leaky(*args, **kwargs):
         kl.LeakyReLU(alpha=0.1))
 
 
+def Conv2D_BN_Relu(*args, **kwargs):
+    """Darknet Convolution2D followed by BatchNormalization and ReLU.
+    """
+    no_bias_kwargs = {'use_bias': False}
+    no_bias_kwargs.update(kwargs)
+    channel_axis = 1 if k.backend.image_data_format() == 'channels_first' else -1
+    return compose(
+        DarknetConv2D(*args, **no_bias_kwargs),
+        kl.BatchNormalization(channel_axis),
+        kl.ReLU())
+
+
 def Conv2D_BN(*args, **kwargs):
-    """Darknet Convolution2D followed by BatchNormalization and LeakyReLU."""
+    """Darknet Convolution2D followed by BatchNormalization.
+    """
     no_bias_kwargs = {'use_bias': False}
     no_bias_kwargs.update(kwargs)
     channel_axis = 1 if k.backend.image_data_format() == 'channels_first' else -1
@@ -27,12 +41,13 @@ def Conv2D_BN(*args, **kwargs):
 
 
 def SSH(inputs: tf.Tensor, filters: int) -> tf.Tensor:
+    channel_axis = 1 if k.backend.image_data_format() == 'channels_first' else -1
     conv3X3 = Conv2D_BN(filters // 2, 3, 1, padding='same')(inputs)
     conv5X5_1 = Conv2D_BN_Leaky(filters // 4, 3, 1, padding='same')(inputs)
     conv5X5 = Conv2D_BN(filters // 4, 3, 1, padding='same')(conv5X5_1)
     conv7X7_2 = Conv2D_BN_Leaky(filters // 4, 3, 1, padding='same')(conv5X5_1)
     conv7X7 = Conv2D_BN(filters // 4, 3, 1, padding='same')(conv7X7_2)
-    out = kl.Concatenate(1)([conv3X3, conv5X5, conv7X7])
+    out = kl.Concatenate(channel_axis)([conv3X3, conv5X5, conv7X7])
     out = kl.ReLU()(out)
     return out
 
@@ -54,9 +69,8 @@ def FPN(inputs: List[tf.Tensor], filters: int) -> List[tf.Tensor]:
     return [out1, out2, out3]
 
 
-def retinafacenet(input_shape: list, anchor_num: int, filters: int, alpha=0.25
-                  ) -> [k.Model, k.Model]:
-    k.backend.set_image_data_format('channels_first')
+def retinafacenet(input_shape: list, anchor_num: int,
+                  filters: int, alpha=0.25) -> [k.Model, k.Model]:
     inputs = k.Input(input_shape)
     model: k.Model = k.applications.MobileNet(
         input_tensor=inputs, input_shape=tuple(input_shape),
@@ -77,9 +91,9 @@ def retinafacenet(input_shape: list, anchor_num: int, filters: int, alpha=0.25
 
     infer_model = k.Model(inputs, sum([[b, l, c] for b, l, c in zip(bbox_out, landm_out, class_out)], []))
 
-    bbox_out = [kl.Reshape((-1, 4))(kl.Permute((2, 3, 1))(b)) for b in bbox_out]
-    landm_out = [kl.Reshape((-1, 10))(kl.Permute((2, 3, 1))(b)) for b in landm_out]
-    class_out = [kl.Reshape((-1, 2))(kl.Permute((2, 3, 1))(b)) for b in class_out]
+    bbox_out = [kl.Reshape((-1, 4))(b) for b in bbox_out]
+    landm_out = [kl.Reshape((-1, 10))(b) for b in landm_out]
+    class_out = [kl.Reshape((-1, 2))(b) for b in class_out]
 
     bbox_out = kl.Concatenate(1)(bbox_out)
     landm_out = kl.Concatenate(1)(landm_out)
@@ -89,3 +103,104 @@ def retinafacenet(input_shape: list, anchor_num: int, filters: int, alpha=0.25
     train_model = k.Model(inputs, out)
 
     return infer_model, train_model
+
+
+def UltraLightFastGenericFaceBaseNet(inputs: tf.Tensor, base_filters=16) -> k.Model:
+    def conv_bn(filters, strides, number):
+        channel_axis = 1 if k.backend.image_data_format() == 'channels_first' else -1
+        return [kl.Conv2D(filters, 3, strides, 'same', use_bias=False,
+                          kernel_regularizer=k.regularizers.l2(5e-4),
+                          name=f'conv_bn_{number}_conv'),
+                kl.BatchNormalization(channel_axis, name=f'conv_bn_{number}_bn'),
+                kl.ReLU(name=f'conv_bn_{number}_relu')]
+
+    def conv_dw(filters, strides, number):
+        channel_axis = 1 if k.backend.image_data_format() == 'channels_first' else -1
+        return [kl.DepthwiseConv2D(3, strides, padding='same', use_bias=False,
+                                   name=f'conv_dw_{number}_dw'),
+                kl.BatchNormalization(channel_axis, name=f'conv_dw_{number}_bn_1'),
+                kl.ReLU(name=f'conv_dw_{number}_relu_1'),
+                kl.Conv2D(filters, 1, 1, use_bias=False,
+                          kernel_regularizer=k.regularizers.l2(5e-4),
+                          name=f'conv_dw_{number}_conv'),
+                kl.BatchNormalization(channel_axis, name=f'conv_dw_{number}_bn_2'),
+                kl.ReLU(name=f'conv_dw_{number}_relu_2')]
+    l = (
+        # 120*160
+        conv_bn(base_filters, 2, 0) +
+        conv_dw(base_filters * 2, 1, 1) +
+        # 60*80
+        conv_dw(base_filters * 2, 2, 2) +
+        conv_dw(base_filters * 2, 1, 3) +
+        # 30*40
+        conv_dw(base_filters * 4, 2, 4) +
+        conv_dw(base_filters * 4, 1, 5) +
+        conv_dw(base_filters * 4, 1, 6) +
+        conv_dw(base_filters * 4, 1, 7) +
+        # 15*20
+        conv_dw(base_filters * 8, 2, 8) +
+        conv_dw(base_filters * 8, 1, 9) +
+        conv_dw(base_filters * 8, 1, 10) +
+        # 8*10
+        conv_dw(base_filters * 16, 2, 11) +
+        conv_dw(base_filters * 16, 1, 12))
+
+    return k.Model(inputs, compose(*l)(inputs))
+
+
+def SeperableConv2d(filters, kernel_size=1, strides=1, padding='valid'):
+    """Replace Conv2d with a depthwise Conv2d and Pointwise Conv2d.
+    """
+    return compose(kl.DepthwiseConv2D(kernel_size, strides, padding),
+                   kl.ReLU(),
+                   kl.Conv2D(filters, kernel_size=1))
+
+
+def UltraLightFastGenericFaceNet_slim(inputs: k.Input, branch_index=[7, 10, 12],
+                                      base_filters=16, num_classes=1) -> k.Model:
+    base_model = UltraLightFastGenericFaceBaseNet(inputs, base_filters)
+    extras = compose(
+        kl.Conv2D(base_filters * 4, 1),
+        kl.ReLU(),
+        kl.DepthwiseConv2D(3, 2, 'same'),
+        kl.ReLU(),
+        kl.Conv2D(base_filters * 16, kernel_size=1),
+        kl.ReLU())
+
+    regression_headers = [SeperableConv2d(3 * 4, 3, padding='same'),
+                          SeperableConv2d(2 * 4, 3, padding='same'),
+                          SeperableConv2d(2 * 4, 3, padding='same'),
+                          kl.Conv2D(3 * 4, 3, padding='same')]
+
+    classification_headers = [SeperableConv2d(3 * num_classes, 3, padding='same'),
+                              SeperableConv2d(2 * num_classes, 3, padding='same'),
+                              SeperableConv2d(2 * num_classes, 3, padding='same'),
+                              kl.Conv2D(3 * num_classes, 3, padding='same')]
+
+    def compute_header(i, x):
+        confidence = classification_headers[i](x)
+        confidence = kl.Reshape((-1, num_classes))(confidence)
+
+        location = regression_headers[i](x)
+        location = kl.Reshape((-1, 4))(location)
+        return confidence, location
+
+    y_out = []
+    for index in branch_index:
+        y_out.append(base_model.get_layer(f'conv_dw_{index}_relu_2').output)
+
+    if extras != None:
+        y_out.append(extras(base_model.output))
+
+    confidences = []
+    locations = []
+    for i, y in enumerate(y_out):
+        confidence, location = compute_header(i, y)
+        confidences.append(confidence)
+        locations.append(location)
+
+    confidences = kl.Concatenate(1)(confidences)
+    locations = kl.Concatenate(1)(locations)
+
+    model = k.Model(inputs, [locations, confidences])
+    return model
