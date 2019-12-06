@@ -340,3 +340,41 @@ python make_imgenet_list.py --input_train_path xxx/imagenet --input_val_path xxx
 ```sh
 make train CFG=config/default_imgnet.yml
 ```
+
+
+# RetinaFace
+
+
+## Prepare dataset
+
+1.  Download RetinaFace annotations (face bounding boxes & five facial landmarks) from [baidu cloud](https://pan.baidu.com/s/1Laby0EctfuJGgGMgRRgykA) or [dropbox](https://www.dropbox.com/s/7j70r3eeepe4r2g/retinaface_gt_v1.1.zip?dl=0)
+
+2.  Download the [WIDERFACE](http://shuoyang1213.me/WIDERFACE/WiderFace_Results.html) dataset.
+
+3.  Organise the dataset directory under `yourdatasetdir/` as follows:
+```
+yourdatasetdir/
+    train/
+      images/
+      label.txt
+    val/
+      images/
+      label.txt
+    test/
+      images/
+      label.txt
+```
+
+4.  run `python make_retinaface_list.py --root yourdatasetdir`
+
+## Train
+
+```sh
+make train CFG=config/default_retinaface.yml
+```
+
+## Inference
+
+```sh
+make infer CKPT=log/default_retinaface_exp/auto_infer_xxx.h5 IMG=imgpath_or_imgdir
+```
