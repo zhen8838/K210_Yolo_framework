@@ -4,13 +4,16 @@ import numpy as np
 from numpy import random
 import imgaug as ia
 import imgaug.augmenters as iaa
+from pathlib import Path
 import cv2
 from matplotlib.pyplot import imshow, show
-from tools.bbox_utils import center_to_corner, bbox_iou, bbox_iof, tf_bbox_iou
+from tools.bbox_utils import center_to_corner, bbox_iou, bbox_iof, tf_bbox_iou, nms_oneclass
 from tools.base import BaseHelper
 from typing import List, Tuple, AnyStr, Iterable
+from scipy.special import softmax
 from tensorflow.python.ops.resource_variable_ops import ResourceVariable
 from tensorflow.python.framework.ops import EagerTensor
+from tools.base import INFO, NOTE, ERROR
 
 
 def encode_bbox(matches, anchors, variances):
@@ -496,3 +499,118 @@ class RetinaFaceLoss(tf.keras.losses.Loss):
         with tf.control_dependencies(self.op_list):
             total_loss = loss_loc + loss_landm + loss_conf
         return total_loss
+
+
+def reverse_ann(bbox: np.ndarray, landm: np.ndarray,
+                in_hw: np.ndarray, img_hw: np.ndarray) -> np.ndarray:
+    """rescae predict box to orginal image scale
+
+    """
+    scale = np.min(in_hw / img_hw)
+    xy_off = ((in_hw - img_hw * scale) / 2)[::-1]
+
+    bbox = (bbox - np.tile(xy_off, [2])) / scale
+    landm = (landm - np.tile(xy_off, [5])) / scale
+    return bbox, landm
+
+
+def parser_outputs(outputs: List[np.ndarray], orig_hws: List[np.ndarray], obj_thresh: float,
+                   nms_thresh: float, batch: int, h: RetinaFaceHelper
+                   ) -> List[Tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    bbox_outs = []
+    landm_outs = []
+    class_outs = []
+    for b, l, c in zip(outputs[0::3], outputs[1::3], outputs[2::3]):
+        bbox_outs.append(np.reshape(b, (batch, -1, 4)))
+        landm_outs.append(np.reshape(l, (batch, -1, 10)))
+        class_outs.append(np.reshape(c, (batch, -1, 2)))
+
+    bbox_outs = np.concatenate(bbox_outs, 1)
+    landm_outs = np.concatenate(landm_outs, 1)
+    class_outs = np.concatenate(class_outs, 1)
+
+    results = []
+    for bbox, landm, clses, orig_hw in zip(bbox_outs, landm_outs, class_outs, orig_hws):
+        """ softmax class"""
+        clses = softmax(clses, -1)
+        score = clses[:, 1]
+        """ decode """
+        bbox = decode_bbox(bbox, h.anchors, h.variances)
+        bbox = bbox * np.repeat(h.org_in_hw[::-1], 2)
+        """ landmark """
+        landm = decode_landm(landm, h.anchors, h.variances)
+        landm = landm * np.repeat(h.org_in_hw[::-1], 5)
+        """ filter low score """
+        inds = np.where(score > obj_thresh)[0]
+        bbox = bbox[inds]
+        landm = landm[inds]
+        score = score[inds]
+        """ keep top-k before NMS """
+        order = np.argsort(score)[::-1]
+        bbox = bbox[order]
+        landm = landm[order]
+        score = score[order]
+        """ do nms """
+        keep = nms_oneclass(bbox, score, nms_thresh)
+
+        bbox = bbox[keep]
+        landm = landm[keep]
+        score = score[keep]
+        """ reverse img """
+        bbox, landm = reverse_ann(bbox, landm, h.org_in_hw, np.array(orig_hw))
+        results.append([bbox, landm, score])
+    return results
+
+
+def retinaface_infer(img_path: Path, infer_model: tf.keras.Model,
+                     result_path: Path, h: RetinaFaceHelper,
+                     obj_thresh: float = 0.6,
+                     nms_thresh: float = 0.5):
+    """
+    """
+    print(INFO, f'Load Images from {str(img_path)}')
+    if img_path.is_dir():
+        img_paths = []
+        for suffix in ['bmp', 'jpg', 'jpeg', 'png']:
+            img_paths += list(map(str, img_path.glob(f'*.{suffix}')))
+    elif img_path.is_file():
+        img_paths = [str(img_path)]
+    else:
+        ValueError(f'{ERROR} img_path `{str(img_path)}` is invalid')
+
+    if result_path is not None:
+        print(INFO, f'Load NNcase Results from {str(result_path)}')
+        if result_path.is_dir():
+            ncc_results = np.array([np.fromfile(
+                str(result_path / (Path(img_paths[i]).stem + '.bin')),
+                dtype='float32') for i in range(len(img_paths))])  # type:np.ndarray
+        elif result_path.is_file():
+            ncc_results = np.expand_dims(np.fromfile(str(result_path),
+                                                     dtype='float32'), 0)  # type:np.ndarray
+        else:
+            ValueError(f'{ERROR} result_path `{str(result_path)}` is invalid')
+    else:
+        ncc_results = None
+
+    print(INFO, f'Infer Results')
+    orig_hws = []
+    det_imgs = []
+    for img_path in img_paths:
+        img = h.read_img(img_path)
+        orig_hws.append(img.numpy().shape[:2])
+        det_img, *_ = h.process_img(img, np.zeros((0, 15), np.float32), h.in_hw, False, True, True)
+        det_imgs.append(det_img)
+    batch = len(det_imgs)
+    outputs = infer_model.predict(tf.stack(det_imgs), batch)
+
+    """ parser batch out """
+    results = parser_outputs(outputs, orig_hws, obj_thresh, nms_thresh, batch, h)
+
+    if result_path is None:
+        """ draw gpu result """
+        for img_path, (bbox, landm, score) in zip(img_paths, results):
+            draw_img = h.read_img(img_path)
+            h.draw_image(draw_img.numpy(), [bbox, landm, np.ones_like(score[:, None])])
+    else:
+        """ draw gpu result and nncase result """
+        pass

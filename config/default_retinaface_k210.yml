@@ -5,17 +5,17 @@ model:
   helper_kwarg:
     image_ann: data/retinaface_img_ann.npy
     in_hw: 
-      - 640
-      - 640
+      - 240
+      - 320
     anchor_widths: 
       - 
-        - 0.025
         - 0.05
+        - 0.01
       - 
-        - 0.1
         - 0.2
-      - 
         - 0.4
+      - 
+        - 0.6
         - 0.8
     anchor_steps:
       - 8
@@ -25,15 +25,13 @@ model:
     variances:
       - 0.1
       - 0.2
-  network: retinafacenet
+  network: retinafacenet_k210
   network_kwarg:
     input_shape:
       - null
       - null
       - 3
     anchor_num: 2
-    filters: 64
-    alpha: 0.25
   loss: RetinaFaceLoss
   loss_kwarg:
     negpos_ratio: 7
@@ -49,12 +47,12 @@ train:
     scoped_allocator_optimization: true
     layout_optimizer: true
   augmenter: true
-  batch_size: 16
+  batch_size: 32
   pre_ckpt: null
   rand_seed: 10101
   epochs: 150
   log_dir: log
-  sub_log_dir: default_retinaface_exp
+  sub_log_dir: default_retinaface_k210_exp
   debug: false
   verbose: 1
   vali_step_factor: 0.1
@@ -95,8 +93,8 @@ train:
     #     scale_range: [-3, 5]
     - name: StepLR
       kwarg:
-        steps: [ 50  ,  80    ,  120 ]
-        rates: [0.002, 0.001,  0.0001]
+        steps: [ 20  ,  60  , 100 ,  150 ]
+        rates: [0.0001,0.002,0.001,0.0001]
 prune:
   is_prune: false
   init_sparsity: 0.5
@@ -104,9 +102,6 @@ prune:
   end_epoch: 5
   frequency: 100
 inference:
-  infer_fn: retinaface_infer
-  infer_fn_kwarg:
-    obj_thresh: 0.6
-    nms_thresh: 0.5
+  infer_fn: null
 evaluate:
   eval_fn: null

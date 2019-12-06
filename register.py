@@ -6,7 +6,7 @@ from models.receptivefieldnet import rffacedetnet
 from models.networks4k210 import yolo_mbv1_k210, yolo_mbv2_k210, yolo2_mbv1_k210,\
     yolov2algin_mbv1_k210, pfld_k210, mbv1_softmax_facerec_k210, \
     mbv1_triplet_facerec_k210, mbv1_amsoftmax_facerec_k210, mbv1_imgnet_k210, \
-    mbv2_imgnet_k210, yoloalgin_mbv1_k210
+    mbv2_imgnet_k210, yoloalgin_mbv1_k210, retinafacenet_k210, retinafacenet_k210_v2
 
 import tensorflow as tf
 from tools.custom import StepLR
@@ -15,7 +15,7 @@ from tools.yoloalign import YOLOAlignHelper, YOLOAlignLoss, yoloalgin_infer
 from tools.pfld import PFLDHelper, PFLDLoss, pfld_infer
 from tools.ctdet import CtdetHelper, CtdetLoss, ctdet_infer
 from tools.lffd import LFFDHelper, LFFDLoss
-from tools.retinaface import RetinaFaceHelper, RetinaFaceLoss
+from tools.retinaface import RetinaFaceHelper, RetinaFaceLoss, retinaface_infer
 from tools.tinyimgnet import TinyImgnetHelper
 from tools.imgnet import ImgnetHelper, ClassifyLoss
 from tools.facerec import FcaeRecHelper, TripletLoss, Sparse_SoftmaxLoss, Sparse_AmsoftmaxLoss, Sparse_AsoftmaxLoss
@@ -188,6 +188,8 @@ network_register = {
     'pfld_k210': pfld_k210,
     'mbv1_imgnet_k210': mbv1_imgnet_k210,
     'mbv2_imgnet_k210': mbv2_imgnet_k210,
+    'retinafacenet_k210': retinafacenet_k210,
+    'retinafacenet_k210_v2': retinafacenet_k210_v2
 }
 
 loss_register = {
@@ -225,7 +227,8 @@ infer_register = {
     'yolo_infer': yolo_infer,
     'yoloalgin_infer': yoloalgin_infer,
     'pfld_infer': pfld_infer,
-    'ctdet_infer': ctdet_infer
+    'ctdet_infer': ctdet_infer,
+    'retinaface_infer': retinaface_infer
 }
 
 eval_register = {
