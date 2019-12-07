@@ -8,19 +8,19 @@ model:
       - 640
       - 640
     anchor_widths: 
-      - 
-        - 0.025
+      - - 0.025
         - 0.05
-      - 
-        - 0.1
+      - - 0.1
         - 0.2
-      - 
-        - 0.4
+      - - 0.4
         - 0.8
-    anchor_steps:
-      - 8
-      - 16
-      - 32
+    feature_maps:
+      - - 80
+        - 80
+      - - 40
+        - 40
+      - - 20
+        - 20
     pos_thresh: 0.35
     variances:
       - 0.1
@@ -57,7 +57,7 @@ train:
   sub_log_dir: default_retinaface_exp
   debug: false
   verbose: 1
-  vali_step_factor: 0.1
+  vali_step_factor: 0.5
   optimizer: Adam
   optimizer_kwarg:
     learning_rate: 0.0001

@@ -6,7 +6,8 @@ from models.receptivefieldnet import rffacedetnet
 from models.networks4k210 import yolo_mbv1_k210, yolo_mbv2_k210, yolo2_mbv1_k210,\
     yolov2algin_mbv1_k210, pfld_k210, mbv1_softmax_facerec_k210, \
     mbv1_triplet_facerec_k210, mbv1_amsoftmax_facerec_k210, mbv1_imgnet_k210, \
-    mbv2_imgnet_k210, yoloalgin_mbv1_k210, retinafacenet_k210, retinafacenet_k210_v2
+    mbv2_imgnet_k210, yoloalgin_mbv1_k210, retinafacenet_k210,\
+    retinafacenet_k210_v1, retinafacenet_k210_v2, retinafacenet_k210_v3
 
 import tensorflow as tf
 from tools.custom import StepLR
@@ -189,7 +190,9 @@ network_register = {
     'mbv1_imgnet_k210': mbv1_imgnet_k210,
     'mbv2_imgnet_k210': mbv2_imgnet_k210,
     'retinafacenet_k210': retinafacenet_k210,
-    'retinafacenet_k210_v2': retinafacenet_k210_v2
+    'retinafacenet_k210_v1': retinafacenet_k210_v1,
+    'retinafacenet_k210_v2': retinafacenet_k210_v2,
+    'retinafacenet_k210_v3': retinafacenet_k210_v3,
 }
 
 loss_register = {

@@ -93,7 +93,7 @@ def decode_landm(landm, anchors, variances):
 class RetinaFaceHelper(BaseHelper):
     def __init__(self, image_ann: str, in_hw: tuple,
                  anchor_widths: list,
-                 anchor_steps: list,
+                 feature_maps: list,
                  pos_thresh: float,
                  variances: float):
         self.train_dataset: tf.data.Dataset = None
@@ -114,8 +114,8 @@ class RetinaFaceHelper(BaseHelper):
         self.val_total_data: int = len(self.val_list)
         self.test_total_data: int = len(self.test_list)
         self.anchor_widths = anchor_widths
-        self.anchor_steps = anchor_steps
-        self.anchors: tf.Tensor = tf.constant(self._get_anchors(in_hw, anchor_widths, anchor_steps), tf.float32)
+        self.feature_maps = feature_maps
+        self.anchors: tf.Tensor = tf.constant(self._get_anchors(in_hw, anchor_widths, feature_maps), tf.float32)
         self.corner_anchors: tf.Tensor = tf.constant(center_to_corner(self.anchors, False), tf.float32)
         self.anchors_num: int = len(self.anchors)
         self.org_in_hw: np.ndarray = np.array(in_hw)
@@ -137,9 +137,8 @@ class RetinaFaceHelper(BaseHelper):
     @staticmethod
     def _get_anchors(in_hw: List[int],
                      anchor_widths: Iterable[Tuple[int, int]],
-                     anchor_steps: List[int]) -> np.ndarray:
+                     feature_maps: Iterable[Tuple[int, int]]) -> np.ndarray:
         """ get anchors """
-        feature_maps = [[round(in_hw[0] / step), round(in_hw[1] / step)] for step in anchor_steps]
         anchors = []
         for k, f in enumerate(feature_maps):
             anchor_width = anchor_widths[k]
@@ -149,8 +148,8 @@ class RetinaFaceHelper(BaseHelper):
                     for n, width in enumerate(anchor_width):
                         s_kx = width
                         s_ky = width
-                        cx = (j + 0.5) * anchor_steps[k] / in_hw[1]
-                        cy = (i + 0.5) * anchor_steps[k] / in_hw[0]
+                        cx = (j + 0.5) * (1 / f[1])
+                        cy = (i + 0.5) * (1 / f[0])
                         feature[i, j, n, :] = cx, cy, s_kx, s_ky
             anchors.append(feature)
 

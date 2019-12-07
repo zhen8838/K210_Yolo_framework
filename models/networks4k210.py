@@ -5,7 +5,7 @@ import tensorflow.python.keras.layers as kl
 from models.keras_mobilenet_v2 import MobileNetV2
 from models.keras_mobilenet import MobileNet
 from models.darknet import darknet_body, DarknetConv2D, DarknetConv2D_BN_Leaky, compose, resblock_body
-from models.retinanet import UltraLightFastGenericFaceBaseNet, SeperableConv2d, Conv2D_BN_Relu
+from models.retinanet import UltraLightFastGenericFaceBaseNet, SeperableConv2d, Conv2D_BN_Relu, SSH, Conv2D_BN
 from toolz import pipe
 
 
@@ -729,10 +729,10 @@ def retinafacenet_k210(input_shape: list, anchor_num=2,
     return infer_model, train_model
 
 
-def retinafacenet_k210_v2(input_shape: list, anchor_num=2,
+def retinafacenet_k210_v1(input_shape: list, anchor_num=2,
                           branch_index=[7, 10, 12],
                           base_filters=16) -> k.Model:
-    """ Add upsample """
+    """ Use SSH block """
     inputs = k.Input(input_shape)
     base_model = UltraLightFastGenericFaceBaseNet(inputs, base_filters)
 
@@ -741,13 +741,91 @@ def retinafacenet_k210_v2(input_shape: list, anchor_num=2,
         # round(in_hw / 8),round(in_hw / 16),round(in_hw / 32)
         features.append(base_model.get_layer(f'conv_dw_{index}_relu_2').output)
 
-    """ upsample with layer 1 and layer 2 """
-    up2 = kl.UpSampling2D(interpolation='bilinear')(Conv2D_BN_Relu(base_filters * 4, 1, 1)(features[1]))
-    features[0] = kl.Add()([features[0], up2])
+    """ SSH block """
+    features = [SSH(feat, base_filters * 4, depth=2) for feat in features]
+
+    bbox_out = [kl.Conv2D(anchor_num * 4, 1, 1)(feat) for feat in features]  # BboxHead
+    class_out = [kl.Conv2D(anchor_num * 2, 1, 1)(feat) for feat in features]  # ClassHead
+    landm_out = [kl.Conv2D(anchor_num * 10, 1, 1)(feat) for feat in features]  # LandmarkHead
+
+    infer_model = k.Model(inputs, sum([[b, l, c] for b, l, c in zip(bbox_out, landm_out, class_out)], []))
+
+    bbox_out = [kl.Reshape((-1, 4))(b) for b in bbox_out]
+    landm_out = [kl.Reshape((-1, 10))(b) for b in landm_out]
+    class_out = [kl.Reshape((-1, 2))(b) for b in class_out]
+
+    bbox_out = kl.Concatenate(1)(bbox_out)
+    landm_out = kl.Concatenate(1)(landm_out)
+    class_out = kl.Concatenate(1)(class_out)
+    out = kl.Concatenate()([bbox_out, landm_out, class_out])
+
+    train_model = k.Model(inputs, out)
+
+    return infer_model, train_model
+
+
+def retinafacenet_k210_v2(input_shape: list, anchor_num=2,
+                          branch_index=[7, 10, 12],
+                          base_filters=16) -> k.Model:
+    """ Add FPN block for feature merge
+    """
+    inputs = k.Input(input_shape)
+    channel_axis = 1 if k.backend.image_data_format() == 'channels_first' else -1
+    base_model = UltraLightFastGenericFaceBaseNet(inputs, base_filters)
+
+    features = []
+    for index in branch_index:
+        # round(in_hw / 8),round(in_hw / 16),round(in_hw / 32)
+        features.append(base_model.get_layer(f'conv_dw_{index}_relu_2').output)
+
+    """ FPN only featrues[0] and featrues[1] """
+    up2 = kl.UpSampling2D()(Conv2D_BN_Relu(base_filters, 1, 1)(features[1]))
+    features[0] = kl.Concatenate(channel_axis)([features[0], up2])
 
     bbox_out = [SeperableConv2d(anchor_num * 4, 3, padding='same')(feat) for feat in features]  # BboxHead
     class_out = [SeperableConv2d(anchor_num * 2, 3, padding='same')(feat) for feat in features]  # ClassHead
     landm_out = [SeperableConv2d(anchor_num * 10, 3, padding='same')(feat) for feat in features]  # LandmarkHead
+
+    infer_model = k.Model(inputs, sum([[b, l, c] for b, l, c in zip(bbox_out, landm_out, class_out)], []))
+
+    bbox_out = [kl.Reshape((-1, 4))(b) for b in bbox_out]
+    landm_out = [kl.Reshape((-1, 10))(b) for b in landm_out]
+    class_out = [kl.Reshape((-1, 2))(b) for b in class_out]
+
+    bbox_out = kl.Concatenate(1)(bbox_out)
+    landm_out = kl.Concatenate(1)(landm_out)
+    class_out = kl.Concatenate(1)(class_out)
+    out = kl.Concatenate()([bbox_out, landm_out, class_out])
+
+    train_model = k.Model(inputs, out)
+
+    return infer_model, train_model
+
+
+def retinafacenet_k210_v3(input_shape: list, anchor_num=2,
+                          branch_index=[7, 10, 12],
+                          base_filters=16) -> k.Model:
+    """ 1.  Add FPN block for feature merge
+        2.  Use SSH block for better regerssion
+    """
+    inputs = k.Input(input_shape)
+    channel_axis = 1 if k.backend.image_data_format() == 'channels_first' else -1
+    base_model = UltraLightFastGenericFaceBaseNet(inputs, base_filters)
+
+    features = []
+    for index in branch_index:
+        # round(in_hw / 8),round(in_hw / 16),round(in_hw / 32)
+        features.append(base_model.get_layer(f'conv_dw_{index}_relu_2').output)
+
+    """ FPN only featrues[0] and featrues[1] """
+    up2 = kl.UpSampling2D()(Conv2D_BN_Relu(base_filters, 1, 1)(features[1]))
+    features[0] = kl.Concatenate(channel_axis)([features[0], up2])
+    """ SSH block """
+    features = [SSH(feat, base_filters * 4, depth=2) for feat in features]
+
+    bbox_out = [kl.Conv2D(anchor_num * 4, 1, 1)(feat) for feat in features]  # BboxHead
+    class_out = [kl.Conv2D(anchor_num * 2, 1, 1)(feat) for feat in features]  # ClassHead
+    landm_out = [kl.Conv2D(anchor_num * 10, 1, 1)(feat) for feat in features]  # LandmarkHead
 
     infer_model = k.Model(inputs, sum([[b, l, c] for b, l, c in zip(bbox_out, landm_out, class_out)], []))
 

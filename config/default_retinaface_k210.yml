@@ -8,24 +8,24 @@ model:
       - 240
       - 320
     anchor_widths: 
-      - 
-        - 0.05
+      - - 0.05
         - 0.01
-      - 
-        - 0.2
+      - - 0.2
         - 0.4
-      - 
-        - 0.6
+      - - 0.6
         - 0.8
-    anchor_steps:
-      - 8
-      - 16
-      - 32
+    feature_maps:
+      - - 30
+        - 40
+      - - 15
+        - 20
+      - - 8
+        - 10
     pos_thresh: 0.35
     variances:
       - 0.1
       - 0.2
-  network: retinafacenet_k210
+  network: retinafacenet_k210_v1
   network_kwarg:
     input_shape:
       - null
@@ -55,7 +55,7 @@ train:
   sub_log_dir: default_retinaface_k210_exp
   debug: false
   verbose: 1
-  vali_step_factor: 0.1
+  vali_step_factor: 0.5
   optimizer: Adam
   optimizer_kwarg:
     learning_rate: 0.0001
@@ -93,8 +93,8 @@ train:
     #     scale_range: [-3, 5]
     - name: StepLR
       kwarg:
-        steps: [ 20  ,  60  , 100 ,  150 ]
-        rates: [0.0001,0.002,0.001,0.0001]
+        steps: [ 20  ,  100 , 150 , 160 ]
+        rates: [0.0001,0.002,0.001,0.0005]
 prune:
   is_prune: false
   init_sparsity: 0.5
