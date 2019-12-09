@@ -14,6 +14,7 @@ from scipy.special import softmax
 from tensorflow.python.ops.resource_variable_ops import ResourceVariable
 from tensorflow.python.framework.ops import EagerTensor
 from tools.base import INFO, NOTE, ERROR
+from itertools import product
 
 
 def encode_bbox(matches, anchors, variances):
@@ -93,7 +94,7 @@ def decode_landm(landm, anchors, variances):
 class RetinaFaceHelper(BaseHelper):
     def __init__(self, image_ann: str, in_hw: tuple,
                  anchor_widths: list,
-                 feature_maps: list,
+                 anchor_steps: list,
                  pos_thresh: float,
                  variances: float):
         self.train_dataset: tf.data.Dataset = None
@@ -114,8 +115,8 @@ class RetinaFaceHelper(BaseHelper):
         self.val_total_data: int = len(self.val_list)
         self.test_total_data: int = len(self.test_list)
         self.anchor_widths = anchor_widths
-        self.feature_maps = feature_maps
-        self.anchors: tf.Tensor = tf.constant(self._get_anchors(in_hw, anchor_widths, feature_maps), tf.float32)
+        self.anchor_steps = anchor_steps
+        self.anchors: tf.Tensor = tf.constant(self._get_anchors(in_hw, anchor_widths, anchor_steps), tf.float32)
         self.corner_anchors: tf.Tensor = tf.constant(center_to_corner(self.anchors, False), tf.float32)
         self.anchors_num: int = len(self.anchors)
         self.org_in_hw: np.ndarray = np.array(in_hw)
@@ -137,28 +138,24 @@ class RetinaFaceHelper(BaseHelper):
     @staticmethod
     def _get_anchors(in_hw: List[int],
                      anchor_widths: Iterable[Tuple[int, int]],
-                     feature_maps: Iterable[Tuple[int, int]]) -> np.ndarray:
+                     anchor_steps: Iterable[Tuple[int, int]]) -> np.ndarray:
+        feature_maps = [[np.ceil(in_hw[0] / step).astype(np.int), np.ceil(in_hw[1] / step).astype(np.int)] for step in anchor_steps]
+        longside = max(in_hw)
         """ get anchors """
         anchors = []
         for k, f in enumerate(feature_maps):
-            anchor_width = anchor_widths[k]
-            feature = np.empty((f[0], f[1], len(anchor_width), 4))
-            for i in range(f[0]):
-                for j in range(f[1]):
-                    for n, width in enumerate(anchor_width):
-                        s_kx = width
-                        s_ky = width
-                        cx = (j + 0.5) * (1 / f[1])
-                        cy = (i + 0.5) * (1 / f[0])
-                        feature[i, j, n, :] = cx, cy, s_kx, s_ky
-            anchors.append(feature)
+            min_sizes = anchor_widths[k]
+            for i, j in product(range(f[0]), range(f[1])):
+                for min_size in min_sizes:
+                    s_kx = min_size / longside
+                    s_ky = min_size / longside
+                    dense_cx = [x * anchor_steps[k] / in_hw[1] for x in [j + 0.5]]
+                    dense_cy = [y * anchor_steps[k] / in_hw[0] for y in [i + 0.5]]
+                    for cy, cx in product(dense_cy, dense_cx):
+                        anchors += [cx, cy, s_kx, s_ky]
 
-        anchors = np.concatenate([
-            np.reshape(anchors[0], (-1, 4)),
-            np.reshape(anchors[1], (-1, 4)),
-            np.reshape(anchors[2], (-1, 4))], 0)
-
-        return np.clip(anchors, 0, 1).astype('float32')
+        anchors = np.array(anchors).reshape(-1, 4).astype('float32')
+        return anchors
 
     @staticmethod
     def _crop_with_constraints(img: np.ndarray,
@@ -417,13 +414,17 @@ class RetinaFaceHelper(BaseHelper):
 
 
 class RetinaFaceLoss(tf.keras.losses.Loss):
-    def __init__(self, h: RetinaFaceHelper, negpos_ratio=7, reduction='auto', name=None):
+    def __init__(self, h: RetinaFaceHelper, loc_weight=1, landm_weight=1, conf_weight=1,
+                 negpos_ratio=7, reduction='auto', name=None):
         super().__init__(reduction=reduction, name=name)
         """ RetinaFace Loss is from SSD Weighted Loss
             See: https://arxiv.org/pdf/1512.02325.pdf for more details.
         """
         self.negpos_ratio = negpos_ratio
         self.h = h
+        self.loc_weight =   loc_weight
+        self.landm_weight = landm_weight
+        self.conf_weight =  conf_weight
         self.anchors = self.h.anchors
         self.anchors_num = self.h.anchors_num
         self.op_list = []
@@ -488,9 +489,9 @@ class RetinaFaceLoss(tf.keras.losses.Loss):
 
         # Sum of losses: L(x,c,l,g) = (Lconf(x, c) + αLloc(x,l,g)) / num_pos_conf
         num_pos_conf = tf.maximum(tf.reduce_sum(num_pos_conf), 1)  # 正样本个数
-        loss_loc /= num_pos_conf
-        loss_conf /= num_pos_conf
-        loss_landm /= num_pos_landm
+        loss_loc = self.loc_weight * (loss_loc / num_pos_conf)
+        loss_landm = self.landm_weight * (loss_landm / num_pos_landm)
+        loss_conf = self.conf_weight * (loss_conf / num_pos_conf)
         self.op_list.extend([
             self.lookups[0][0].assign(loss_loc),
             self.lookups[1][0].assign(loss_landm),

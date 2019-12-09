@@ -8,29 +8,32 @@ model:
       - 240
       - 320
     anchor_widths: 
-      - - 16
+      - - 10
+        - 16
         - 24
       - - 32
         - 48
       - - 64
         - 96
-      - - 192
+      - - 128
+        - 192
         - 256
     anchor_steps:
       - 8
       - 16
       - 32
+      - 64
     pos_thresh: 0.35
     variances:
       - 0.1
       - 0.2
-  network: retinafacenet_k210_v1
+  network: retinaface_slim
   network_kwarg:
     input_shape:
       - null
       - null
       - 3
-    anchor_num: 2
+    num_classes: 2
   loss: RetinaFaceLoss
   loss_kwarg:
     loc_weight: 1
@@ -52,9 +55,9 @@ train:
   batch_size: 32
   pre_ckpt: null
   rand_seed: 10101
-  epochs: 150
+  epochs: 250
   log_dir: log
-  sub_log_dir: default_retinaface_k210_exp
+  sub_log_dir: default_retinaface_slim_exp
   debug: false
   verbose: 1
   vali_step_factor: 0.5

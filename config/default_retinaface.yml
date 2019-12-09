@@ -8,19 +8,16 @@ model:
       - 640
       - 640
     anchor_widths: 
-      - - 0.025
-        - 0.05
-      - - 0.1
-        - 0.2
-      - - 0.4
-        - 0.8
-    feature_maps:
-      - - 80
-        - 80
-      - - 40
-        - 40
-      - - 20
-        - 20
+      - - 16
+        - 32
+      - - 64
+        - 128
+      - - 256
+        - 512
+    anchor_steps:
+      - 8
+      - 16
+      - 32
     pos_thresh: 0.35
     variances:
       - 0.1
@@ -36,6 +33,9 @@ model:
     alpha: 0.25
   loss: RetinaFaceLoss
   loss_kwarg:
+    loc_weight: 1
+    landm_weight: 2
+    conf_weight: 1
     negpos_ratio: 7
 train:
   graph_optimizer: true
@@ -95,8 +95,8 @@ train:
     #     scale_range: [-3, 5]
     - name: StepLR
       kwarg:
-        steps: [ 50  ,  80    ,  120 ]
-        rates: [0.002, 0.001,  0.0001]
+        steps: [ 20  ,  100 ]
+        rates: [0.0001,0.001]
 prune:
   is_prune: false
   init_sparsity: 0.5

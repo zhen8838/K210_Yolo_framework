@@ -8,7 +8,7 @@ from models.networks4k210 import yolo_mbv1_k210, yolo_mbv2_k210, yolo2_mbv1_k210
     mbv1_triplet_facerec_k210, mbv1_amsoftmax_facerec_k210, mbv1_imgnet_k210, \
     mbv2_imgnet_k210, yoloalgin_mbv1_k210, retinafacenet_k210,\
     retinafacenet_k210_v1, retinafacenet_k210_v2, retinafacenet_k210_v3
-
+from models.retinanet_k210 import retinaface_slim
 import tensorflow as tf
 from tools.custom import StepLR
 from tools.yolo import YOLOHelper, YOLOLoss, yolo_infer, yolo_eval, MultiScaleTrain
@@ -193,6 +193,7 @@ network_register = {
     'retinafacenet_k210_v1': retinafacenet_k210_v1,
     'retinafacenet_k210_v2': retinafacenet_k210_v2,
     'retinafacenet_k210_v3': retinafacenet_k210_v3,
+    'retinaface_slim': retinaface_slim
 }
 
 loss_register = {
