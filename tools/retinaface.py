@@ -140,15 +140,15 @@ class RetinaFaceHelper(BaseHelper):
                      anchor_widths: Iterable[Tuple[int, int]],
                      anchor_steps: Iterable[Tuple[int, int]]) -> np.ndarray:
         feature_maps = [[np.ceil(in_hw[0] / step).astype(np.int), np.ceil(in_hw[1] / step).astype(np.int)] for step in anchor_steps]
-        longside = max(in_hw)
+
         """ get anchors """
         anchors = []
         for k, f in enumerate(feature_maps):
             min_sizes = anchor_widths[k]
             for i, j in product(range(f[0]), range(f[1])):
                 for min_size in min_sizes:
-                    s_kx = min_size / longside
-                    s_ky = min_size / longside
+                    s_kx = min_size / in_hw[1]
+                    s_ky = min_size / in_hw[0]
                     dense_cx = [x * anchor_steps[k] / in_hw[1] for x in [j + 0.5]]
                     dense_cy = [y * anchor_steps[k] / in_hw[0] for y in [i + 0.5]]
                     for cy, cx in product(dense_cy, dense_cx):
@@ -422,9 +422,9 @@ class RetinaFaceLoss(tf.keras.losses.Loss):
         """
         self.negpos_ratio = negpos_ratio
         self.h = h
-        self.loc_weight =   loc_weight
+        self.loc_weight = loc_weight
         self.landm_weight = landm_weight
-        self.conf_weight =  conf_weight
+        self.conf_weight = conf_weight
         self.anchors = self.h.anchors
         self.anchors_num = self.h.anchors_num
         self.op_list = []
