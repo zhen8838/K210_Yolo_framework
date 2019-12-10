@@ -98,8 +98,6 @@ def retinafacenet(input_shape: list, anchor_num: int,
     class_out = [kl.Conv2D(anchor_num * 2, 1, 1)(feat) for feat in features]  # ClassHead
     landm_out = [kl.Conv2D(anchor_num * 10, 1, 1)(feat) for feat in features]  # LandmarkHead
 
-    infer_model = k.Model(inputs, sum([[b, l, c] for b, l, c in zip(bbox_out, landm_out, class_out)], []))
-
     bbox_out = [kl.Reshape((-1, 4))(b) for b in bbox_out]
     landm_out = [kl.Reshape((-1, 10))(b) for b in landm_out]
     class_out = [kl.Reshape((-1, 2))(b) for b in class_out]
@@ -109,6 +107,7 @@ def retinafacenet(input_shape: list, anchor_num: int,
     class_out = kl.Concatenate(1)(class_out)
     out = kl.Concatenate()([bbox_out, landm_out, class_out])
 
+    infer_model = k.Model(inputs, [bbox_out, landm_out, class_out])
     train_model = k.Model(inputs, out)
 
     return infer_model, train_model

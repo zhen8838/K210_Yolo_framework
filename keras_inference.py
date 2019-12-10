@@ -31,7 +31,7 @@ def main(ckpt_path: Path, argmap: dict2obj, images_path: Path, results_path: Pat
     infer_model, train_model = network(**model.network_kwarg)
 
     print(INFO, f'Load CKPT from {str(ckpt_path)}')
-    infer_model.load_weights(str(ckpt_path))
+    infer_model.load_weights(str(ckpt_path), by_name=True)
 
     infer_fn = infer_register[inference.infer_fn]
     infer_fn(images_path, infer_model, results_path, h, **inference.infer_fn_kwarg)

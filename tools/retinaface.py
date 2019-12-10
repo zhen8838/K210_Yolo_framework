@@ -517,18 +517,7 @@ def reverse_ann(bbox: np.ndarray, landm: np.ndarray,
 def parser_outputs(outputs: List[np.ndarray], orig_hws: List[np.ndarray], obj_thresh: float,
                    nms_thresh: float, batch: int, h: RetinaFaceHelper
                    ) -> List[Tuple[np.ndarray, np.ndarray, np.ndarray]]:
-    bbox_outs = []
-    landm_outs = []
-    class_outs = []
-    for b, l, c in zip(outputs[0::3], outputs[1::3], outputs[2::3]):
-        bbox_outs.append(np.reshape(b, (batch, -1, 4)))
-        landm_outs.append(np.reshape(l, (batch, -1, 10)))
-        class_outs.append(np.reshape(c, (batch, -1, 2)))
-
-    bbox_outs = np.concatenate(bbox_outs, 1)
-    landm_outs = np.concatenate(landm_outs, 1)
-    class_outs = np.concatenate(class_outs, 1)
-
+    bbox_outs, landm_outs, class_outs = outputs
     results = []
     for bbox, landm, clses, orig_hw in zip(bbox_outs, landm_outs, class_outs, orig_hws):
         """ softmax class"""

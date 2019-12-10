@@ -104,6 +104,9 @@ prune:
   end_epoch: 5
   frequency: 100
 inference:
-  infer_fn: null
+  infer_fn: retinaface_infer
+  infer_fn_kwarg:
+    obj_thresh: 0.6
+    nms_thresh: 0.5
 evaluate:
   eval_fn: null
