@@ -98,15 +98,15 @@ def retinaface_slim(input_shape: list, num_classes=2) -> k.Model:
     landm_layers = [depth_conv2d(3 * 10, 3, padding='same'),
                     depth_conv2d(2 * 10, 3, padding='same'),
                     depth_conv2d(2 * 10, 3, padding='same'),
-                    kl.Conv2D(3 * 10, kernel_size=3, padding='same')]
+                    kl.Conv2D(3 * 10, 3, padding='same')]
     detections = [x8, x11, x13, x14]
     loc = []
     conf = []
     landm = []
     for (x, l, lam, c) in zip(detections, loc_layers, landm_layers, conf_layers):
         loc.append(l(x))
-        conf.append(c(x))
         landm.append(lam(x))
+        conf.append(c(x))
 
     bbox_regressions = kl.Concatenate(1)([kl.Reshape((-1, 4))(o) for o in loc])
     ldm_regressions = kl.Concatenate(1)([kl.Reshape((-1, 10))(o) for o in landm])

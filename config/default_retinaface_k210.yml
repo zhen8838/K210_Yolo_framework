@@ -8,12 +8,10 @@ model:
       - 240
       - 320
     anchor_widths: 
-      - - 16
-        - 24
-      - - 32
+      - - 24
         - 48
-      - - 64
-        - 96
+      - - 96
+        - 128
       - - 192
         - 256
     anchor_steps:
@@ -52,7 +50,7 @@ train:
   batch_size: 32
   pre_ckpt: null
   rand_seed: 10101
-  epochs: 150
+  epochs: 250
   log_dir: log
   sub_log_dir: default_retinaface_k210_exp
   debug: false
@@ -64,7 +62,7 @@ train:
     beta_1: 0.9
     beta_2: 0.999
     amsgrad: false
-  Lookahead: true
+  Lookahead: false
   Lookahead_kwarg:
     k: 5
     alpha: 0.5
@@ -95,8 +93,8 @@ train:
     #     scale_range: [-3, 5]
     - name: StepLR
       kwarg:
-        steps: [ 20  ,  100 ]
-        rates: [0.0001,0.001]
+        steps: [   10  , 190 , 220  ,  250  ]
+        rates: [0.00001,0.001,0.0001,0.00001]
 prune:
   is_prune: false
   init_sparsity: 0.5

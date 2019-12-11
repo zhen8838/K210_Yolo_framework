@@ -170,10 +170,12 @@ class RetinaFaceHelper(BaseHelper):
         in_h, in_w = in_hw
 
         for _ in range(250):
-            scale = random.choice([0.3, 0.45, 0.6, 0.8, 1.0])
-            # short_side = min(im_w, im_h)
-            new_w = int(scale * im_w)
-            new_h = int(scale * im_h)
+            if np.random.uniform(0, 1) <= 0.2:
+                scale = 1.0
+            else:
+                scale = np.random.uniform(0.3, 1.0)
+            new_w = int(scale * min(im_w, im_h))
+            new_h = int(new_w * in_hw[0] / in_hw[1])
 
             if im_w == new_w:
                 l = 0

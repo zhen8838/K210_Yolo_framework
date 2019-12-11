@@ -5,8 +5,8 @@ model:
   helper_kwarg:
     image_ann: data/retinaface_img_ann.npy
     in_hw: 
-      - 240
-      - 320
+      - 300
+      - 300
     anchor_widths: 
       - - 10
         - 16
@@ -67,7 +67,7 @@ train:
     beta_1: 0.9
     beta_2: 0.999
     amsgrad: false
-  Lookahead: true
+  Lookahead: false
   Lookahead_kwarg:
     k: 5
     alpha: 0.5
@@ -98,8 +98,8 @@ train:
     #     scale_range: [-3, 5]
     - name: StepLR
       kwarg:
-        steps: [ 20  ,  100 ]
-        rates: [0.0001,0.001]
+        steps: [   10  , 190 , 220  ,  250  ]
+        rates: [0.00001,0.001,0.0001,0.00001]
 prune:
   is_prune: false
   init_sparsity: 0.5
