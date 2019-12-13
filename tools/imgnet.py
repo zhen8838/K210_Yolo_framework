@@ -49,7 +49,7 @@ class ImgnetHelper(BaseHelper):
         return tf.image.decode_jpeg(tf.io.read_file(img_path), 3)
 
     def resize_img(self, img: tf.Tensor, ann: tf.Tensor) -> [tf.Tensor, tf.Tensor]:
-        img = tf.image.resize_image_with_pad(img, self.in_hw[0], self.in_hw[1])
+        img = tf.image.resize_with_pad(img, self.in_hw[0], self.in_hw[1])
         return img, ann
 
     def augment_img(self, img: tf.Tensor, ann: tf.Tensor) -> [tf.Tensor, tf.Tensor]:

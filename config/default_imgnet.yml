@@ -1,0 +1,88 @@
+mode: train
+model:
+  name: imagenet
+  helper: ImgnetHelper
+  helper_kwarg:
+    image_ann: data/imgnet_img_ann.npy
+    class_num: 1000
+    in_hw:
+      - 224
+      - 224
+  network: mbv1_imgnet
+  network_kwarg:
+    input_shape:
+      - 224
+      - 224
+      - 3
+    class_num: 1000
+    depth_multiplier: 1.0
+  loss: ClassifyLoss
+  loss_kwarg:
+    from_logits: false
+    label_smoothing: 0
+train:
+  graph_optimizer: true
+  graph_optimizer_kwarg: 
+    layout_optimizer: true
+    remapping: true
+    shape_optimization: true
+    loop_optimization: true
+    constant_folding: true
+    function_optimization: true
+    scoped_allocator_optimization: true
+    layout_optimizer: true
+  augmenter: false
+  batch_size: 32
+  pre_ckpt: null
+  rand_seed: 10101
+  epochs: 100
+  log_dir: log
+  sub_log_dir: imgnet_exp
+  debug: false
+  verbose: 1
+  vali_step_factor: 0.5
+  optimizer: Adam
+  optimizer_kwarg:
+    learning_rate: 0.001
+    beta_1: 0.9
+    beta_2: 0.999
+    amsgrad: false
+  Lookahead: true
+  Lookahead_kwarg:
+    k: 5
+    alpha: 0.5
+  callbacks:
+    # - name: EarlyStopping
+    #   kwarg:
+    #     monitor: val_loss
+    #     min_delta: 0
+    #     patience: 4
+    #     verbose: 0
+    #     mode: auto
+    #     baseline: null
+    #     restore_best_weights: false
+    - name: ModelCheckpoint
+      kwarg:
+        monitor: val_loss
+        verbose: 0
+        save_best_only: true
+        save_weights_only: false
+        mode: auto
+        save_freq: epoch
+        load_weights_on_restart: false
+    - name: TerminateOnNaN
+      kwarg: null
+    - name: StepLR
+      kwarg:
+        steps: [ 50  ,  80    ,  120   ]
+        rates: [0.0001, 0.0004,  0.0001]
+prune:
+  is_prune: false
+  init_sparsity: 0.5
+  final_sparsity: 0.9
+  end_epoch: 5
+  frequency: 100
+inference:
+  infer_fn: null
+evaluate:
+  eval_fn: null
