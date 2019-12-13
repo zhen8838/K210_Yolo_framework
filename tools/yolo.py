@@ -818,7 +818,7 @@ class MultiScaleTrain(Callback):
             K.set_value(self.h.out_hw, self.h.org_out_hw)
 
 
-class YOLO_Loss(Loss):
+class YOLOLoss(Loss):
     def __init__(self, h: YOLOHelper, iou_thresh: float, obj_thresh: float,
                  obj_weight: float, noobj_weight: float, wh_weight: float,
                  xy_weight: float, cls_weight: float, layer: int, verbose=1,
