@@ -29,6 +29,7 @@ model:
   loss: YOLOLoss
   loss_kwarg:
     iou_thresh: 0.5
+    obj_thresh: 0.7
     obj_weight: 1
     noobj_weight: 1
     wh_weight: 3
