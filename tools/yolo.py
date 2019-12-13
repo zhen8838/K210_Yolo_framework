@@ -915,7 +915,7 @@ class MultiScaleTrain(Callback):
 
 
 class YOLO_Loss(Loss):
-    def __init__(self, h: YOLOHelper, iou_thresh: float,
+    def __init__(self, h: YOLOHelper, iou_thresh: float, obj_thresh: float,
                  obj_weight: float, noobj_weight: float, wh_weight: float,
                  xy_weight: float, cls_weight: float, layer: int, verbose=1,
                  reduction=losses_utils.ReductionV2.AUTO, name=None):
@@ -940,6 +940,7 @@ class YOLO_Loss(Loss):
         super().__init__(reduction=reduction, name=name)
         self.h = h
         self.iou_thresh = iou_thresh
+        self.obj_thresh = obj_thresh
         self.obj_weight = obj_weight
         self.noobj_weight = noobj_weight
         self.wh_weight = wh_weight
@@ -951,17 +952,17 @@ class YOLO_Loss(Loss):
         self.op_list = []
         with tf.compat.v1.variable_scope(f'lookups_{self.layer}',
                                          reuse=tf.compat.v1.AUTO_REUSE):
-            self.r50: ResourceVariable = tf.compat.v1.get_variable(
-                'r50', (), tf.float32,
+            self.tp50: ResourceVariable = tf.compat.v1.get_variable(
+                'tp50', (), tf.float32,
                 tf.zeros_initializer(),
                 trainable=False)
 
-            self.r75: ResourceVariable = tf.compat.v1.get_variable(
-                'r75', (), tf.float32,
+            self.tp75: ResourceVariable = tf.compat.v1.get_variable(
+                'tp75', (), tf.float32,
                 tf.zeros_initializer(),
                 trainable=False)
 
-            names = ['r50', 'r75']
+            names = ['r50', 'r75', 'p50', 'p75']
             self.lookups: Iterable[Tuple[ResourceVariable, AnyStr]] = [
                 (tf.compat.v1.get_variable(name, (), tf.float32,
                                            tf.zeros_initializer(),
@@ -980,7 +981,8 @@ class YOLO_Loss(Loss):
                      name)
                     for name in names])
 
-    def calc_xy_offset(self, out_hw: tf.Tensor, feature: tf.Tensor) -> [tf.Tensor, tf.Tensor]:
+    @staticmethod
+    def calc_xy_offset(out_hw: tf.Tensor, feature: tf.Tensor) -> [tf.Tensor, tf.Tensor]:
         """ for dynamic sacle get xy offset tensor for loss calc
 
         Parameters
@@ -1130,23 +1132,43 @@ class YOLO_Loss(Loss):
         obj_cnt = tf.reduce_sum(obj_mask)
 
         def lmba(bc):
-            # bc=1
             # NOTE use location_mask find all ground truth
             gt_xy = tf.boolean_mask(all_true_xy[bc], location_mask[bc])
             gt_wh = tf.boolean_mask(all_true_wh[bc], location_mask[bc])
             iou_score = self.iou(pred_xy[bc], pred_wh[bc], gt_xy, gt_wh)  # [h,w,anchor,box_num]
-            # NOTE this layer gt and pred iou score
-            mask_iou_score = tf.reduce_max(tf.boolean_mask(iou_score, obj_mask_bool[bc]), -1)
+            # NOTE find this layer gt and pred iou score
+            idx = tf.where(tf.boolean_mask(obj_mask_bool[bc], location_mask[bc]))
+            mask_iou_score = tf.gather_nd(tf.boolean_mask(iou_score, obj_mask_bool[bc]), idx, 1)
 
             with tf.control_dependencies(
-                    [self.r50.assign_add(tf.reduce_sum(tf.cast(mask_iou_score > .5, tf.float32))),
-                     self.r75.assign_add(tf.reduce_sum(tf.cast(mask_iou_score > .75, tf.float32)))]):
+                    [self.tp50.assign_add(tf.reduce_sum(tf.cast(mask_iou_score > 0.5, tf.float32))),
+                     self.tp75.assign_add(tf.reduce_sum(tf.cast(mask_iou_score > 0.75, tf.float32)))]):
+                layer_iou_score = tf.squeeze(tf.gather(iou_score, idx, axis=-1), -1)
+                layer_match50 = tf.reduce_sum(tf.cast(layer_iou_score > 0.5, tf.float32),
+                                              -1, keepdims=True)
+                layer_match75 = tf.reduce_sum(tf.cast(layer_iou_score > 0.75, tf.float32),
+                                              -1, keepdims=True)
                 # if iou for any ground truth larger than iou_thresh, the pred is true.
                 match_num = tf.reduce_sum(tf.cast(iou_score > self.iou_thresh, tf.float32),
                                           -1, keepdims=True)
-            return tf.cast(match_num < 1, tf.float32)
+            return (tf.cast(tf.less(match_num, 1), tf.float32),
+                    tf.cast(tf.less(layer_match50, 1), tf.float32),
+                    tf.cast(tf.less(layer_match75, 1), tf.float32))
 
-        ignore_mask = tf.map_fn(lmba, tf.range(self.h.batch_size), dtype=tf.float32)
+        ignore_mask, layer_ignore_mask50, layer_ignore_mask75 = tf.map_fn(lmba, tf.range(self.h.batch_size), dtype=(tf.float32, tf.float32, tf.float32))
+        """ calc recall precision """
+        pred_confidence_sigmod = tf.sigmoid(pred_confidence)
+        fp50 = tf.reduce_sum((tf.cast(pred_confidence_sigmod > self.obj_thresh, tf.float32) * layer_ignore_mask50) * (1 - obj_mask))
+        fp75 = tf.reduce_sum((tf.cast(pred_confidence_sigmod > self.obj_thresh, tf.float32) * layer_ignore_mask75) * (1 - obj_mask))
+
+        fn50 = tf.reduce_sum((tf.cast(pred_confidence_sigmod < self.obj_thresh, tf.float32) + layer_ignore_mask50) * obj_mask)
+        fn75 = tf.reduce_sum((tf.cast(pred_confidence_sigmod < self.obj_thresh, tf.float32) + layer_ignore_mask75) * obj_mask)
+
+        precision50 = tf.math.divide_no_nan(self.tp50, (self.tp50 + fp50))
+        precision75 = tf.math.divide_no_nan(self.tp75, (self.tp75 + fp75))
+
+        recall50 = tf.math.divide_no_nan(self.tp50, (self.tp50 + fn50))
+        recall75 = tf.math.divide_no_nan(self.tp75, (self.tp75 + fn75))
 
         """ calc the loss dynamic weight """
         grid_true_xy, grid_true_wh = self.xywh_to_grid(all_true_xy, all_true_wh,
@@ -1179,17 +1201,19 @@ class YOLO_Loss(Loss):
 
         """ sum loss """
         self.op_list.extend([
-            self.lookups[0][0].assign(tf.math.divide_no_nan(self.r50, obj_cnt)),
-            self.lookups[1][0].assign(tf.math.divide_no_nan(self.r75, obj_cnt)),
-            self.r50.assign(0),
-            self.r75.assign(0)
+            self.lookups[0][0].assign(recall50),
+            self.lookups[1][0].assign(recall75),
+            self.lookups[2][0].assign(precision50),
+            self.lookups[3][0].assign(precision75),
+            self.tp50.assign(0),
+            self.tp75.assign(0)
         ])
         if self.verbose == 2:
-            self.op_list.extend([self.lookups[2][0].assign(tf.reduce_mean(xy_loss)),
-                                 self.lookups[3][0].assign(tf.reduce_mean(wh_loss)),
-                                 self.lookups[4][0].assign(tf.reduce_mean(obj_loss)),
-                                 self.lookups[5][0].assign(tf.reduce_mean(noobj_loss)),
-                                 self.lookups[6][0].assign(tf.reduce_mean(cls_loss))])
+            self.op_list.extend([self.lookups[4][0].assign(tf.reduce_mean(xy_loss)),
+                                 self.lookups[5][0].assign(tf.reduce_mean(wh_loss)),
+                                 self.lookups[6][0].assign(tf.reduce_mean(obj_loss)),
+                                 self.lookups[7][0].assign(tf.reduce_mean(noobj_loss)),
+                                 self.lookups[8][0].assign(tf.reduce_mean(cls_loss))])
 
         with tf.control_dependencies(self.op_list):
             total_loss = obj_loss + noobj_loss + cls_loss + xy_loss + wh_loss
