@@ -50,7 +50,7 @@ def tf_encode_bbox(matches: tf.Tensor, anchors: tf.Tensor, variances) -> tf.Tens
     return tf.concat([g_cxcy, g_wh], 1)  # [num_priors,4]
 
 
-def tf_encode_landm(matches: tf.Tensor, anchors: tf.Tensor, variances) -> tf.Tensor:
+def tf_encode_landm(matches: tf.Tensor, anchors: tf.Tensor, variances: np.ndarray) -> tf.Tensor:
     matches = tf.reshape(matches, (-1, 5, 2))
     anchors = tf.concat([tf.tile(anchors[:, 0:1, None], [1, 5, 1]),
                          tf.tile(anchors[:, 1:2, None], [1, 5, 1]),
@@ -65,7 +65,7 @@ def tf_encode_landm(matches: tf.Tensor, anchors: tf.Tensor, variances) -> tf.Ten
     return g_cxcy
 
 
-def decode_bbox(bbox, anchors, variances):
+def decode_bbox(bbox: np.ndarray, anchors: np.ndarray, variances: np.ndarray) -> np.ndarray:
     """Decode locations from predictions using anchors to undo
     the encoding we did for offset regression at train time.
     """
@@ -78,7 +78,7 @@ def decode_bbox(bbox, anchors, variances):
     return boxes
 
 
-def decode_landm(landm, anchors, variances):
+def decode_landm(landm: np.ndarray, anchors: np.ndarray, variances: np.ndarray) -> np.ndarray:
     """Decode landm from predictions using anchors to undo
     the encoding we did for offset regression at train time.
     """
@@ -527,10 +527,10 @@ def parser_outputs(outputs: List[np.ndarray], orig_hws: List[np.ndarray], obj_th
         score = clses[:, 1]
         """ decode """
         bbox = decode_bbox(bbox, h.anchors, h.variances)
-        bbox = bbox * np.repeat(h.org_in_hw[::-1], 2)
+        bbox = bbox * np.tile(h.org_in_hw[::-1], [2])
         """ landmark """
         landm = decode_landm(landm, h.anchors, h.variances)
-        landm = landm * np.repeat(h.org_in_hw[::-1], 5)
+        landm = landm * np.tile(h.org_in_hw[::-1], [5])
         """ filter low score """
         inds = np.where(score > obj_thresh)[0]
         bbox = bbox[inds]

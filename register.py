@@ -1,14 +1,13 @@
 from models.networks import mbv1_softmax_facerec, mbv1_triplet_facerec,\
     mbv1_amsoftmax_facerec, mbv2_ctdet, yolo, tiny_yolo, pfld,\
     shuffle_ctdet, yolo3_nano, yolo_mbv1, mbv1_imgnet, mbv2_imgnet,\
-    retinafacenet
+    retinafacenet, retinaface_slim, retinaface_rfb
 from models.receptivefieldnet import rffacedetnet
 from models.networks4k210 import yolo_mbv1_k210, yolo_mbv2_k210, yolo2_mbv1_k210,\
     yolov2algin_mbv1_k210, pfld_k210, mbv1_softmax_facerec_k210, \
     mbv1_triplet_facerec_k210, mbv1_amsoftmax_facerec_k210, mbv1_imgnet_k210, \
     mbv2_imgnet_k210, yoloalgin_mbv1_k210, retinafacenet_k210,\
     retinafacenet_k210_v1, retinafacenet_k210_v2, retinafacenet_k210_v3
-from models.retinanet_k210 import retinaface_slim
 import tensorflow as tf
 from tools.custom import StepLR
 from tools.yolo import YOLOHelper, YOLOLoss, yolo_infer, yolo_eval, MultiScaleTrain

@@ -5,7 +5,8 @@ import tensorflow.python.keras.layers as kl
 from models.keras_mobilenet_v2 import MobileNetV2
 from models.keras_mobilenet import MobileNet
 from models.darknet import darknet_body, DarknetConv2D, DarknetConv2D_BN_Leaky, compose, resblock_body
-from models.retinanet import UltraLightFastGenericFaceBaseNet, SeperableConv2d, Conv2D_BN_Relu, SSH, Conv2D_BN
+from models.ultralffdnet import UltraLightFastGenericFaceBaseNet, SeperableConv2d
+from models.retinanet import SSH, Conv2D_BN_Relu
 from toolz import pipe
 
 
@@ -721,7 +722,7 @@ def retinafacenet_k210(input_shape: list, anchor_num=2,
     landm_out = kl.Concatenate(1)(landm_out)
     class_out = kl.Concatenate(1)(class_out)
     out = kl.Concatenate()([bbox_out, landm_out, class_out])
-    
+
     infer_model = k.Model(inputs, [bbox_out, landm_out, class_out])
     train_model = k.Model(inputs, out)
 

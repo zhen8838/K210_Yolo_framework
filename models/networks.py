@@ -9,7 +9,7 @@ from models.darknet import DarknetConv2D, darknet_body, DarknetConv2D_BN_Leaky, 
     make_last_layers, make_last_layers_mobilenet, MobilenetConv2D
 from models.shufflenet import conv_bn_relu, shufflenet_block, deconv_bn_relu
 from models.yolo_nano import yolo3_nano
-from models.retinanet import retinafacenet
+from models.retinanet import retinafacenet, retinaface_rfb, retinaface_slim
 
 
 def pfld(input_shape: list, landmark_num: int, alpha=1., weight_decay=5e-5) -> [k.Model, k.Model]:
