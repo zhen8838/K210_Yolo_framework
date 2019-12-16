@@ -8,6 +8,7 @@ from models.darknet import darknet_body, DarknetConv2D, DarknetConv2D_BN_Leaky, 
 from models.ultralffdnet import UltraLightFastGenericFaceBaseNet, SeperableConv2d
 from models.retinanet import SSH, Conv2D_BN_Relu
 from toolz import pipe
+from typing import List, Tuple
 
 
 def yolo_mbv1_k210(input_shape: list, anchor_num: int, class_num: int, alpha: float) -> [k.Model, k.Model]:
@@ -539,6 +540,7 @@ def mbv1_triplet_facerec_k210(input_shape: list, embedding_size: int,
 
     base_model = MobileNet(input_tensor=in_a, input_shape=input_shape,
                            include_top=False, alpha=depth_multiplier)  # type: keras.Model
+
     if depth_multiplier == .25:
         base_model.load_weights('data/mobilenet_v1_base_2.h5')
     elif depth_multiplier == .5:
@@ -699,7 +701,7 @@ def mbv2_imgnet_k210(input_shape: list, class_num: int,
     return model, model
 
 
-def retinafacenet_k210(input_shape: list, anchor_num=2,
+def retinafacenet_k210(input_shape: list, anchor: List[Tuple],
                        branch_index=[7, 10, 12],
                        base_filters=16) -> k.Model:
     inputs = k.Input(input_shape)
@@ -710,9 +712,9 @@ def retinafacenet_k210(input_shape: list, anchor_num=2,
         # round(in_hw / 8),round(in_hw / 16),round(in_hw / 32)
         features.append(base_model.get_layer(f'conv_dw_{index}_relu_2').output)
 
-    bbox_out = [SeperableConv2d(anchor_num * 4, 3, padding='same')(feat) for feat in features]  # BboxHead
-    class_out = [SeperableConv2d(anchor_num * 2, 3, padding='same')(feat) for feat in features]  # ClassHead
-    landm_out = [SeperableConv2d(anchor_num * 10, 3, padding='same')(feat) for feat in features]  # LandmarkHead
+    bbox_out = [SeperableConv2d(len(anchor[i]) * 4, 3, padding='same')(feat) for (i, feat) in enumerate(features)]  # BboxHead
+    class_out = [SeperableConv2d(len(anchor[i]) * 2, 3, padding='same')(feat) for (i, feat) in enumerate(features)]  # ClassHead
+    landm_out = [SeperableConv2d(len(anchor[i]) * 10, 3, padding='same')(feat) for (i, feat) in enumerate(features)]  # LandmarkHead
 
     bbox_out = [kl.Reshape((-1, 4))(b) for b in bbox_out]
     landm_out = [kl.Reshape((-1, 10))(b) for b in landm_out]
@@ -729,7 +731,7 @@ def retinafacenet_k210(input_shape: list, anchor_num=2,
     return infer_model, train_model
 
 
-def retinafacenet_k210_v1(input_shape: list, anchor_num=2,
+def retinafacenet_k210_v1(input_shape: list, anchor: List[Tuple],
                           branch_index=[7, 10, 12],
                           base_filters=16) -> k.Model:
     """ Use SSH block """
@@ -744,9 +746,9 @@ def retinafacenet_k210_v1(input_shape: list, anchor_num=2,
     """ SSH block """
     features = [SSH(feat, base_filters * 4, depth=2) for feat in features]
 
-    bbox_out = [kl.Conv2D(anchor_num * 4, 1, 1)(feat) for feat in features]  # BboxHead
-    class_out = [kl.Conv2D(anchor_num * 2, 1, 1)(feat) for feat in features]  # ClassHead
-    landm_out = [kl.Conv2D(anchor_num * 10, 1, 1)(feat) for feat in features]  # LandmarkHead
+    bbox_out = [kl.Conv2D(len(anchor[i]) * 4, 1, 1)(feat) for (i, feat) in enumerate(features)]  # BboxHead
+    class_out = [kl.Conv2D(len(anchor[i]) * 2, 1, 1)(feat) for (i, feat) in enumerate(features)]  # ClassHead
+    landm_out = [kl.Conv2D(len(anchor[i]) * 10, 1, 1)(feat) for (i, feat) in enumerate(features)]  # LandmarkHead
 
     bbox_out = [kl.Reshape((-1, 4))(b) for b in bbox_out]
     landm_out = [kl.Reshape((-1, 10))(b) for b in landm_out]
@@ -763,7 +765,7 @@ def retinafacenet_k210_v1(input_shape: list, anchor_num=2,
     return infer_model, train_model
 
 
-def retinafacenet_k210_v2(input_shape: list, anchor_num=2,
+def retinafacenet_k210_v2(input_shape: list, anchor: List[Tuple],
                           branch_index=[7, 10, 12],
                           base_filters=16) -> k.Model:
     """ Add FPN block for feature merge
@@ -781,9 +783,9 @@ def retinafacenet_k210_v2(input_shape: list, anchor_num=2,
     up2 = kl.UpSampling2D()(Conv2D_BN_Relu(base_filters, 1, 1)(features[1]))
     features[0] = kl.Concatenate(channel_axis)([features[0], up2])
 
-    bbox_out = [SeperableConv2d(anchor_num * 4, 3, padding='same')(feat) for feat in features]  # BboxHead
-    class_out = [SeperableConv2d(anchor_num * 2, 3, padding='same')(feat) for feat in features]  # ClassHead
-    landm_out = [SeperableConv2d(anchor_num * 10, 3, padding='same')(feat) for feat in features]  # LandmarkHead
+    bbox_out = [SeperableConv2d(len(anchor[i]) * 4, 3, padding='same')(feat) for (i, feat) in enumerate(features)]  # BboxHead
+    class_out = [SeperableConv2d(len(anchor[i]) * 2, 3, padding='same')(feat) for (i, feat) in enumerate(features)]  # ClassHead
+    landm_out = [SeperableConv2d(len(anchor[i]) * 10, 3, padding='same')(feat) for (i, feat) in enumerate(features)]  # LandmarkHead
 
     bbox_out = [kl.Reshape((-1, 4))(b) for b in bbox_out]
     landm_out = [kl.Reshape((-1, 10))(b) for b in landm_out]
@@ -800,7 +802,7 @@ def retinafacenet_k210_v2(input_shape: list, anchor_num=2,
     return infer_model, train_model
 
 
-def retinafacenet_k210_v3(input_shape: list, anchor_num=2,
+def retinafacenet_k210_v3(input_shape: list, anchor: List[Tuple],
                           branch_index=[7, 10, 12],
                           base_filters=16) -> k.Model:
     """ 1.  Add FPN block for feature merge
@@ -821,9 +823,9 @@ def retinafacenet_k210_v3(input_shape: list, anchor_num=2,
     """ SSH block """
     features = [SSH(feat, base_filters * 4, depth=2) for feat in features]
 
-    bbox_out = [kl.Conv2D(anchor_num * 4, 1, 1)(feat) for feat in features]  # BboxHead
-    class_out = [kl.Conv2D(anchor_num * 2, 1, 1)(feat) for feat in features]  # ClassHead
-    landm_out = [kl.Conv2D(anchor_num * 10, 1, 1)(feat) for feat in features]  # LandmarkHead
+    bbox_out = [kl.Conv2D(len(anchor[i]) * 4, 1, 1)(feat) for (i, feat) in enumerate(features)]  # BboxHead
+    class_out = [kl.Conv2D(len(anchor[i]) * 2, 1, 1)(feat) for (i, feat) in enumerate(features)]  # ClassHead
+    landm_out = [kl.Conv2D(len(anchor[i]) * 10, 1, 1)(feat) for (i, feat) in enumerate(features)]  # LandmarkHead
 
     bbox_out = [kl.Reshape((-1, 4))(b) for b in bbox_out]
     landm_out = [kl.Reshape((-1, 10))(b) for b in landm_out]

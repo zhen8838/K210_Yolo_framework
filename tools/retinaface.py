@@ -20,7 +20,7 @@ from itertools import product
 def encode_bbox(matches, anchors, variances):
     g_cxcy = (matches[:, :2] + matches[:, 2:]) / 2 - anchors[:, :2]
     g_cxcy /= (variances[0] * anchors[:, 2:])
-    g_wh = (np.clip(matches[:, 2:] - matches[:, :2], 1e-6, 0.999999)) / anchors[:, 2:]
+    g_wh = (matches[:, 2:] - matches[:, :2]) / anchors[:, 2:]
     g_wh = np.log(g_wh) / variances[1]
     # return target for smooth_l1_loss
     return np.concatenate([g_cxcy, g_wh], 1)  # [num_priors,4]
@@ -147,8 +147,8 @@ class RetinaFaceHelper(BaseHelper):
             min_sizes = anchor_widths[k]
             for i, j in product(range(f[0]), range(f[1])):
                 for min_size in min_sizes:
-                    s_kx = min_size / in_hw[1]
-                    s_ky = min_size / in_hw[0]
+                    s_kx = min_size[1] / in_hw[1]
+                    s_ky = min_size[0] / in_hw[0]
                     dense_cx = [x * anchor_steps[k] / in_hw[1] for x in [j + 0.5]]
                     dense_cy = [y * anchor_steps[k] / in_hw[0] for y in [i + 0.5]]
                     for cy, cx in product(dense_cy, dense_cx):
@@ -214,10 +214,10 @@ class RetinaFaceHelper(BaseHelper):
             landm_t[:, :, :2] = np.minimum(landm_t[:, :, :2], roi[2:] - roi[:2])
             landm_t = landm_t.reshape([-1, 10])
 
-            # make sure that the cropped img contains at least one face > 16 pixel at training image scale
+            # make sure that the cropped img contains at least one face > 6 pixel at training image scale
             b_w_t = (bbox_t[:, 2] - bbox_t[:, 0] + 1) / new_w * in_w
             b_h_t = (bbox_t[:, 3] - bbox_t[:, 1] + 1) / new_h * in_h
-            mask_b = np.minimum(b_w_t, b_h_t) > 0.0
+            mask_b = np.minimum(b_w_t, b_h_t) > (6 / min(in_w, in_h))
             bbox_t = bbox_t[mask_b]
             clses_t = clses_t[mask_b]
             landm_t = landm_t[mask_b]
@@ -543,7 +543,6 @@ def parser_outputs(outputs: List[np.ndarray], orig_hws: List[np.ndarray], obj_th
         score = score[order]
         """ do nms """
         keep = nms_oneclass(bbox, score, nms_thresh)
-
         bbox = bbox[keep]
         landm = landm[keep]
         score = score[keep]

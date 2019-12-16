@@ -1,6 +1,6 @@
 import tensorflow as tf
 from models.darknet import compose, DarknetConv2D
-from typing import List, Callable
+from typing import List, Callable, Tuple
 k = tf.keras
 kl = tf.keras.layers
 K = tf.keras.backend
@@ -79,7 +79,7 @@ def FPN(inputs: List[tf.Tensor], filters: int) -> List[tf.Tensor]:
     return [out1, out2, out3]
 
 
-def retinafacenet(input_shape: list, anchor_num: int,
+def retinafacenet(input_shape: list, anchor: List[List],
                   filters: int, alpha=0.25) -> [k.Model, k.Model]:
     inputs = k.Input(input_shape)
     model: k.Model = k.applications.MobileNet(
@@ -95,9 +95,9 @@ def retinafacenet(input_shape: list, anchor_num: int,
     features = [SSH(fpn[0], filters), SSH(fpn[1], filters), SSH(fpn[2], filters)]
     """ head """
 
-    bbox_out = [kl.Conv2D(anchor_num * 4, 1, 1)(feat) for feat in features]  # BboxHead
-    class_out = [kl.Conv2D(anchor_num * 2, 1, 1)(feat) for feat in features]  # ClassHead
-    landm_out = [kl.Conv2D(anchor_num * 10, 1, 1)(feat) for feat in features]  # LandmarkHead
+    bbox_out = [kl.Conv2D(len(anchor[i]) * 4, 1, 1)(feat) for (i, feat) in enumerate(features)]  # BboxHead
+    class_out = [kl.Conv2D(len(anchor[i]) * 2, 1, 1)(feat) for (i, feat) in enumerate(features)]  # ClassHead
+    landm_out = [kl.Conv2D(len(anchor[i]) * 10, 1, 1)(feat) for (i, feat) in enumerate(features)]  # LandmarkHead
 
     bbox_out = [kl.Reshape((-1, 4))(b) for b in bbox_out]
     landm_out = [kl.Reshape((-1, 10))(b) for b in landm_out]
@@ -173,7 +173,7 @@ def conv_dw(filters, strides):
         )
 
 
-def retinaface_slim(input_shape: list, num_classes=2, anchor_num=[3, 2, 2, 3]) -> k.Model:
+def retinaface_slim(input_shape: list, num_classes: int, anchor: List[Tuple]) -> k.Model:
     inputs = k.Input(input_shape)
 
     x1 = conv_bn(16, 2)(inputs)
@@ -194,20 +194,20 @@ def retinaface_slim(input_shape: list, num_classes=2, anchor_num=[3, 2, 2, 3]) -
                   depth_conv2d(256, 3, 2, 'same'),
                   kl.ReLU())(x13)
 
-    loc_layers = [depth_conv2d(anchor_num[0] * 4, 3, padding='same'),
-                  depth_conv2d(anchor_num[1] * 4, 3, padding='same'),
-                  depth_conv2d(anchor_num[2] * 4, 3, padding='same'),
-                  kl.Conv2D(anchor_num[3] * 4, 3, padding='same')]
+    loc_layers = [depth_conv2d(len(anchor[0]) * 4, 3, padding='same'),
+                  depth_conv2d(len(anchor[1]) * 4, 3, padding='same'),
+                  depth_conv2d(len(anchor[2]) * 4, 3, padding='same'),
+                  kl.Conv2D(len(anchor[3]) * 4, 3, padding='same')]
 
-    conf_layers = [depth_conv2d(anchor_num[0] * num_classes, 3, padding='same'),
-                   depth_conv2d(anchor_num[1] * num_classes, 3, padding='same'),
-                   depth_conv2d(anchor_num[2] * num_classes, 3, padding='same'),
-                   kl.Conv2D(anchor_num[3] * num_classes, 3, padding='same')]
+    conf_layers = [depth_conv2d(len(anchor[0]) * num_classes, 3, padding='same'),
+                   depth_conv2d(len(anchor[1]) * num_classes, 3, padding='same'),
+                   depth_conv2d(len(anchor[2]) * num_classes, 3, padding='same'),
+                   kl.Conv2D(len(anchor[3]) * num_classes, 3, padding='same')]
 
-    landm_layers = [depth_conv2d(anchor_num[0] * 10, 3, padding='same'),
-                    depth_conv2d(anchor_num[1] * 10, 3, padding='same'),
-                    depth_conv2d(anchor_num[2] * 10, 3, padding='same'),
-                    kl.Conv2D(anchor_num[3] * 10, 3, padding='same')]
+    landm_layers = [depth_conv2d(len(anchor[0]) * 10, 3, padding='same'),
+                    depth_conv2d(len(anchor[1]) * 10, 3, padding='same'),
+                    depth_conv2d(len(anchor[2]) * 10, 3, padding='same'),
+                    kl.Conv2D(len(anchor[3]) * 10, 3, padding='same')]
     detections = [x8, x11, x13, x14]
     loc = []
     conf = []
@@ -273,8 +273,9 @@ class basicrfb(object):
         return out
 
 
-def retinaface_rfb(input_shape: list, num_classes=2) -> k.Model:
+def retinaface_rfb(input_shape: list, num_classes: int, anchor: List[Tuple]) -> k.Model:
     inputs = k.Input(input_shape)
+
     x1 = conv_bn(16, 2)(inputs)
     x2 = conv_dw(32, 1)(x1)
     x3 = conv_dw(32, 2)(x2)
@@ -294,20 +295,20 @@ def retinaface_rfb(input_shape: list, num_classes=2) -> k.Model:
                   depth_conv2d(256, 3, 2, 'same'),
                   kl.ReLU())(x13)
     detections = [x8, x11, x13, x14]
-    loc_layers = [depth_conv2d(3 * 4, 3, padding='same'),
-                  depth_conv2d(2 * 4, 3, padding='same'),
-                  depth_conv2d(2 * 4, 3, padding='same'),
-                  kl.Conv2D(3 * 4, 3, padding='same')]
+    loc_layers = [depth_conv2d(len(anchor[0]) * 4, 3, padding='same'),
+                  depth_conv2d(len(anchor[1]) * 4, 3, padding='same'),
+                  depth_conv2d(len(anchor[2]) * 4, 3, padding='same'),
+                  kl.Conv2D(len(anchor[3]) * 4, 3, padding='same')]
 
-    conf_layers = [depth_conv2d(3 * num_classes, 3, padding='same'),
-                   depth_conv2d(2 * num_classes, 3, padding='same'),
-                   depth_conv2d(2 * num_classes, 3, padding='same'),
-                   kl.Conv2D(3 * num_classes, 3, padding='same')]
+    conf_layers = [depth_conv2d(len(anchor[0]) * num_classes, 3, padding='same'),
+                   depth_conv2d(len(anchor[1]) * num_classes, 3, padding='same'),
+                   depth_conv2d(len(anchor[2]) * num_classes, 3, padding='same'),
+                   kl.Conv2D(len(anchor[3]) * num_classes, 3, padding='same')]
 
-    landm_layers = [depth_conv2d(3 * 10, 3, padding='same'),
-                    depth_conv2d(2 * 10, 3, padding='same'),
-                    depth_conv2d(2 * 10, 3, padding='same'),
-                    kl.Conv2D(3 * 10, 3, padding='same')]
+    landm_layers = [depth_conv2d(len(anchor[0]) * 10, 3, padding='same'),
+                    depth_conv2d(len(anchor[1]) * 10, 3, padding='same'),
+                    depth_conv2d(len(anchor[2]) * 10, 3, padding='same'),
+                    kl.Conv2D(len(anchor[3]) * 10, 3, padding='same')]
     loc = []
     conf = []
     landm = []
