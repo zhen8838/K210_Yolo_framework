@@ -1,3 +1,4 @@
+ANCHOR_REF: &ANCHOR_REF [[[16,16], [32,32]], [[64,64], [128,128]], [[256,256], [512,512]]]
 mode: train
 model:
   name: retinaface
@@ -7,13 +8,7 @@ model:
     in_hw: 
       - 640
       - 640
-    anchor_widths: 
-      - - [16,16]
-        - [32,32]
-      - - [64,64]
-        - [128,128]
-      - - [256,256]
-        - [512,512]
+    anchor_widths:  *ANCHOR_REF
     anchor_steps:
       - 8
       - 16
@@ -28,13 +23,7 @@ model:
       - null
       - null
       - 3
-    anchor:
-      - - [16,16]
-        - [32,32]
-      - - [64,64]
-        - [128,128]
-      - - [256,256]
-        - [512,512]
+    anchor: *ANCHOR_REF
     filters: 64
     alpha: 0.25
   loss: RetinaFaceLoss

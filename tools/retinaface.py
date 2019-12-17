@@ -214,10 +214,10 @@ class RetinaFaceHelper(BaseHelper):
             landm_t[:, :, :2] = np.minimum(landm_t[:, :, :2], roi[2:] - roi[:2])
             landm_t = landm_t.reshape([-1, 10])
 
-            # make sure that the cropped img contains at least one face > 6 pixel at training image scale
             b_w_t = (bbox_t[:, 2] - bbox_t[:, 0] + 1) / new_w * in_w
             b_h_t = (bbox_t[:, 3] - bbox_t[:, 1] + 1) / new_h * in_h
-            mask_b = np.minimum(b_w_t, b_h_t) > (6 / min(in_w, in_h))
+            # make sure that the cropped img contains at least one face > 6 pixel at training image scale
+            mask_b = np.minimum(b_w_t, b_h_t) > 6
             bbox_t = bbox_t[mask_b]
             clses_t = clses_t[mask_b]
             landm_t = landm_t[mask_b]
