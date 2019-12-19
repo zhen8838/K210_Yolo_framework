@@ -55,7 +55,7 @@ if __name__ == "__main__":
     if args.results_path == None or args.results_path == 'None':
         args.results_path = None
     else:
-        arg.results_path = Path(args.results_path)
+        args.results_path = Path(args.results_path)
 
     with config_path.open('r') as f:
         cfg = safe_load(f)

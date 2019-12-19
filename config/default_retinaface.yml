@@ -20,8 +20,8 @@ model:
   network: retinafacenet
   network_kwarg:
     input_shape:
-      - null
-      - null
+      - 640
+      - 640
       - 3
     anchor: *ANCHOR_REF
     filters: 64

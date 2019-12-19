@@ -21,8 +21,8 @@ model:
   network: retinafacenet_k210_v1
   network_kwarg:
     input_shape:
-      - null
-      - null
+      - 240
+      - 320
       - 3
     anchor: *ANCHOR_REF
   loss: RetinaFaceLoss

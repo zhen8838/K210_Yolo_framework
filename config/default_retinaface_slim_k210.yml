@@ -22,8 +22,8 @@ model:
   network: retinaface_slim
   network_kwarg:
     input_shape:
-      - null
-      - null
+      - 240
+      - 320
       - 3
     num_classes: 2
     anchor: *ANCHOR_REF

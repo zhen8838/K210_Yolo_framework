@@ -7,12 +7,13 @@ import imgaug.augmenters as iaa
 from pathlib import Path
 import cv2
 from matplotlib.pyplot import imshow, show
+import matplotlib.pyplot as plt
 from tools.bbox_utils import center_to_corner, bbox_iou, bbox_iof, tf_bbox_iou, nms_oneclass
 from tools.base import BaseHelper
 from typing import List, Tuple, AnyStr, Iterable
 from scipy.special import softmax
 from tensorflow.python.ops.resource_variable_ops import ResourceVariable
-from tensorflow.python.framework.ops import EagerTensor
+from tensorflow.python.framework.ops import _EagerTensorBase, EagerTensor
 from tools.base import INFO, NOTE, ERROR
 from itertools import product
 
@@ -42,15 +43,57 @@ def encode_landm(matches, anchors, variances):
 
 
 def tf_encode_bbox(matches: tf.Tensor, anchors: tf.Tensor, variances) -> tf.Tensor:
+    """ encode bbox
+
+    Parameters
+    ----------
+    matches : tf.Tensor
+
+        gt matches 
+
+    anchors : tf.Tensor
+
+        anchors x*[x,y,w,h]
+
+    variances :
+
+        rate
+
+    Returns
+    -------
+    tf.Tensor
+
+    """
     g_cxcy = (matches[:, :2] + matches[:, 2:]) / 2 - anchors[:, :2]
     g_cxcy = g_cxcy / (variances[0] * anchors[:, 2:])
-    g_wh = (tf.clip_by_value(matches[:, 2:] - matches[:, :2], 1e-6, 0.999999)) / anchors[:, 2:]
+    g_wh = (matches[:, 2:] - matches[:, :2]) / anchors[:, 2:]
     g_wh = tf.math.log(g_wh) / variances[1]
     # return target for smooth_l1_loss
     return tf.concat([g_cxcy, g_wh], 1)  # [num_priors,4]
 
 
 def tf_encode_landm(matches: tf.Tensor, anchors: tf.Tensor, variances: np.ndarray) -> tf.Tensor:
+    """ encode landm 
+
+    Parameters
+    ----------
+    matches : tf.Tensor
+
+        gt matches 
+
+    anchors : tf.Tensor
+
+        anchors x*[x,y,w,h]
+
+    variances : np.ndarray
+
+        rate
+
+    Returns
+    -------
+    tf.Tensor
+        landm label
+    """
     matches = tf.reshape(matches, (-1, 5, 2))
     anchors = tf.concat([tf.tile(anchors[:, 0:1, None], [1, 5, 1]),
                          tf.tile(anchors[:, 1:2, None], [1, 5, 1]),
@@ -68,6 +111,27 @@ def tf_encode_landm(matches: tf.Tensor, anchors: tf.Tensor, variances: np.ndarra
 def decode_bbox(bbox: np.ndarray, anchors: np.ndarray, variances: np.ndarray) -> np.ndarray:
     """Decode locations from predictions using anchors to undo
     the encoding we did for offset regression at train time.
+
+    Parameters
+    ----------
+    bbox : np.ndarray
+
+        pred bbox
+
+    anchors : np.ndarray
+
+        anchors x*[x,y,w,h]
+
+    variances : np.ndarray
+
+        rate
+
+    Returns
+    -------
+    np.ndarray
+
+       decode bbox, n*[x1,y1,x2,y2]
+
     """
 
     boxes = np.concatenate((
@@ -79,9 +143,29 @@ def decode_bbox(bbox: np.ndarray, anchors: np.ndarray, variances: np.ndarray) ->
 
 
 def decode_landm(landm: np.ndarray, anchors: np.ndarray, variances: np.ndarray) -> np.ndarray:
-    """Decode landm from predictions using anchors to undo
-    the encoding we did for offset regression at train time.
+    """ Decode landm from predictions using anchors to undo
+        the encoding we did for offset regression at train time.
+
+    Parameters
+    ----------
+    landm : np.ndarray
+
+        pred landm 
+
+    anchors : np.ndarray
+
+        anchors x*[x,y,w,h] 
+
+    variances : np.ndarray
+
+        rate
+
+    Returns
+    -------
+    np.ndarray
+        decode landms n*[x1,y1,x2,y2,...x10,y10]
     """
+
     landms = np.concatenate(
         (anchors[:, :2] + landm[:, :2] * variances[0] * anchors[:, 2:],
          anchors[:, :2] + landm[:, 2:4] * variances[0] * anchors[:, 2:],
@@ -116,13 +200,13 @@ class RetinaFaceHelper(BaseHelper):
         self.test_total_data: int = len(self.test_list)
         self.anchor_widths = anchor_widths
         self.anchor_steps = anchor_steps
-        self.anchors: tf.Tensor = tf.constant(self._get_anchors(in_hw, anchor_widths, anchor_steps), tf.float32)
-        self.corner_anchors: tf.Tensor = tf.constant(center_to_corner(self.anchors, False), tf.float32)
+        self.anchors: _EagerTensorBase = tf.constant(self._get_anchors(in_hw, anchor_widths, anchor_steps), tf.float32)
+        self.corner_anchors: _EagerTensorBase = tf.constant(center_to_corner(self.anchors, False), tf.float32)
         self.anchors_num: int = len(self.anchors)
         self.org_in_hw: np.ndarray = np.array(in_hw)
-        self.in_hw = tf.Variable(self.org_in_hw, trainable=False)
+        self.in_hw: _EagerTensorBase = tf.Variable(self.org_in_hw, trainable=False)
         self.pos_thresh: float = pos_thresh
-        self.variances: tf.Tensor = tf.constant(variances, tf.float32)
+        self.variances: _EagerTensorBase = tf.constant(variances, tf.float32)
 
         self.iaaseq = iaa.SomeOf([1, 3], [
             iaa.Fliplr(0.5),
@@ -216,8 +300,8 @@ class RetinaFaceHelper(BaseHelper):
 
             b_w_t = (bbox_t[:, 2] - bbox_t[:, 0] + 1) / new_w * in_w
             b_h_t = (bbox_t[:, 3] - bbox_t[:, 1] + 1) / new_h * in_h
-            # make sure that the cropped img contains at least one face > 6 pixel at training image scale
-            mask_b = np.minimum(b_w_t, b_h_t) > 6
+            # make sure that the cropped img contains at least one face > 2 pixel at training image scale
+            mask_b = np.minimum(b_w_t, b_h_t) > 2
             bbox_t = bbox_t[mask_b]
             clses_t = clses_t[mask_b]
             landm_t = landm_t[mask_b]
@@ -360,7 +444,7 @@ class RetinaFaceHelper(BaseHelper):
         return tf.cond(tf.less_equal(tf.size(best_prior_idx_filter), 0), t_fn, f_fn)
 
     def draw_image(self, img: tf.Tensor, ann: List[tf.Tensor],
-                   is_show: bool = True):
+                   is_show: bool = True) -> np.ndarray:
         bbox, landm, clses = ann
         if isinstance(img, EagerTensor):
             img = img.numpy()
@@ -380,6 +464,7 @@ class RetinaFaceHelper(BaseHelper):
         if is_show:
             imshow(img)
             show()
+        return img
 
     def build_datapipe(self, image_ann_list: np.ndarray, batch_size: int,
                        is_augment: bool, is_normlize: bool,
@@ -526,10 +611,10 @@ def parser_outputs(outputs: List[np.ndarray], orig_hws: List[np.ndarray], obj_th
         clses = softmax(clses, -1)
         score = clses[:, 1]
         """ decode """
-        bbox = decode_bbox(bbox, h.anchors, h.variances)
+        bbox = decode_bbox(bbox, h.anchors.numpy(), h.variances.numpy())
         bbox = bbox * np.tile(h.org_in_hw[::-1], [2])
         """ landmark """
-        landm = decode_landm(landm, h.anchors, h.variances)
+        landm = decode_landm(landm, h.anchors.numpy(), h.variances.numpy())
         landm = landm * np.tile(h.org_in_hw[::-1], [5])
         """ filter low score """
         inds = np.where(score > obj_thresh)[0]
@@ -603,4 +688,27 @@ def retinaface_infer(img_path: Path, infer_model: tf.keras.Model,
             h.draw_image(draw_img.numpy(), [bbox, landm, np.ones_like(score[:, None])])
     else:
         """ draw gpu result and nncase result """
-        pass
+        ncc_preds = [[], [], []]
+        for ncc_result in ncc_results:
+            # NOTE ncc result is (N,C,H,W) ,but output bbox no `Channels` , so is [anchor_num,4]
+            pred = list(map(lambda x: np.reshape(x, (len(outputs[0][0]), -1)),
+                            np.split(ncc_result, [len(outputs[0][0]) * 4, -len(outputs[0][0]) * 2])))
+            [ncc_preds[i].append(p) for (i, p) in enumerate(pred)]
+        ncc_preds = [np.stack(pred) for pred in ncc_preds]
+        ncc_results = parser_outputs(ncc_preds, orig_hws, obj_thresh, nms_thresh, batch, h)
+        for img_path, (bbox, landm, score), (ncc_bbox, ncc_landm, ncc_score) in zip(img_paths, results, ncc_results):
+            draw_img = h.read_img(img_path)
+            gpu_img = h.draw_image(draw_img.numpy(), [bbox, landm, np.ones_like(score[:, None])], False)
+            ncc_img = h.draw_image(draw_img.numpy(), [ncc_bbox, ncc_landm, np.ones_like(ncc_score[:, None])], False)
+            fig: plt.Figure = plt.figure(figsize=(8, 3))
+            ax1 = plt.subplot(121)  # type:plt.Axes
+            ax2 = plt.subplot(122)  # type:plt.Axes
+            ax1.imshow(gpu_img)
+            ax2.imshow(ncc_img)
+            ax1.set_title('GPU Infer')
+            ax2.set_title('Ncc Infer')
+            fig.tight_layout()
+            plt.axis('off')
+            plt.xticks([])
+            plt.yticks([])
+            plt.show()
