@@ -35,12 +35,12 @@ train:
     scoped_allocator_optimization: true
     layout_optimizer: true
   augmenter: false
-  batch_size: 64
+  batch_size: 96
   pre_ckpt: null
   rand_seed: 10101
-  epochs: 10
+  epochs: 150
   log_dir: log
-  sub_log_dir: null
+  sub_log_dir: default_pfld_exp
   debug: false
   verbose: 1
   vali_step_factor: 0.5
@@ -59,7 +59,7 @@ train:
       kwarg:
         monitor: val_loss
         min_delta: 0
-        patience: 4
+        patience: 20
         verbose: 0
         mode: auto
         baseline: null

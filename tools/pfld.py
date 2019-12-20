@@ -41,7 +41,7 @@ class PFLDHelper(BaseHelper):
         ])  # type: iaa.meta.Augmenter
 
     def resize_img(self, raw_img: tf.Tensor) -> tf.Tensor:
-        return tf.image.resize(raw_img, self.in_hw, method=0)
+        return tf.image.resize(raw_img, self.in_hw, tf.image.ResizeMethod.BILINEAR, antialias=True)
 
     def augment_img(self, img, ann):
         """ No implement """
@@ -51,10 +51,13 @@ class PFLDHelper(BaseHelper):
                        is_normlize: bool, is_training: bool) -> tf.data.Dataset:
         print(INFO, 'data augment is ', str(is_augment))
 
+        @tf.function
         def _parser_wrapper(i: tf.Tensor) -> [tf.Tensor, tf.Tensor]:
             img_path, label = tf.numpy_function(
-                lambda idx: (image_ann_list[idx][0].copy(), image_ann_list[idx][1].copy().astype('float32')),
-                [i], [tf.dtypes.string, tf.float32])
+                lambda idx: tuple(image_ann_list[idx])[:2],
+                [i], [tf.dtypes.string, tf.float64])
+
+            label = tf.cast(label, tf.float32)
 
             raw_img = self.read_img(img_path)
 
@@ -66,6 +69,7 @@ class PFLDHelper(BaseHelper):
 
             return img, label
 
+        @tf.function
         def _batch_parser(img: tf.Tensor, label: tf.Tensor) -> [
                 tf.Tensor, tf.Tensor]:
             """ 
