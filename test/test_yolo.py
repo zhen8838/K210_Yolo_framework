@@ -1,6 +1,7 @@
 """ yolo单元测试文件
 """
-from tools.yolo import YOLOHelper, YOLO_Loss, corner_to_center
+from tools.yolo import YOLOHelper, YOLOLoss
+from tools.bbox_utils import corner_to_center
 import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
@@ -146,8 +147,8 @@ def test_yolo_loss_compare():
     h.anchors = anchor
     h._YOLOHelper__flatten_anchors = np.reshape(h.anchors, (-1, 2))
 
-    fn0 = YOLO_Loss(h, 0.5, 1, 1, 3, 2, 1, 0)
-    fn1 = YOLO_Loss(h, 0.5, 1, 1, 3, 2, 1, 1)
+    fn0 = YOLOLoss(h, 0.5, 0.7, 1, 1, 3, 2, 1, 0)
+    fn1 = YOLOLoss(h, 0.5, 0.7, 1, 1, 3, 2, 1, 1)
 
     y_trues = [[], []]
     for i in range(len(target)):
@@ -171,6 +172,9 @@ def test_yolo_loss_compare():
     assert np.allclose(losses[1], loss1.numpy())  # 66.90617
 
 
+test_yolo_loss_compare()
+
+
 def test_yolo_loss_clac():
     """ 用于测试yolo loss中的计算细节
     """
@@ -179,7 +183,7 @@ def test_yolo_loss_clac():
     tf.config.experimental.set_memory_growth(physical_devices[0], True)
 
     h = YOLOHelper('data/voc_img_ann.npy', 20, 'data/voc_anchor_v3.npy', [416, 416], [[13, 13], [26, 26], [52, 52]])
-    # yloss = YOLO_Loss(h, , ,
+    # yloss = YOLOLoss(h, , ,
     _, net = yolo_mbv1([416, 416, 3], 3, 20, 1.0)
     # net.load_weights('log/20191024-214827/train_model_19.h5')
     idx = 12
@@ -235,10 +239,10 @@ def test_yolo_loss_clac():
     obj_mask_bool = tf.cast(y_true[..., 4], tf.bool)
 
     """ calc the ignore mask  """
-    xy_offset = YOLO_Loss.calc_xy_offset(out_hw, y_pred)
+    xy_offset = YOLOLoss.calc_xy_offset(out_hw, y_pred)
 
-    pred_xy, pred_wh = YOLO_Loss.xywh_to_all(grid_pred_xy, grid_pred_wh,
-                                             out_hw, xy_offset, h.anchors[layer])
+    pred_xy, pred_wh = YOLOLoss.xywh_to_all(grid_pred_xy, grid_pred_wh,
+                                            out_hw, xy_offset, h.anchors[layer])
 
     # NOTE 添加 recall
     tp50 = tf.compat.v1.get_variable('tp50', (), tf.float32, tf.zeros_initializer())
@@ -251,7 +255,7 @@ def test_yolo_loss_clac():
         gt_xy = tf.boolean_mask(all_true_xy[bc], location_mask[bc])
         gt_wh = tf.boolean_mask(all_true_wh[bc], location_mask[bc])
         # iou score = [h,w,anchor,box_num]
-        iou_score = YOLO_Loss.iou(pred_xy[bc], pred_wh[bc], gt_xy, gt_wh)
+        iou_score = YOLOLoss.iou(pred_xy[bc], pred_wh[bc], gt_xy, gt_wh)
 
         # NOTE 利用boolmask得到index， 用loc_iou_score计算的这一层的tp
         idx = tf.where(tf.boolean_mask(obj_mask_bool[bc], location_mask[bc]))
@@ -289,7 +293,7 @@ def test_yolo_loss_clac():
     recall50 = tp50 / (tp50 + fn50)
     recall75 = tp75 / (tp75 + fn75)
 
-    grid_true_xy, grid_true_wh = YOLO_Loss.xywh_to_grid(all_true_xy, all_true_wh, layer, h)
+    grid_true_xy, grid_true_wh = YOLOLoss.xywh_to_grid(all_true_xy, all_true_wh, layer, h)
     # NOTE When wh=0 , tf.log(0) = -inf, so use tf.where to avoid it
     grid_true_wh = tf.where(tf.tile(obj_mask_bool[..., tf.newaxis], [1, 1, 1, 1, 2]),
                             grid_true_wh, tf.zeros_like(grid_true_wh))

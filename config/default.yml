@@ -86,10 +86,10 @@ train:
         load_weights_on_restart: false
     - name: TerminateOnNaN
       kwarg: null
-    - name: MultiScaleTrain
-      kwarg:
-        interval: 50
-        scale_range: [-3, 5]
+    # - name: MultiScaleTrain # NOTE use jit_train can't use MultiScaleTrain
+    #   kwarg:
+    #     interval: 50
+    #     scale_range: [-3, 5]
     - name: StepLR
       kwarg:
         steps: [ 50  ,  80    ,  120   ]

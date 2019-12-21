@@ -17,7 +17,7 @@ from tensorflow.python.ops.resource_variable_ops import ResourceVariable
 from matplotlib.pyplot import text
 from PIL import Image, ImageFont, ImageDraw
 from tools.base import BaseHelper, INFO, ERROR, NOTE
-from tools.bbox_utils import bbox_iou, center_to_corner
+from tools.bbox_utils import bbox_iou, center_to_corner, tf_bbox_iou
 from pathlib import Path
 import shutil
 from tqdm import trange
@@ -290,13 +290,10 @@ class YOLOHelper(BaseHelper):
         self.iaaseq = iaa.Sequential([
             iaa.Fliplr(0.5),
             iaa.SomeOf([1, 4], [
-                iaa.Affine(scale={"x": (0.8, 1.2), "y": (0.8, 1.2)},
-                           backend='cv2', order=[0, 1], cval=(0, 255), mode=ia.ALL),
                 iaa.Affine(translate_percent={"x": (-0.2, 0.2), "y": (-0.2, 0.2)},
                            backend='cv2', order=[0, 1], cval=(0, 255), mode=ia.ALL),
                 iaa.Affine(rotate=(-30, 30),
                            backend='cv2', order=[0, 1], cval=(0, 255), mode=ia.ALL),
-                iaa.Crop(percent=([0.05, 0.1], [0.05, 0.1], [0.05, 0.1], [0.05, 0.1]))
             ], True)
         ])  # type: iaa.meta.Sequential
 
@@ -665,11 +662,10 @@ class YOLOHelper(BaseHelper):
                        is_normlize: bool, is_training: bool) -> tf.data.Dataset:
         print(INFO, 'data augment is ', str(is_augment))
 
+        @tf.function
         def _parser_wrapper(i: tf.Tensor):
             # NOTE use wrapper function and dynamic list construct (x,(y_1,y_2,...))
-            img_path, ann = tf.numpy_function(lambda idx:
-                                              (image_ann_list[idx][0].copy(),
-                                               image_ann_list[idx][1].copy()),
+            img_path, ann = tf.numpy_function(lambda idx: tuple(image_ann_list[idx][:2]),
                                               [i], [tf.dtypes.string, tf.float64])
             # tf.numpy_function(lambda x: print('img id:', x), [i],[])
             # load image
@@ -1039,7 +1035,8 @@ class YOLOLoss(Loss):
             # NOTE use location_mask find all ground truth
             gt_xy = tf.boolean_mask(all_true_xy[bc], location_mask[bc])
             gt_wh = tf.boolean_mask(all_true_wh[bc], location_mask[bc])
-            iou_score = self.iou(pred_xy[bc], pred_wh[bc], gt_xy, gt_wh)  # [h,w,anchor,box_num]
+            iou_score = tf_bbox_iou(tf.concat([pred_xy[bc] - pred_wh[bc] / 2, pred_xy[bc] + pred_wh[bc] / 2], -1),
+                                    tf.concat([gt_xy - gt_wh / 2, gt_xy + gt_wh / 2], -1))  # [h,w,anchor,box_num]
             # NOTE find this layer gt and pred iou score
             idx = tf.where(tf.boolean_mask(obj_mask_bool[bc], location_mask[bc]))
             mask_iou_score = tf.gather_nd(tf.boolean_mask(iou_score, obj_mask_bool[bc]), idx, 1)
