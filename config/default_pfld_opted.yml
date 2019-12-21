@@ -35,10 +35,10 @@ train:
     scoped_allocator_optimization: true
     layout_optimizer: true
   augmenter: false
-  batch_size: 64
+  batch_size: 96
   pre_ckpt: null
   rand_seed: 10101
-  epochs: 10
+  epochs: 150
   log_dir: log
   sub_log_dir: null
   debug: false
@@ -59,7 +59,7 @@ train:
       kwarg:
         monitor: val_loss
         min_delta: 0
-        patience: 4
+        patience: 20
         verbose: 0
         mode: auto
         baseline: null
@@ -75,6 +75,10 @@ train:
         load_weights_on_restart: false
     - name: TerminateOnNaN
       kwarg: null
+    - name: StepLR
+      kwarg:
+        steps: [ 10  ,  20   ]
+        rates: [0.001, 0.0001]
 prune:
   is_prune: false
   init_sparsity: 0.5
