@@ -321,9 +321,9 @@ def pfld_infer(img_path: Path, infer_model: tf.keras.Model,
         for i in range(len(raw_img)):
             landmark = np.reshape(pred_landmark[i], (h.landmark_num, 2)) * raw_img_hw[i][::-1]
 
-            for j in range(h.landmark_num):
+            for point in landmark.astype(np.int):
                 # NOTE circle( y, x, radius )
-                cv2.circle(raw_img, (landmark[j][1], landmark[j][0]), 0, (200, 0, 0), 1)
+                cv2.circle(raw_img[i], tuple(point), 1, (200, 0, 0), 1)
 
             plt.imshow(raw_img[i])
             plt.show()
