@@ -8,7 +8,7 @@ from pathlib import Path
 import cv2
 from matplotlib.pyplot import imshow, show
 import matplotlib.pyplot as plt
-from tools.bbox_utils import center_to_corner, bbox_iou, bbox_iof, tf_bbox_iou, nms_oneclass
+from tools.bbox_utils import tf_center_to_corner, bbox_iou, bbox_iof, tf_bbox_iou, nms_oneclass
 from tools.base import BaseHelper
 from typing import List, Tuple, AnyStr, Iterable
 from scipy.special import softmax
@@ -200,13 +200,13 @@ class RetinaFaceHelper(BaseHelper):
         self.test_total_data: int = len(self.test_list)
         self.anchor_widths = anchor_widths
         self.anchor_steps = anchor_steps
-        self.anchors: _EagerTensorBase = tf.constant(self._get_anchors(in_hw, anchor_widths, anchor_steps), tf.float32)
-        self.corner_anchors: _EagerTensorBase = tf.constant(center_to_corner(self.anchors, False), tf.float32)
-        self.anchors_num: int = len(self.anchors)
+        self.anchors: _EagerTensorBase = tf.convert_to_tensor(self._get_anchors(in_hw, anchor_widths, anchor_steps), tf.float32)
+        self.corner_anchors: _EagerTensorBase = tf_center_to_corner(self.anchors, False)
+        self.anchors_num: int = self.anchors.shape.as_list()[0]
         self.org_in_hw: np.ndarray = np.array(in_hw)
         self.in_hw: _EagerTensorBase = tf.Variable(self.org_in_hw, trainable=False)
         self.pos_thresh: float = pos_thresh
-        self.variances: _EagerTensorBase = tf.constant(variances, tf.float32)
+        self.variances: _EagerTensorBase = tf.convert_to_tensor(variances, tf.float32)
 
         self.iaaseq = iaa.SomeOf([1, 3], [
             iaa.Fliplr(0.5),
