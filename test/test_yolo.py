@@ -1,12 +1,14 @@
 """ yolo单元测试文件
 """
 from tools.yolo import YOLOHelper, YOLOLoss
-from tools.bbox_utils import corner_to_center
+from tools.bbox_utils import corner_to_center, tf_bbox_iou
 import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
 import cv2
 from models.networks import yolo_mbv1
+from typing import List
+
 np.set_printoptions(suppress=True)
 
 k = tf.keras
@@ -22,8 +24,22 @@ def test_resize_img():
     for i in range(100, 120):
         path, ann, hw = h.train_list[i]
         img = h.read_img(path)
-        img, ann = h.resize_img(img, h.org_in_hw, np.copy(ann))
-        h.draw_image(img, ann)
+        img, new_ann = h.resize_img(img, h.in_hw, ann)
+        h.draw_image(img.numpy(), new_ann.numpy())
+
+
+def test_resize_train_img():
+    """ 测试resize和darw NOTE 主要为了检验resize是否正确"""
+    h = YOLOHelper('data/voc_img_ann.npy', 20, 'data/voc_anchor.npy',
+                   [224, 320], [[7, 10], [14, 20]])
+    in_hw = h.in_hw
+    i = 214
+    for i in range(100, 120):
+        path, ann, hw = h.train_list[i]
+        ann = tf.cast(ann, tf.float32)
+        img = h.read_img(path)
+        img, new_ann = h.resize_train_img(img, in_hw, ann)
+        h.draw_image(img.numpy(), new_ann.numpy())
 
 
 def test_augment_img():
@@ -34,9 +50,12 @@ def test_augment_img():
     for i in range(120, 140):
         path, ann, hw = h.train_list[i]
         img = h.read_img(path)
-        img, ann = h.resize_img(img, h.org_in_hw, np.copy(ann))
-        img, ann = h.augment_img(img, ann)
-        h.draw_image(img, ann)
+        img, ann = h.resize_img(img, h.in_hw, np.copy(ann))
+        img = img.numpy()
+        ann = ann.numpy()
+        self = h
+        img, ann = tf.numpy_function(h.augment_img, [img, ann], [tf.uint8, tf.float32])
+        h.draw_image(img.numpy(), ann.numpy())
 
 
 def test_process_img():
@@ -44,11 +63,16 @@ def test_process_img():
     h = YOLOHelper('data/voc_img_ann.npy', 20, 'data/voc_anchor.npy',
                    [224, 320], [[7, 10], [14, 20]])
     i = 213
-    for i in range(120, 140):
-        path, ann, hw = h.train_list[i]
+    in_hw = h.in_hw
+    is_resize = True
+    is_augment = True
+    is_normlize = False
+    for i in tf.range(120, 140):
+        path, ann = tf.numpy_function(lambda idx: tuple(h.train_list[idx][:2]),
+                                      [i], [tf.string, tf.float32])
         img = h.read_img(path)
-        img, ann = h.process_img(img, ann, h.org_in_hw, is_augment=True, is_resize=True, is_normlize=False)
-        h.draw_image(img, ann)
+        img, new_ann = h.process_img(img, ann, in_hw, is_augment, is_resize, is_normlize)
+        h.draw_image(img.numpy(), new_ann.numpy())
 
 
 def test_multi_scale_process_img():
@@ -69,26 +93,58 @@ def test_multi_scale_process_img():
 def test_label_to_ann_draw():
     """ 处理图像,并且从label转换为ann 并绘制 NOTE 主要为了检验整个处理以及label生成是否正确"""
     h = YOLOHelper('data/voc_img_ann.npy', 20, 'data/voc_anchor.npy', [224, 320], [[7, 10], [14, 20]])
-    i = 213
-    for i in range(156, 200):
-        path, ann, hw = h.train_list[i][0], np.copy(h.train_list[i][1]), h.train_list[i][2]
+    i = tf.constant(213)
+    for i in tf.range(156, 200):
+        path, ann = tf.numpy_function(lambda idx: tuple(h.train_list[idx][:2]),
+                                      [i], [tf.string, tf.float32])
         img = h.read_img(path)
-        img, ann = h.process_img(img, ann, h.org_in_hw, True, True, False)
-        labels = h.ann_to_label(h.org_in_hw, h.org_out_hw, np.copy(ann))
+        img, ann = h.process_img(img, ann, h.in_hw, True, True, False)
+        labels = tf.numpy_function(h.ann_to_label, [h.in_hw, h.out_hw, ann],
+                                   [tf.float32] * len(h.anchors))
+        labels = [l.numpy() for l in labels]
         new_ann = h.label_to_ann(labels)
-        h.draw_image(img, new_ann)
+        h.draw_image(img.numpy(), new_ann)
 
 
 def test_label_to_ann_compare():
     """ 处理图像,并且从label转换为ann 并对比 NOTE 主要为了检验整个处理以及label生成是否正确"""
     h = YOLOHelper('data/voc_img_ann.npy', 20, 'data/voc_anchor.npy', [224, 320], [[7, 10], [14, 20]])
     i = 213
-    for i in range(156, 200):
-        path, ann, hw = h.train_list[i][0], np.copy(h.train_list[i][1]), h.train_list[i][2]
+    for i in tf.range(156, 200):
+        path, ann = tf.numpy_function(lambda idx: tuple(h.train_list[idx][:2]),
+                                      [i], [tf.string, tf.float32])
         img = h.read_img(path)
-        img, ann = h.process_img(img, ann, h.org_in_hw, True, True, False)
-        labels = h.ann_to_label(h.org_in_hw, h.org_out_hw, np.copy(ann))
+        img, ann = h.process_img(img, ann, h.in_hw, True, True, False)
+        labels = tf.numpy_function(h.ann_to_label, [h.in_hw, h.out_hw, ann],
+                                   [tf.float32] * len(h.anchors))
+        labels = [l.numpy() for l in labels]
         new_ann = h.label_to_ann(labels)
+        ann = ann.numpy()
+        try:
+            ann = np.array(sorted(ann, key=lambda x: (-x[0], -x[1], -x[3], -x[4])))
+            new_ann = np.array(sorted(new_ann, key=lambda x: (-x[0], -x[1], -x[3], -x[4])))
+            assert np.allclose(ann, new_ann)
+        except AssertionError:
+            print(ann)
+            print(new_ann)
+
+        # h.draw_image(img, new_ann)
+
+
+def test_label_to_ann_v3_compare():
+    """ 处理图像,并且从label转换为ann 并对比 NOTE 主要为了检验整个处理以及label生成是否正确"""
+    h = YOLOHelper('data/voc_img_ann.npy', 20, 'data/voc_anchor_v3.npy', [416, 416], [[13, 13], [26, 26], [52, 52]])
+    i = 213
+    for i in tf.range(156, 200):
+        path, ann = tf.numpy_function(lambda idx: tuple(h.train_list[idx][:2]),
+                                      [i], [tf.string, tf.float32])
+        img = h.read_img(path)
+        img, ann = h.process_img(img, ann, h.in_hw, True, True, False)
+        labels = tf.numpy_function(h.ann_to_label, [h.in_hw, h.out_hw, ann],
+                                   [tf.float32] * len(h.anchors))
+        labels = [l.numpy() for l in labels]
+        new_ann = h.label_to_ann(labels)
+        ann = ann.numpy()
         try:
             ann = np.array(sorted(ann, key=lambda x: (-x[0], -x[1], -x[3], -x[4])))
             new_ann = np.array(sorted(new_ann, key=lambda x: (-x[0], -x[1], -x[3], -x[4])))
@@ -135,16 +191,17 @@ def test_yolo_loss_compare():
 
     """ 可以测试1 或 2 都是相同的~ 应该是没有错误了 """
     # with np.load('tmp/out.npz', allow_pickle=True) as npz:
-    with np.load('tmp/out1.npz', allow_pickle=True) as npz:
-        outputs = [npz['out0'], npz['out1']]
-        target = npz['target']
-        anchor = npz['anchor']
-        losses = npz['loss']
-
-    anchor = anchor / 608
-    anchor = np.array([anchor[[3, 4, 5]],
-                       anchor[[0, 1, 2]]])
-    h.anchors = anchor
+    npz = np.load('/home/zqh/Documents/ObjectDetection-OneStageDet/yolo/tmp/loss_detail.npy', allow_pickle=True)[()]
+    outputs = npz['y_pred']
+    target = npz['ann']
+    loss_coord = npz['loss_coord']
+    loss_conf = npz['loss_conf']
+    loss_cls = npz['loss_cls']
+    loss_tot = npz['loss_tot']
+    anchor = np.array([(10, 14), (23, 27), (37, 58), (81, 82), (135, 169), (344, 319)])
+    anchors_mask = np.array([(3, 4, 5), (0, 1, 2)])
+    anchor = anchor[anchors_mask]
+    h.anchors = anchor / [608, 608]
     h._YOLOHelper__flatten_anchors = np.reshape(h.anchors, (-1, 2))
 
     fn0 = YOLOLoss(h, 0.5, 0.7, 1, 1, 3, 2, 1, 0)
@@ -158,21 +215,110 @@ def test_yolo_loss_compare():
     y_trues[0] = np.stack(y_trues[0])
     y_trues[1] = np.stack(y_trues[1])
 
-    y_true0 = y_trues[0]
     y_pred0 = np.reshape(np.transpose(outputs[0], [0, 2, 3, 1]), (16, 19, 19, 3, 25))
-    loss0 = fn0.call(tf.convert_to_tensor(y_true0), tf.convert_to_tensor(y_pred0))
-    loss0 = tf.reduce_sum(loss0)
-
-    y_true1 = y_trues[1]
     y_pred1 = np.reshape(np.transpose(outputs[1], [0, 2, 3, 1]), (16, 38, 38, 3, 25))
-    loss1 = fn1.call(tf.convert_to_tensor(y_true1), tf.convert_to_tensor(y_pred1))
-    loss1 = tf.reduce_sum(loss1)
+    for self, y_true, y_pred in zip([fn0, fn1], y_trues, [y_pred0, y_pred1]):
+        y_true, y_pred = tf.convert_to_tensor(y_true), tf.convert_to_tensor(y_pred)
+        """ reshape y pred """
+        out_hw = tf.cast(tf.shape(y_true)[1:3], tf.float32)
 
-    assert np.allclose(losses[0], loss0.numpy())  # 231.03738
-    assert np.allclose(losses[1], loss1.numpy())  # 66.90617
+        y_true = tf.reshape(y_true, [-1, out_hw[0], out_hw[1],
+                                     self.h.anchor_number, self.h.class_num + 5 + 1])
+        y_pred = tf.reshape(y_pred, [-1, out_hw[0], out_hw[1],
+                                     self.h.anchor_number, self.h.class_num + 5])
 
+        """ split the label """
+        grid_pred_xy = y_pred[..., 0:2]
+        grid_pred_wh = y_pred[..., 2:4]
+        pred_confidence = y_pred[..., 4:5]
+        pred_cls = y_pred[..., 5:]
 
-test_yolo_loss_compare()
+        all_true_xy = y_true[..., 0:2]
+        all_true_wh = y_true[..., 2:4]
+        true_confidence = y_true[..., 4:5]
+        true_cls = y_true[..., 5:5 + self.h.class_num]
+        location_mask = tf.cast(y_true[..., -1], tf.bool)
+
+        obj_mask = true_confidence
+        obj_mask_bool = tf.cast(y_true[..., 4], tf.bool)
+
+        """ calc the ignore mask  """
+        pred_xy, pred_wh = self.xywh_to_all(grid_pred_xy, grid_pred_wh,
+                                            out_hw, self.xy_offset, self.anchors)
+
+        obj_cnt = tf.reduce_sum(obj_mask)
+
+        def lmba(bc):
+            # NOTE use location_mask find all ground truth
+            gt_xy = tf.boolean_mask(all_true_xy[bc], location_mask[bc])
+            gt_wh = tf.boolean_mask(all_true_wh[bc], location_mask[bc])
+            iou_score = tf_bbox_iou(tf.concat([pred_xy[bc] - pred_wh[bc] / 2, pred_xy[bc] + pred_wh[bc] / 2], -1),
+                                    tf.concat([gt_xy - gt_wh / 2, gt_xy + gt_wh / 2], -1))  # [h,w,anchor,box_num]
+            # NOTE find this layer gt and pred iou score
+            idx = tf.where(tf.boolean_mask(obj_mask_bool[bc], location_mask[bc]))
+            mask_iou_score = tf.gather_nd(tf.boolean_mask(iou_score, obj_mask_bool[bc]), idx, 1)
+            with tf.control_dependencies(
+                    [self.tp.assign_add(tf.reduce_sum(tf.cast(mask_iou_score > self.iou_thresh, tf.float32)))]):
+                layer_iou_score = tf.squeeze(tf.gather(iou_score, idx, axis=-1), -1)
+                layer_match = tf.reduce_sum(tf.cast(layer_iou_score > self.iou_thresh, tf.float32), -1, keepdims=True)
+                # if iou for any ground truth larger than iou_thresh, the pred is true.
+                match_num = tf.reduce_sum(tf.cast(iou_score > self.iou_thresh, tf.float32), -1, keepdims=True)
+            return (tf.cast(tf.less(match_num, 1), tf.float32),
+                    tf.cast(tf.less(layer_match, 1), tf.float32))
+
+        ignore_mask, layer_ignore_mask = tf.map_fn(lmba, tf.range(self.h.batch_size), dtype=(tf.float32, tf.float32))
+        """ calc recall precision """
+        pred_confidence_sigmod = tf.sigmoid(pred_confidence)
+        fp = tf.reduce_sum((tf.cast(pred_confidence_sigmod > self.obj_thresh, tf.float32) * layer_ignore_mask) * (1 - obj_mask))
+        fn = tf.reduce_sum((tf.cast(pred_confidence_sigmod < self.obj_thresh, tf.float32) + layer_ignore_mask) * obj_mask)
+
+        precision = tf.math.divide_no_nan(self.tp, (self.tp + fp))
+        recall = tf.math.divide_no_nan(self.tp, (self.tp + fn))
+
+        """ calc the loss dynamic weight """
+        grid_true_xy, grid_true_wh = self.xywh_to_grid(all_true_xy, all_true_wh,
+                                                       out_hw, self.xy_offset, self.anchors)
+        # NOTE When wh=0 , tf.log(0) = -inf, so use tf.where to avoid it
+        grid_true_wh = tf.where(tf.tile(obj_mask_bool[..., tf.newaxis], [1, 1, 1, 1, 2]),
+                                grid_true_wh, tf.zeros_like(grid_true_wh))
+        coord_weight = 2 - all_true_wh[..., 0:1] * all_true_wh[..., 1:2]
+
+        """ calc the loss """
+        xy_loss = tf.reduce_sum(
+            obj_mask * coord_weight * self.xy_weight * tf.nn.sigmoid_cross_entropy_with_logits(
+                labels=grid_true_xy, logits=grid_pred_xy), [1, 2, 3, 4])
+
+        wh_loss = tf.reduce_sum(
+            obj_mask * coord_weight * self.wh_weight * self.smoothl1loss(
+                labels=grid_true_wh, predictions=grid_pred_wh), [1, 2, 3, 4])
+
+        obj_loss = self.obj_weight * tf.reduce_sum(
+            obj_mask * tf.nn.sigmoid_cross_entropy_with_logits(
+                labels=true_confidence, logits=pred_confidence), [1, 2, 3, 4])
+
+        noobj_loss = self.noobj_weight * tf.reduce_sum(
+            (1 - obj_mask) * ignore_mask * tf.nn.sigmoid_cross_entropy_with_logits(
+                labels=true_confidence, logits=pred_confidence), [1, 2, 3, 4])
+
+        cls_loss = tf.reduce_sum(
+            obj_mask * self.cls_weight * tf.nn.sigmoid_cross_entropy_with_logits(
+                labels=true_cls, logits=pred_cls), [1, 2, 3, 4])
+
+        softmax_cls_loss = tf.reduce_sum(
+            obj_mask[..., 0] * self.cls_weight * tf.nn.softmax_cross_entropy_with_logits(
+                labels=true_cls, logits=pred_cls), [1, 2, 3])
+
+        """ sum loss """
+        obj_loss = tf.reduce_sum(obj_loss)
+        noobj_loss = tf.reduce_sum(noobj_loss)
+        cls_loss = tf.reduce_sum(cls_loss)
+        softmax_cls_loss = tf.reduce_sum(softmax_cls_loss)
+        xy_loss = tf.reduce_sum(xy_loss)
+        wh_loss = tf.reduce_sum(wh_loss)
+
+        assert np.allclose(loss_coord[self.layer], (xy_loss + wh_loss).numpy())
+        assert np.allclose(loss_conf[self.layer], (obj_loss + noobj_loss).numpy())
+        assert np.allclose(loss_cls[self.layer], softmax_cls_loss.numpy())
 
 
 def test_yolo_loss_clac():
@@ -322,3 +468,42 @@ def test_yolo_loss_clac():
             labels=true_cls, logits=pred_cls), [1, 2, 3, 4])
 
     total_loss = obj_loss + noobj_loss + cls_loss + xy_loss + wh_loss
+
+
+def check_loss_is_nan():
+    """ 检查loss出现nan的原因 """
+    physical_devices = tf.config.experimental.list_physical_devices('GPU')
+    assert len(physical_devices) > 0, "Not enough GPU hardware devices available"
+    tf.config.experimental.set_memory_growth(physical_devices[0], True)
+
+    h = YOLOHelper('data/voc_img_ann.npy', 20, 'data/voc_anchor_v3.npy', [416, 416], [[13, 13], [26, 26], [52, 52]])
+    h.set_dataset(16, True, True, True)
+    _, net = yolo_mbv1([416, 416, 3], 3, 20, 1.0)
+
+    fns: List[YOLOLoss] = [YOLOLoss(h, 0.5, 0.7, 1, 1, 3, 2, 1, 0, verbose=0),
+                           YOLOLoss(h, 0.5, 0.7, 1, 1, 3, 2, 1, 1, verbose=0),
+                           YOLOLoss(h, 0.5, 0.7, 1, 1, 3, 2, 1, 2, verbose=0)]
+
+    def find_nan():
+        for (img, y_trues) in h.train_dataset:
+            y_preds = net(img)
+            for l, fn in enumerate(fns):
+                loss = fn(y_trues[l], y_preds[l])
+                print('loss :', loss.numpy(), end='\r')
+                if tf.math.is_nan(loss):
+                    return y_trues, y_preds
+
+    y_trues, y_preds = find_nan()
+    y_trues = [y_true.numpy() for y_true in y_trues]
+    y_preds = [y_pred.numpy() for y_pred in y_preds]
+    np.save('tmp/yolo_nan_debug.npz',
+            {'y_trues': y_trues, 'y_preds': y_preds})
+
+
+def test_sigmoid_loss_nan():
+    """ 发现obj loss出现nan了，看看sigmoid_cross_entropy_with_logits什么时候会出现nan """
+    tf.nn.sigmoid_cross_entropy_with_logits(7., np.NaN)
+    tf.nn.sigmoid_cross_entropy_with_logits(np.NaN, 7.)
+    infer_model, train_model = yolo_mbv1((416, 416, 3), 3, 20, 1.0)
+    train_model.outputs
+    infer_model.outputs

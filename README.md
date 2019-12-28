@@ -372,9 +372,20 @@ yourdatasetdir/
 ```sh
 make train CFG=config/default_retinaface.yml
 ```
+## Convert
+
+```sh
+toco --keras_model_file xxxx/infer_model_xx.h5 --output_file xxx.tflite
+ncc compile xxx.tflite xxx.kmodel -i tflite --dataset images --input-std 1 --input-mean 0.5
+```
 
 ## Inference
 
 ```sh
 make infer CKPT=log/default_retinaface_exp/auto_infer_xxx.h5 IMG=imgpath_or_imgdir
+
+or
+
+ncc infer xxx.kmodel  xxx/output_dir --dataset xxx/image_dir --input-std 1 --input-mean 0.5
+make infer CKPT=log/default_retinaface_exp/auto_infer_xxx.h5 IMG=imgpath_or_imgdir RES=xxx/output_dir
 ```
