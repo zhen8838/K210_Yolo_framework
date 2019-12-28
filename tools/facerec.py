@@ -4,7 +4,6 @@ import tensorflow.python.keras.layers as kl
 import tensorflow.python.keras.losses as kls
 import tensorflow.python.keras.constraints as kc
 from tensorflow.python.keras.metrics import Metric, MeanMetricWrapper
-from tensorflow.python.keras.utils.losses_utils import ReductionV2
 from tensorflow.python.ops.resource_variable_ops import ResourceVariable
 import numpy as np
 from tools.base import INFO, ERROR, NOTE, BaseHelper
@@ -45,8 +44,6 @@ class FcaeRecHelper(BaseHelper):
         self.use_softmax = use_softmax
         self.iaaseq = iaa.OneOf([
             iaa.Fliplr(0.5),  # 50% 镜像
-            iaa.Affine(rotate=(-10, 10)),  # 随机旋转
-            iaa.Affine(translate_percent={"x": (-0.1, 0.1), "y": (-0.1, 0.1)})  # 随机平移
         ])  # type: iaa.meta.Augmenter
 
     def build_datapipe(self, image_ann_list: np.ndarray, batch_size: int, is_augment: bool,
@@ -120,7 +117,7 @@ class FcaeRecHelper(BaseHelper):
 
 class TripletLoss(kls.Loss):
     def __init__(self, batch_size: int, alpha: float,
-                 reduction=ReductionV2.AUTO, name=None):
+                 reduction='auto', name=None):
         super().__init__(reduction=reduction, name=name)
         self.batch_size = batch_size
         self.alpha = alpha
@@ -137,7 +134,7 @@ class TripletLoss(kls.Loss):
 
 
 class Sparse_SoftmaxLoss(kls.Loss):
-    def __init__(self, scale=30, reduction=ReductionV2.AUTO, name=None):
+    def __init__(self, scale=30, reduction='auto', name=None):
         """ sparse softmax loss with scale
 
         Parameters
@@ -148,7 +145,7 @@ class Sparse_SoftmaxLoss(kls.Loss):
 
         reduction : [type], optional
 
-            by default ReductionV2.AUTO
+            by default 'auto'
 
         name : str, optional
 
@@ -164,7 +161,7 @@ class Sparse_SoftmaxLoss(kls.Loss):
 
 class Sparse_AmsoftmaxLoss(kls.Loss):
     def __init__(self, batch_size: int, scale: int = 30, margin: int = 0.35,
-                 reduction=ReductionV2.AUTO, name=None):
+                 reduction='auto', name=None):
         """ sparse addivate margin softmax
 
         Parameters
@@ -217,7 +214,7 @@ class Sparse_AmsoftmaxLoss(kls.Loss):
 
 class Sparse_AsoftmaxLoss(kls.Loss):
     def __init__(self, batch_size: int, scale: int = 30, margin: int = 0.35,
-                 reduction=ReductionV2.AUTO, name=None):
+                 reduction='auto', name=None):
         """ sparse addivate softmax
 
         Parameters
