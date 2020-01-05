@@ -37,13 +37,13 @@ train:
     function_optimization: true
     scoped_allocator_optimization: true
     layout_optimizer: true
-  augmenter: false
+  augmenter: true
   batch_size: *BATCH_SIZE_REF
   pre_ckpt: null
   rand_seed: 10101
-  epochs: 30
+  epochs: 200
   log_dir: log
-  sub_log_dir: null
+  sub_log_dir: default_facerec_amsoftmax_k210_exp
   debug: false
   verbose: 1
   vali_step_factor: 0.3
@@ -57,24 +57,29 @@ train:
   Lookahead_kwarg:
     k: 5
     alpha: 0.5
-  earlystop: false
-  earlystop_kwarg:
-    monitor: val_loss
-    min_delta: 0
-    patience: 4
-    verbose: 0
-    mode: auto
-    baseline: null
-    restore_best_weights: false
-  modelcheckpoint: true
-  modelcheckpoint_kwarg:
-    monitor: val_loss
-    verbose: 0
-    save_best_only: true
-    save_weights_only: false
-    mode: auto
-    save_freq: epoch
-    load_weights_on_restart: false
+  callbacks:
+    - name: EarlyStopping
+      kwarg:
+        monitor: val_loss
+        min_delta: 0
+        patience: 4
+        verbose: 0
+        mode: auto
+        baseline: null
+        restore_best_weights: false
+    - name: ModelCheckpoint
+      kwarg:
+        monitor: val_loss
+        verbose: 0
+        save_best_only: true
+        save_weights_only: false
+        mode: auto
+        save_freq: epoch
+        load_weights_on_restart: false
+    - name: StepLR
+      kwarg:
+        steps: [ 50  ]
+        rates: [0.0001]
 prune:
   is_prune: false
   init_sparsity: 0.5

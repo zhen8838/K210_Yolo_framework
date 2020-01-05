@@ -19,8 +19,6 @@ class FcaeRecHelper(BaseHelper):
         ----------
         BaseHelper : [type]
 
-
-
         image_ann : str
 
             image annotation file path
@@ -42,13 +40,25 @@ class FcaeRecHelper(BaseHelper):
         self.in_hw = np.array(in_hw)
         self.embedding_size = embedding_size
         self.use_softmax = use_softmax
-        self.iaaseq = iaa.OneOf([
-            iaa.Fliplr(0.5),  # 50% 镜像
-        ])  # type: iaa.meta.Augmenter
+
+    def augment_img(self, img: tf.Tensor, ann: tf.Tensor) -> [tf.Tensor, tf.Tensor]:
+        img = tf.image.random_flip_left_right(img)
+
+        l = tf.random.categorical(tf.math.log([[0.5, 0.5]]), 4, tf.int32)[0]
+        img = tf.cond(l[0] == 1, lambda: img,
+                      lambda: tf.image.random_hue(img, 0.15))
+        img = tf.cond(l[1] == 1, lambda: img,
+                      lambda: tf.image.random_saturation(img, 0.6, 1.6))
+        img = tf.cond(l[2] == 1, lambda: img,
+                      lambda: tf.image.random_brightness(img, 0.1))
+        img = tf.cond(l[3] == 1, lambda: img,
+                      lambda: tf.image.random_contrast(img, 0.7, 1.3))
+        return img, ann
 
     def build_datapipe(self, image_ann_list: np.ndarray, batch_size: int, is_augment: bool,
                        is_normlize: bool, is_training: bool) -> tf.data.Dataset:
         print(INFO, 'data augment is ', str(is_augment))
+
         img_shape = list(self.in_hw) + [3]
         if self.use_softmax:
             def _parser(i: tf.Tensor):
@@ -58,7 +68,8 @@ class FcaeRecHelper(BaseHelper):
                     [i], [tf.string, tf.int32], 'get_idx')
                 # load image
                 raw_img = self.read_img(img_path)
-
+                if is_augment:
+                    raw_img, _ = self.augment_img(raw_img, None)
                 # normlize image
                 if is_normlize is True:
                     img = self.normlize_img(raw_img)  # type:tf.Tensor
@@ -87,11 +98,15 @@ class FcaeRecHelper(BaseHelper):
                 p_img = self.read_img(p_path)
                 n_img = self.read_img(n_path)
 
+                if is_augment:
+                    a_img, _ = self.augment_img(a_img, None)
+                    p_img, _ = self.augment_img(p_img, None)
+                    n_img, _ = self.augment_img(n_img, None)
                 # normlize image
                 if is_normlize is True:
-                    a_img = self.normlize_img(a_img)  # type:tf.Tensor
-                    p_img = self.normlize_img(p_img)  # type:tf.Tensor
-                    n_img = self.normlize_img(n_img)  # type:tf.Tensor
+                    a_img: tf.Tensor = self.normlize_img(a_img)
+                    p_img: tf.Tensor = self.normlize_img(p_img)
+                    n_img: tf.Tensor = self.normlize_img(n_img)
                 else:
                     a_img = tf.cast(a_img, tf.float32)
                     p_img = tf.cast(p_img, tf.float32)
