@@ -245,22 +245,11 @@ python3 ./keras_inference.py log/xxxxx/infer_model_100.h5 xxxxx/images --results
 
 ## Prepare dataset
 
-Download [CelebFaces](http://mmlab.ie.cuhk.edu.hk/projects/CelebA.html) dataset.
-Download dlib [landmark data](https://share.weiyun.com/5L3XEQc)
+1.  Download [ms1m face](https://github.com/deepinsight/insightface/wiki/Dataset-Zoo#ms1m-arcface-85k-ids58m-images-57-recommend) dataset.
+2.  `pip install mxnet`
+3.   make_ms1m_list.py --data_dir ms1m_data_dir --save_dir img_you_want_to_save_dir --output_file data/ms1m_img_ann.npy
 
-```sh
-python3 ./make_celeba_facerec.py --input_shape 128 \
-                              --align_data data/landmarks.dat \
-                              --org_root xxxxx/img_align_celeba \
-                              --new_root xxxxx/img_cropped_celeba \
-                              --identity_file xxxxx/identity_CelebA.txt \
-                              --partition_file xxxxx/list_eval_partition.txt \
-                              --ann_file data/celeba_facerec_img_ann.npy \
-                              --is_crop True \
-                              --is_save True
-```
-
-Now you have `data/celeba_facerec_img_ann.npy` , And **record the face `class num` for config file**.
+Now you have `data/ms1m_img_ann.npy`
 
 ## Train
 
@@ -282,13 +271,11 @@ make train CFG=config/default_facerec_softmax.yml
 make train CFG=config/default_facerec_amsoftmax.yml
 ```
 
-
 4. Use Asoftmax Loss
 
 ```sh
 make train CFG=config/default_facerec_asoftmax.yml
 ```
-
 
 # Tiny ImageNet
 
