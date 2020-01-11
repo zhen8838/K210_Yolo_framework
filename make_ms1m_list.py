@@ -23,6 +23,16 @@ def make_example(im_str_a: str, im_str_b: str, label: int) -> bytes:
     return tf.train.Example(features=tf.train.Features(feature=feature)).SerializeToString()
 
 
+def make_train_example(im_str: str, label: int) -> bytes:
+    """ make example """
+    feature = {
+        "img": tf.train.Feature(bytes_list=tf.train.BytesList(value=[im_str])),
+        "label": tf.train.Feature(int64_list=tf.train.Int64List(value=[label])),
+    }
+
+    return tf.train.Example(features=tf.train.Features(feature=feature)).SerializeToString()
+
+
 def load_bin(path: str, image_size=[112, 112]) -> [list, list]:
     bins, issame_list = pickle.load(open(path, 'rb'), encoding='bytes')
     data_list = []
@@ -74,29 +84,22 @@ def main(data_dir: str, save_dir: str, output_file: str):
         print('图像个数', len(imgidx))
 
     save_dict = {}
-    pathlists = []
-    labellist = []
-    newidmap = {}
-    mode = 'train'
+    train_data = []
     print(INFO, 'Start make train set')
-    for i, idx in tqdm(enumerate(imgidx), total=len(imgidx)):
-        hd, s = recordio.unpack(imgrec.read_idx(idx))
-        buf = np.array(np.frombuffer(s, dtype=np.uint8), dtype=np.uint8)
-        img = cv2.imdecode(buf, cv2.IMREAD_COLOR)
-        cv2.imwrite(str(save_dir / f'{mode}_{idx}.jpg'), img,
-                    [cv2.IMWRITE_JPEG_QUALITY, 100])  # 无损保存
-        pathlists.append(str(save_dir / f'mode_{idx}.jpg'))
-        labellist.append(int(hd.label))
-        lb = int(hd.label)
-        if lb not in newidmap:
-            newidmap[lb] = []
-        newidmap[lb].append(i)
+    for i, ids in enumerate(tqdm(idmap, total=len(idmap))):
+        fname = str(save_dir / f'train_{i}.tfrecords')
+        with tf.io.TFRecordWriter(fname) as writer:
+            for idx in ids:
+                header, s = recordio.unpack(imgrec.read_idx(idx))
+                label = int(header.label)
+                serialized_example = make_train_example(s, label)
+                writer.write(serialized_example)
+        train_data.append(fname)
 
-    save_dict['train_data'] = {'img_ann': list(zip(pathlists, labellist)),
-                               'idmap': newidmap}
-    save_dict['train_num'] = len(pathlists)
+    save_dict['train_data'] = train_data
+    save_dict['train_num'] = len(imgidx)
 
-    print(INFO, 'Start make val and test set')
+    print(INFO, 'Start make val and test set')                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      
     target = 'lfw,cfp_fp,agedb_30'
     val_num = 0
     with tf.io.TFRecordWriter(str(save_dir / 'val.tfrecords')) as writer:
@@ -119,10 +122,6 @@ def main(data_dir: str, save_dir: str, output_file: str):
     np.save(output_file, save_dict, allow_pickle=True)
 
 
-
-data_dir = '/media/zqh/Datas/faces_ms1m-refine-v2_112x112/faces_emore'
-save_dir = '/home/zqh/workspace/faces_ms1m'
-output_file = 'data/ms1m_img_ann.npy'
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_dir', type=str, help='tiny imagenet dir path',

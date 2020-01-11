@@ -1,29 +1,31 @@
 BATCH_SIZE_REF: &BATCH_SIZE_REF 64
-WIDTH_REF: &WIDTH_REF 128
+WIDTH_REF: &WIDTH_REF 112
 
 mode: train
 model:
   name: feacrec
   helper: FcaeRecHelper
   helper_kwarg:
-    image_ann: data/celeba_facerec_img_ann.npy
+    image_ann: data/ms1m_img_ann.npy
     in_hw:
       - *WIDTH_REF
       - *WIDTH_REF
     embedding_size: 128
     use_softmax: false
-  network: mbv1_triplet_facerec
+  network: mbv1_facerec
   network_kwarg:
     input_shape:
       - *WIDTH_REF
       - *WIDTH_REF
       - 3
+    class_num: 85742
     embedding_size: 128
-    depth_multiplier: 1.0
+    depth_multiplier: 0.5
+    loss: triplet
   loss: TripletLoss
   loss_kwarg:
-    batch_size: *BATCH_SIZE_REF
-    alpha: 0.6
+    alpha: 0.9
+    distance_fn: l2
 train:
   graph_optimizer: true
   graph_optimizer_kwarg: 
@@ -41,7 +43,7 @@ train:
   rand_seed: 10101
   epochs: 30
   log_dir: log
-  sub_log_dir: default_facerec_triplet_exp
+  sub_log_dir: default_facerec_amsoftmax_exp
   debug: false
   verbose: 1
   vali_step_factor: 0.3
@@ -58,22 +60,32 @@ train:
   callbacks:
     - name: EarlyStopping
       kwarg:
-        monitor: val_loss
+        monitor: val_acc
         min_delta: 0
         patience: 4
         verbose: 0
-        mode: auto
+        mode: max
         baseline: null
         restore_best_weights: false
     - name: ModelCheckpoint
       kwarg:
-        monitor: val_loss
+        monitor: val_acc
         verbose: 0
         save_best_only: true
         save_weights_only: false
-        mode: auto
+        mode: max
         save_freq: epoch
         load_weights_on_restart: false
+    - name: FacerecValidation
+      kwarg:
+        batch_size: *BATCH_SIZE_REF
+        distance_fn: l2
+        threshold: 0.3
+    - name: StepLR
+      kwarg:
+        steps: [ 50  ,  80    ,  120   ]
+        rates: [0.0001, 0.0004,  0.0001]
+
 prune:
   is_prune: false
   init_sparsity: 0.5
@@ -81,6 +93,4 @@ prune:
   end_epoch: 5
   frequency: 100
 inference:
-  infer_fn: pfld_infer
-  infer_fn_kwarg:
-    radius: 1
+  infer_fn: null

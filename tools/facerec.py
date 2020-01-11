@@ -8,14 +8,7 @@ from tensorflow.python.ops.resource_variable_ops import ResourceVariable
 import numpy as np
 from tools.base import INFO, ERROR, NOTE, BaseHelper
 import imgaug.augmenters as iaa
-from typing import List
-
-
-class Train_ann(object):
-    def __init__(self, train_ann_list: dict):
-        super().__init__()
-        self.img_ann: List[Tuple[AnyStr, int]] = train_ann_list['img_ann']
-        self.idmap: List[List[int]] = train_ann_list['idmap']
+from typing import List, Dict, Callable, Iterable, Tuple
 
 
 class FcaeRecHelper(BaseHelper):
@@ -57,7 +50,7 @@ class FcaeRecHelper(BaseHelper):
             self.test_list: np.ndarray = None
         else:
             img_ann_list: dict = np.load(image_ann, allow_pickle=True)[()]
-            self.train_list: Train_ann = Train_ann(img_ann_list['train_data'])
+            self.train_list: List[str] = img_ann_list['train_data']
             self.val_list: str = img_ann_list['val_data']
             self.test_list: str = img_ann_list['val_data']
 
@@ -83,19 +76,22 @@ class FcaeRecHelper(BaseHelper):
                       lambda: tf.image.random_contrast(img, 0.7, 1.3))
         return img, ann
 
-    def build_train_datapipe(self, image_ann_list: Train_ann, batch_size: int,
+    def build_train_datapipe(self, image_ann_list: List[str], batch_size: int,
                              is_augment: bool, is_normlize: bool,
                              is_training: bool) -> tf.data.Dataset:
         print(INFO, 'data augment is ', str(is_augment))
 
         img_shape = list(self.in_hw) + [3]
         if self.use_softmax:
-            def parser(i: tf.Tensor):
-                img_path, label = tf.numpy_function(
-                    lambda idx: image_ann_list.img_ann[idx], [i],
-                    [tf.string, tf.int64], 'get_idx')
+            def parser(stream: bytes):
+                example = tf.io.parse_single_example(stream, {
+                    'img': tf.io.FixedLenFeature([], tf.string),
+                    'label': tf.io.FixedLenFeature([], tf.int64),
+                })  # type:dict
+
                 # load image
-                raw_img = self.read_img(img_path)
+                raw_img = tf.image.decode_jpeg(example['img'], 3)
+                label = example['label']
                 if is_augment:
                     raw_img, _ = self.augment_img(raw_img, None)
                 # normlize image
@@ -106,53 +102,43 @@ class FcaeRecHelper(BaseHelper):
 
                 img.set_shape(img_shape)
                 label.set_shape([])
-                # Note y_true shape will be [batch,1]
-                return (img, img), ([label])
+                # Note y_true shape will be [batch]
+                return (img), (label)
 
+            ds = (tf.data.TFRecordDataset(image_ann_list, None, 80, 10)
+                  .shuffle(batch_size * 200).repeat()
+                  .map(parser, -1)
+                  .batch(batch_size, True).prefetch(-1))
         else:
-            id_list = np.arange(len(image_ann_list.idmap))
+            def parser(stream: bytes):
+                examples: dict = tf.io.parse_single_example(
+                    stream,
+                    {'img': tf.io.FixedLenFeature([], tf.string),
+                        'label': tf.io.FixedLenFeature([], tf.int64)})
+                return tf.image.decode_jpeg(examples['img'], 3), examples['label']
 
-            def parser(i: tf.Tensor):
-                img_a_path, label = tf.numpy_function(
-                    lambda idx: image_ann_list.img_ann[idx], [i],
-                    [tf.string, tf.int64], 'get_idx')
-                img_p_path = tf.numpy_function(
-                    lambda idx: image_ann_list.img_ann[np.random.choice(image_ann_list.idmap[idx])][0], [label],
-                    [tf.string], 'get_p_idx')
-                img_n_path = tf.numpy_function(
-                    lambda idx: image_ann_list.img_ann[np.random.choice(np.delete(id_list, label))][0], [label],
-                    [tf.string], 'get_p_idx')
-
-                # load image
-                raw_img_a = self.read_img(img_a_path)
-                raw_img_p = self.read_img(img_p_path)
-                raw_img_n = self.read_img(img_n_path)
+            def pair_parser(raw_imgs, labels):
+                # imgs do same augment ~
                 if is_augment:
-                    raw_img_a, _ = self.augment_img(raw_img_a, None)
-                    raw_img_p, _ = self.augment_img(raw_img_p, None)
-                    raw_img_n, _ = self.augment_img(raw_img_n, None)
+                    raw_imgs, _ = self.augment_img(raw_imgs, None)
                 # normlize image
-                if is_normlize is True:
-                    img_a: tf.Tensor = self.normlize_img(raw_img_a)
-                    img_p: tf.Tensor = self.normlize_img(raw_img_p)
-                    img_n: tf.Tensor = self.normlize_img(raw_img_n)
+                if is_normlize:
+                    imgs: tf.Tensor = self.normlize_img(raw_imgs)
                 else:
-                    img_a = tf.cast(raw_img_a, tf.float32)
-                    img_p = tf.cast(raw_img_p, tf.float32)
-                    img_n = tf.cast(raw_img_n, tf.float32)
+                    imgs = tf.cast(raw_imgs, tf.float32)
 
-                img_a.set_shape(img_shape)
-                img_p.set_shape(img_shape)
-                img_n.set_shape(img_shape)
-                label.set_shape([])
-                # Note y_true shape will be [batch,1]
-                return (img_a, img_p, img_n), ([label])
-
-        ds = (tf.data.Dataset.from_tensor_slices(
-            tf.range(self.train_total_data))
-            .shuffle(batch_size * 500).repeat()
-            .map(parser, -1)
-            .batch(batch_size, True).prefetch(-1))
+                imgs.set_shape([4] + img_shape)
+                labels.set_shape([4, ])
+                # Note y_true shape will be [batch,3]
+                return (imgs[0], imgs[1], imgs[2]), (labels[:3])
+            ds = (tf.data.Dataset.from_tensor_slices(image_ann_list)
+                  .interleave(lambda x: tf.data.TFRecordDataset(x)
+                              .shuffle(100)
+                              .repeat(), block_length=2, num_parallel_calls=-1)
+                  .map(parser, -1)
+                  .batch(4, True)
+                  .map(pair_parser, -1)
+                  .batch(batch_size, True).prefetch(-1))
 
         return ds
 
@@ -161,37 +147,30 @@ class FcaeRecHelper(BaseHelper):
                            is_training: bool) -> tf.data.Dataset:
 
         img_shape = list(self.in_hw) + [3]
-        if self.use_softmax:
-            def parser(stream: bytes):
-                example = tf.io.parse_single_example(stream, {
-                    'img_a': tf.io.FixedLenFeature([], tf.string),
-                    'img_b': tf.io.FixedLenFeature([], tf.string),
-                    'label': tf.io.FixedLenFeature([], tf.int64),
-                })  # type:dict
-                img_a: tf.Tensor = tf.image.decode_image(example['img_a'], channels=3)
-                img_b: tf.Tensor = tf.image.decode_image(example['img_b'], channels=3)
-                label: tf.Tensor = example['label']
-                img_a.set_shape(img_shape)
-                img_b.set_shape(img_shape)
-                label.set_shape(())
-                # Note y_true shape will be [batch,1]
-                return (img_a, img_b), ([label])
-        else:
-            # NOTE when use tripet loss , need feed 3 images
-            def parser(stream: bytes):
-                example = tf.io.parse_single_example(stream, {
-                    'img_a': tf.io.FixedLenFeature([], tf.string),
-                    'img_b': tf.io.FixedLenFeature([], tf.string),
-                    'label': tf.io.FixedLenFeature([], tf.int64),
-                })  # type:dict
-                img_a: tf.Tensor = tf.image.decode_image(example['img_a'], channels=3)
-                img_b: tf.Tensor = tf.image.decode_image(example['img_b'], channels=3)
-                label: tf.Tensor = example['label']
-                img_a.set_shape(img_shape)
-                img_b.set_shape(img_shape)
-                label.set_shape(())
-                # Note y_true shape will be [batch,1]
-                return (img_a, img_b, img_a), ([label])
+
+        def parser(stream: bytes):
+            example = tf.io.parse_single_example(stream, {
+                'img_a': tf.io.FixedLenFeature([], tf.string),
+                'img_b': tf.io.FixedLenFeature([], tf.string),
+                'label': tf.io.FixedLenFeature([], tf.int64),
+            })  # type:dict
+            raw_img_a: tf.Tensor = tf.image.decode_image(example['img_a'], channels=3)
+            raw_img_b: tf.Tensor = tf.image.decode_image(example['img_b'], channels=3)
+            label: tf.Tensor = tf.cast(example['label'], tf.bool)
+
+            if is_normlize:
+                img_a: tf.Tensor = self.normlize_img(raw_img_a)
+                img_b: tf.Tensor = self.normlize_img(raw_img_b)
+            else:
+                img_a = tf.cast(raw_img_a, tf.float32)
+                img_b = tf.cast(raw_img_b, tf.float32)
+
+            img_a.set_shape(img_shape)
+            img_b.set_shape(img_shape)
+            label.set_shape(())
+            # Note y_true shape will be [batch]
+            return (img_a, img_b), (label)
+
         if is_training:
             ds = (tf.data.TFRecordDataset(image_ann_list)
                   .shuffle(batch_size * 500).repeat()
@@ -222,22 +201,51 @@ class FcaeRecHelper(BaseHelper):
             self.test_epoch_step = self.test_total_data // self.batch_size
 
 
+def l2distance(embedd_a: tf.Tensor, embedd_b: tf.Tensor) -> tf.Tensor:
+    """ l2 distance
+
+    Parameters
+    ----------
+    embedd_a : tf.Tensor
+
+        shape : [batch,embedding size]
+
+    embedd_b : tf.Tensor
+
+        shape : [batch,embedding size]
+
+    Returns
+    -------
+    [tf.Tensor]
+
+        distance shape : [batch]
+    """
+    dist = tf.math.reduce_sum(tf.square(embedd_a - embedd_b), -1)
+    return dist
+
+
+distance_register = {
+    'l2': l2distance
+}
+
+
 class TripletLoss(kls.Loss):
-    def __init__(self, batch_size: int, alpha: float,
-                 reduction='auto', name=None):
+    def __init__(self, alpha: float, distance_fn: str = 'l2', reduction='auto', name=None):
         super().__init__(reduction=reduction, name=name)
-        self.batch_size = batch_size
         self.alpha = alpha
-        self.dist_var = tf.get_variable('distance_diff', shape=(self.batch_size, 1), dtype=tf.float32,
-                                        initializer=tf.zeros_initializer(), trainable=False)  # type:tf.Variable
+        self.distance_fn: l2distance = distance_register[distance_fn]
+        self.triplet_acc: tf.Variable = tf.compat.v1.get_variable(
+            'triplet_acc', shape=(), dtype=tf.float32,
+            initializer=tf.zeros_initializer(), trainable=False)
 
     def call(self, y_true: tf.Tensor, y_pred: tf.Tensor):
         a, p, n = tf.split(y_pred, 3, axis=-1)
-        p_dist = tf.reduce_sum(tf.square(a - p), axis=-1, keep_dims=True)  # [batch_size,1]
-        n_dist = tf.reduce_sum(tf.square(a - n), axis=-1, keep_dims=True)  # [batch_size,1]
+        p_dist = self.distance_fn(a, p)  # [batch]
+        n_dist = self.distance_fn(a, n)  # [batch]
         dist_diff = p_dist - n_dist
-        total_loss = tf.reduce_sum(tf.nn.relu(dist_diff + self.alpha)) / self.batch_size
-        return total_loss + 0 * self.dist_var.assign(dist_diff)
+        total_loss = tf.reduce_mean(tf.nn.relu(dist_diff + self.alpha))  # [batch]
+        self.triplet_acc.assign(tf.reduce_mean(tf.cast(tf.equal(dist_diff < -self.alpha, tf.ones_like(dist_diff, tf.bool)), tf.float32), axis=-1))
+        return total_loss
 
 
 class Sparse_SoftmaxLoss(kls.Loss):
@@ -354,10 +362,34 @@ class Sparse_AsoftmaxLoss(kls.Loss):
         return - y_true_pred_margin * self.scale + logZ
 
 
-class TripletAccuracy(MeanMetricWrapper):
-    """ Triplet loss Calculates how often predictions matches labels. """
+class FacerecValidation(k.callbacks.Callback):
+    def __init__(self, validation_model: k.Model, validation_data: tf.data.Dataset,
+                 validation_steps: int, trian_steps: int, accuracy_var: tf.Variable, batch_size: int,
+                 distance_fn: str, threshold: float):
+        self.val_model = validation_model
+        self.val_iter: Iterable[Tuple[Tuple[tf.Tensor, tf.Tensor], tf.Tensor]] = iter(validation_data)
+        self.val_step = int(validation_steps)
+        self.trian_step = int(trian_steps)
+        self.acc_var = accuracy_var
+        self.distance_fn: l2distance = distance_register[distance_fn]
+        self.threshold = threshold
+        self.batch_size = batch_size
 
-    def __init__(self, dist: ResourceVariable, threshold: float, name='acc', dtype=None):
-        super(TripletAccuracy, self).__init__(
-            lambda y_true, y_pred, dist, threshold: tf.cast(dist < -threshold, tf.float32),
-            name, dtype=dtype, dist=dist.read_value(), threshold=threshold)
+    def on_train_batch_end(self, batch, logs=None):
+        if batch == self.trian_step:
+            def fn(i: tf.Tensor):
+                x, actual_issame = next(self.val_iter)  # actual_issame:tf.Bool
+                y_pred: Tuple[tf.Tensor] = self.val_model(x, training=False)
+                dist: tf.Tensor = self.distance_fn(*y_pred)  # [batch]
+                pred_issame = tf.less(dist, self.threshold)
+
+                tp = tf.reduce_sum(tf.cast(tf.logical_and(pred_issame, actual_issame), tf.float32))
+                fp = tf.reduce_sum(tf.cast(tf.logical_and(pred_issame, tf.logical_not(actual_issame)), tf.float32))
+                tn = tf.reduce_sum(tf.cast(tf.logical_and(tf.logical_not(pred_issame), tf.logical_not(actual_issame)), tf.float32))
+                fn = tf.reduce_sum(tf.cast(tf.logical_and(tf.logical_not(pred_issame), actual_issame), tf.float32))
+
+                tpr = tf.math.divide_no_nan(tp, tp + fn)
+                fpr = tf.math.divide_no_nan(fp, fp + tn)
+                return (tp + tn) / tf.cast(tf.shape(dist)[0], tf.float32)
+
+            self.acc_var.assign(tf.reduce_mean(tf.map_fn(fn, tf.range(self.batch_size), tf.float32)))

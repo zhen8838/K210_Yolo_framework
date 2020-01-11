@@ -96,4 +96,4 @@ inference:
   infer_fn: yoloalgin_infer
   infer_fn_kwarg:
     obj_thresh: 0.7
-    iou_thresh: 0.3
+    nms_thresh: 0.3
