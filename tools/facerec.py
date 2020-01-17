@@ -220,7 +220,7 @@ def l2distance(embedd_a: tf.Tensor, embedd_b: tf.Tensor) -> tf.Tensor:
 
         distance shape : [batch]
     """
-    dist = tf.math.reduce_sum(tf.square(embedd_a - embedd_b), -1)
+    dist = tf.sqrt(tf.reduce_sum(tf.square(embedd_a - embedd_b), -1))
     return dist
 
 
@@ -233,6 +233,7 @@ class TripletLoss(kls.Loss):
     def __init__(self, alpha: float, distance_fn: str = 'l2', reduction='auto', name=None):
         super().__init__(reduction=reduction, name=name)
         self.alpha = alpha
+        self.distance_str = distance_fn
         self.distance_fn: l2distance = distance_register[distance_fn]
         self.triplet_acc: tf.Variable = tf.compat.v1.get_variable(
             'triplet_acc', shape=(), dtype=tf.float32,
@@ -240,6 +241,10 @@ class TripletLoss(kls.Loss):
 
     def call(self, y_true: tf.Tensor, y_pred: tf.Tensor):
         a, p, n = tf.split(y_pred, 3, axis=-1)
+        if self.distance_str == 'l2':
+            a = tf.math.l2_normalize(a, -1)
+            p = tf.math.l2_normalize(p, -1)
+            n = tf.math.l2_normalize(n, -1)
         p_dist = self.distance_fn(a, p)  # [batch]
         n_dist = self.distance_fn(a, n)  # [batch]
         dist_diff = p_dist - n_dist
