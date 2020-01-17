@@ -24,7 +24,7 @@ model:
     loss: triplet
   loss: TripletLoss
   loss_kwarg:
-    alpha: 0.9
+    target_distance: 3.9
     distance_fn: l2
 train:
   graph_optimizer: true
@@ -37,13 +37,13 @@ train:
     function_optimization: true
     scoped_allocator_optimization: true
     layout_optimizer: true
-  augmenter: false
+  augmenter: true
   batch_size: *BATCH_SIZE_REF
   pre_ckpt: null
   rand_seed: 10101
-  epochs: 30
+  epochs: 100
   log_dir: log
-  sub_log_dir: default_facerec_amsoftmax_exp
+  sub_log_dir: default_facerec_triplet_exp
   debug: false
   verbose: 1
   vali_step_factor: 0.3
@@ -80,7 +80,7 @@ train:
       kwarg:
         batch_size: *BATCH_SIZE_REF
         distance_fn: l2
-        threshold: 0.3
+        threshold: 0.1
     - name: StepLR
       kwarg:
         steps: [ 50  ,  80    ,  120   ]
@@ -94,3 +94,10 @@ prune:
   frequency: 100
 inference:
   infer_fn: null
+evaluate:
+  eval_fn: facerec_eval
+  eval_fn_kwarg:
+    nrof_folds: 5
+    pca: 0
+    batch_size: 64
+    is_plot: true

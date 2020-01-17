@@ -9,6 +9,13 @@ import numpy as np
 from tools.base import INFO, ERROR, NOTE, BaseHelper
 import imgaug.augmenters as iaa
 from typing import List, Dict, Callable, Iterable, Tuple
+import matplotlib.pyplot as plt
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import normalize
+from sklearn.model_selection import KFold
+from scipy import interpolate
+from sklearn.metrics import auc
+from tqdm import tqdm
 
 
 class FcaeRecHelper(BaseHelper):
@@ -201,7 +208,8 @@ class FcaeRecHelper(BaseHelper):
             self.test_epoch_step = self.test_total_data // self.batch_size
 
 
-def l2distance(embedd_a: tf.Tensor, embedd_b: tf.Tensor) -> tf.Tensor:
+def l2distance(embedd_a: tf.Tensor, embedd_b: tf.Tensor,
+               is_norm: bool = True) -> tf.Tensor:
     """ l2 distance
 
     Parameters
@@ -214,14 +222,20 @@ def l2distance(embedd_a: tf.Tensor, embedd_b: tf.Tensor) -> tf.Tensor:
 
         shape : [batch,embedding size]
 
+    is_norm : bool
+
+        is norm == True will normilze(embedd_a)
+
     Returns
     -------
     [tf.Tensor]
 
         distance shape : [batch]
     """
-    dist = tf.sqrt(tf.reduce_sum(tf.square(embedd_a - embedd_b), -1))
-    return dist
+    if is_norm:
+        embedd_a = tf.math.l2_normalize(embedd_a, -1)
+        embedd_b = tf.math.l2_normalize(embedd_b, -1)
+    return tf.reduce_sum(tf.square(embedd_a - embedd_b), -1)
 
 
 distance_register = {
@@ -230,9 +244,24 @@ distance_register = {
 
 
 class TripletLoss(kls.Loss):
-    def __init__(self, alpha: float, distance_fn: str = 'l2', reduction='auto', name=None):
+    def __init__(self, target_distance: float, distance_fn: str = 'l2', reduction='auto', name=None):
+        """ Triplet Loss:
+
+            When using l2 diatance , target_distance ∈ [0,4]
+
+        Parameters
+        ----------
+        target_distance : float
+
+            target distance threshold
+
+        distance_fn : str, optional
+
+            distance_fn name , by default 'l2'
+
+        """
         super().__init__(reduction=reduction, name=name)
-        self.alpha = alpha
+        self.target_distance = target_distance
         self.distance_str = distance_fn
         self.distance_fn: l2distance = distance_register[distance_fn]
         self.triplet_acc: tf.Variable = tf.compat.v1.get_variable(
@@ -241,15 +270,13 @@ class TripletLoss(kls.Loss):
 
     def call(self, y_true: tf.Tensor, y_pred: tf.Tensor):
         a, p, n = tf.split(y_pred, 3, axis=-1)
-        if self.distance_str == 'l2':
-            a = tf.math.l2_normalize(a, -1)
-            p = tf.math.l2_normalize(p, -1)
-            n = tf.math.l2_normalize(n, -1)
-        p_dist = self.distance_fn(a, p)  # [batch]
-        n_dist = self.distance_fn(a, n)  # [batch]
+        p_dist = self.distance_fn(a, p, is_norm=True)  # [batch]
+        n_dist = self.distance_fn(a, n, is_norm=True)  # [batch]
         dist_diff = p_dist - n_dist
-        total_loss = tf.reduce_mean(tf.nn.relu(dist_diff + self.alpha))  # [batch]
-        self.triplet_acc.assign(tf.reduce_mean(tf.cast(tf.equal(dist_diff < -self.alpha, tf.ones_like(dist_diff, tf.bool)), tf.float32), axis=-1))
+        total_loss = tf.reduce_mean(tf.nn.relu(dist_diff + self.target_distance))  # [batch]
+        self.triplet_acc.assign(
+            tf.reduce_mean(tf.cast(tf.equal(dist_diff < -self.target_distance,
+                                            tf.ones_like(dist_diff, tf.bool)), tf.float32), axis=-1))
         return total_loss
 
 
@@ -385,7 +412,8 @@ class FacerecValidation(k.callbacks.Callback):
             def fn(i: tf.Tensor):
                 x, actual_issame = next(self.val_iter)  # actual_issame:tf.Bool
                 y_pred: Tuple[tf.Tensor] = self.val_model(x, training=False)
-                dist: tf.Tensor = self.distance_fn(*y_pred)  # [batch]
+                dist: tf.Tensor = self.distance_fn(*y_pred, is_norm=True)  # [batch]
+
                 pred_issame = tf.less(dist, self.threshold)
 
                 tp = tf.reduce_sum(tf.cast(tf.logical_and(pred_issame, actual_issame), tf.float32))
@@ -397,4 +425,167 @@ class FacerecValidation(k.callbacks.Callback):
                 fpr = tf.math.divide_no_nan(fp, fp + tn)
                 return (tp + tn) / tf.cast(tf.shape(dist)[0], tf.float32)
 
-            self.acc_var.assign(tf.reduce_mean(tf.map_fn(fn, tf.range(self.batch_size), tf.float32)))
+            self.acc_var.assign(tf.reduce_mean(tf.map_fn(fn, tf.range(self.val_step), tf.float32)))
+
+
+def calculate_accuracy(threshold: float, dist: np.ndarray, issame: np.ndarray):
+    predict_issame = np.less(dist, threshold)
+    tp = np.sum(np.logical_and(predict_issame, issame))
+    fp = np.sum(np.logical_and(predict_issame, np.logical_not(issame)))
+    tn = np.sum(np.logical_and(np.logical_not(predict_issame), np.logical_not(issame)))
+    fn = np.sum(np.logical_and(np.logical_not(predict_issame), issame))
+
+    tpr = 0 if (tp + fn == 0) else float(tp) / float(tp + fn)
+    fpr = 0 if (fp + tn == 0) else float(fp) / float(fp + tn)
+    acc = float(tp + tn) / dist.size
+    return tpr, fpr, acc
+
+
+class LFold:
+    def __init__(self, n_splits=2, shuffle=False):
+        self.n_splits = n_splits
+        if self.n_splits > 1:
+            self.k_fold = KFold(n_splits=n_splits, shuffle=shuffle)
+
+    def split(self, indices):
+        if self.n_splits > 1:
+            return self.k_fold.split(indices)
+        else:
+            return [(indices, indices)]
+
+
+def calculate_roc(thresholds, embedds_a, embedds_b,
+                  issame, nrof_folds=10, pca=0):
+    nrof_pairs = len(issame)
+    nrof_thresholds = len(thresholds)
+    k_fold = LFold(n_splits=nrof_folds, shuffle=False)
+
+    tprs = np.zeros((nrof_folds, nrof_thresholds))
+    fprs = np.zeros((nrof_folds, nrof_thresholds))
+    accuracy = np.zeros((nrof_folds))
+    indices = np.arange(nrof_pairs)
+
+    if pca == 0:
+        embedds_a = normalize(embedds_a)
+        embedds_b = normalize(embedds_b)
+        diff = np.subtract(embedds_a, embedds_b)
+        dist = np.sum(np.square(diff), 1)
+
+    for fold_idx, (train_set, test_set) in enumerate(k_fold.split(indices)):
+        if pca > 0:
+            print(NOTE, 'doing pca on', fold_idx)
+            embed1_train = embedds_a[train_set]
+            embed2_train = embedds_b[train_set]
+            _embed_train = np.concatenate((embed1_train, embed2_train), axis=0)
+            pca_model = PCA(n_components=pca)
+            pca_model.fit(_embed_train)
+            embed1 = pca_model.transform(embedds_a)
+            embed2 = pca_model.transform(embedds_b)
+            embed1 = normalize(embed1)
+            embed2 = normalize(embed2)
+            diff = np.subtract(embed1, embed2)
+            dist = np.sum(np.square(diff), 1)
+
+        # Find the best threshold for the fold
+        acc_train = np.zeros((nrof_thresholds))
+        for threshold_idx, threshold in enumerate(thresholds):
+            _, _, acc_train[threshold_idx] = calculate_accuracy(threshold, dist[train_set], issame[train_set])
+        best_threshold_index = np.argmax(acc_train)
+        for threshold_idx, threshold in enumerate(thresholds):
+            tprs[fold_idx, threshold_idx], fprs[fold_idx, threshold_idx], _ = calculate_accuracy(threshold, dist[test_set], issame[test_set])
+        _, _, accuracy[fold_idx] = calculate_accuracy(thresholds[best_threshold_index], dist[test_set], issame[test_set])
+
+    tpr = np.mean(tprs, 0)
+    fpr = np.mean(fprs, 0)
+    return tpr, fpr, accuracy, thresholds[best_threshold_index]
+
+
+def calculate_val_far(threshold: float, dist: np.ndarray, issame: np.ndarray):
+    predict_issame = np.less(dist, threshold)
+    true_accept = np.sum(np.logical_and(predict_issame, issame))
+    false_accept = np.sum(np.logical_and(predict_issame, np.logical_not(issame)))
+    n_same = np.sum(issame)
+    n_diff = np.sum(np.logical_not(issame))
+    val = float(true_accept) / float(n_same)
+    far = float(false_accept) / float(n_diff)
+    return val, far
+
+
+def calculate_val(thresholds, embedds_a, embedds_b, issame, far_target, nrof_folds=10):
+    nrof_pairs = len(issame)
+    nrof_thresholds = len(thresholds)
+    k_fold = LFold(n_splits=nrof_folds, shuffle=False)
+
+    val = np.zeros(nrof_folds)
+    far = np.zeros(nrof_folds)
+
+    diff = np.subtract(embedds_a, embedds_b)
+    dist = np.sum(np.square(diff), 1)
+    indices = np.arange(nrof_pairs)
+
+    for fold_idx, (train_set, test_set) in enumerate(k_fold.split(indices)):
+
+        # Find the threshold that gives FAR = far_target
+        far_train = np.zeros(nrof_thresholds)
+        for threshold_idx, threshold in enumerate(thresholds):
+            _, far_train[threshold_idx] = calculate_val_far(threshold, dist[train_set], issame[train_set])
+        if np.max(far_train) >= far_target:
+            f = interpolate.interp1d(far_train, thresholds, kind='slinear')
+            threshold = f(far_target)
+        else:
+            threshold = 0.0
+
+        val[fold_idx], far[fold_idx] = calculate_val_far(threshold, dist[test_set], issame[test_set])
+
+    val_mean = np.mean(val)
+    far_mean = np.mean(far)
+    val_std = np.std(val)
+    return val_mean, val_std, far_mean
+
+
+def calculate_evaluate_metric(embedds_a, embedds_b, issame, nrof_folds=10, pca=0):
+    # Calculate evaluation metrics
+    thresholds = np.arange(0, 4, 0.01)
+    tpr, fpr, accuracy, best_threshold = calculate_roc(thresholds, embedds_a,
+                                                       embedds_b, issame, nrof_folds=nrof_folds, pca=pca)
+    thresholds = np.arange(0, 4, 0.001)
+    val, val_std, far = calculate_val(thresholds, embedds_a, embedds_b,
+                                      issame, 1e-3, nrof_folds=nrof_folds)
+    return tpr, fpr, accuracy, best_threshold, val, val_std, far
+
+
+def facerec_eval(infer_model: k.Model, h: FcaeRecHelper,
+                 nrof_folds: int, pca: int, batch_size: int, is_plot: bool = True):
+    h.set_dataset(batch_size, is_training=False)
+    embedds_a = []
+    embedds_b = []
+    issame = []
+    for (img_a, img_b), y_true in tqdm(h.test_dataset, total=int(h.test_epoch_step)):
+        embedds_a.append(infer_model.predict(img_a))
+        embedds_b.append(infer_model.predict(img_b))
+        issame.append(y_true.numpy())
+
+    embedds_a = np.vstack(embedds_a)
+    embedds_b = np.vstack(embedds_b)
+    issame = np.hstack(issame)
+
+    (tpr, fpr, accuracy,
+     best_threshold, val, val_std, far) = calculate_evaluate_metric(
+         embedds_a, embedds_b, issame, nrof_folds, pca)
+
+    auc_area = auc(fpr, tpr)
+    print(NOTE, f'Best thresh: {best_threshold:.2f}')
+    print(NOTE, f'Accuracy: {np.mean(accuracy):.2f} +- {np.std(accuracy):.2f}')
+
+    if is_plot:
+        plt.figure()
+        plt.plot(fpr, tpr, color='darkorange',
+                 lw=2, label=f'ROC curve (area = {auc_area:.2f})')
+        plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
+        plt.xlim([0.0, 1.0])
+        plt.ylim([0.0, 1.05])
+        plt.xlabel('False Positive Rate')
+        plt.ylabel('True Positive Rate')
+        plt.title('ROC curve')
+        plt.legend(loc="lower right")
+        plt.show()

@@ -95,3 +95,10 @@ prune:
   frequency: 100
 inference:
   infer_fn: null
+evaluate:
+  eval_fn: facerec_eval
+  eval_fn_kwarg:
+    nrof_folds: 5
+    pca: 0
+    batch_size: 64
+    is_plot: true

@@ -17,7 +17,7 @@ from tools.lffd import LFFDHelper, LFFDLoss
 from tools.retinaface import RetinaFaceHelper, RetinaFaceLoss, retinaface_infer
 from tools.tinyimgnet import TinyImgnetHelper
 from tools.imgnet import ImgnetHelper, ClassifyLoss
-from tools.facerec import FcaeRecHelper, TripletLoss, Sparse_SoftmaxLoss, Sparse_AmsoftmaxLoss, Sparse_AsoftmaxLoss, FacerecValidation
+from tools.facerec import FcaeRecHelper, TripletLoss, Sparse_SoftmaxLoss, Sparse_AmsoftmaxLoss, Sparse_AsoftmaxLoss, FacerecValidation, facerec_eval
 from yaml import safe_dump
 
 
@@ -233,7 +233,8 @@ infer_register = {
 }
 
 eval_register = {
-    'yolo_eval': yolo_eval
+    'yolo_eval': yolo_eval,
+    'facerec_eval': facerec_eval
 }
 
 if __name__ == "__main__":
