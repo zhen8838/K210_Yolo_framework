@@ -242,76 +242,6 @@ def random_crop_with_constraints(ann: np.ndarray, im_wh: np.ndarray,
     return ann, np.array((0, 0, w, h), 'int32')
 
 
-def random_crop(img: tf.Tensor, in_hw: tf.Tensor, ann: tf.Tensor,
-                jitter=0.3, min_scale=0.25, max_scale=2
-                ) -> [tf.Tensor, tf.Tensor]:
-    """ when training first crop image and resize image and keep ratio
-        NOTE from orginal yolov3
-
-    Parameters
-    ----------
-    img : tf.Tensor
-
-    ann : tf.Tensor
-
-    Returns
-    -------
-    [tf.Tensor, tf.Tensor]
-        img, ann
-    """
-    clses, bbox = tf.split(ann, [1, 4], 1)
-
-    img.set_shape((None, None, 3))
-    """ transform factor """
-    img_hw = tf.cast(tf.shape(img)[:2], tf.float32)
-    in_hw = tf.cast(in_hw, tf.float32)
-    new_ar = tf.multiply(
-        tf.divide(in_hw[1], in_hw[0]),
-        tf.divide(tf.random.uniform((), 1 - jitter, 1 + jitter),
-                  tf.random.uniform((), 1 - jitter, 1 + jitter)))
-    scale = tf.random.uniform((), min_scale, max_scale)
-    ratio = tf.maximum(tf.cond(new_ar < 1,
-                               lambda: scale * new_ar,
-                               lambda: scale / new_ar), 1)
-    new_hw = tf.cond(new_ar < 1,
-                     lambda: (ratio, scale) * in_hw[0],
-                     lambda: (scale, ratio) * in_hw[1])
-
-    yx_off = tf.random.uniform([2, ], (0, 0), in_hw - new_hw)
-
-    def crop_and_pad(img):
-        yx_off_t = tf.cast(tf.maximum(-yx_off, 0), tf.int32)
-        img = tf.image.crop_to_bounding_box(
-            img, yx_off_t[0], yx_off_t[1],
-            tf.minimum(tf.cast(in_hw[0], tf.int32), tf.cast(new_hw[0], tf.int32)),
-            tf.minimum(tf.cast(in_hw[1], tf.int32), tf.cast(new_hw[1], tf.int32)))
-        img = tf.image.pad_to_bounding_box(
-            img,
-            tf.cast(tf.maximum(yx_off[0], 0), tf.int32),
-            tf.cast(tf.maximum(yx_off[1], 0), tf.int32),
-            tf.cast(in_hw[0], tf.int32), tf.cast(in_hw[1], tf.int32))
-        return img
-
-    def pad(img):
-        img = tf.image.pad_to_bounding_box(
-            img,
-            tf.cast(tf.maximum(yx_off[0], 0), tf.int32),
-            tf.cast(tf.maximum(yx_off[1], 0), tf.int32),
-            tf.cast(in_hw[0], tf.int32), tf.cast(in_hw[1], tf.int32))
-        return img
-
-    img = tf.image.resize(img, tf.cast(new_hw, tf.int32), 'nearest', antialias=True)
-
-    img = tf.cond(tf.reduce_any(new_hw > in_hw),
-                  lambda: crop_and_pad(img),
-                  lambda: pad(img))
-
-    new_bbox = bbox * tf.tile((new_hw / img_hw)[::-1], [2]) + tf.tile(tf.cast(yx_off[::-1], tf.float32), [2])
-    new_ann = tf.concat([clses, new_bbox], -1)
-
-    return img, new_ann
-
-
 class YOLOHelper(BaseHelper):
     def __init__(self, image_ann: str, class_num: int, anchors: str,
                  in_hw: tuple, out_hw: tuple, validation_split: float = 0.1):
@@ -383,20 +313,20 @@ class YOLOHelper(BaseHelper):
 
         self.iaaseq = iaa.Sequential([
             iaa.SomeOf([2, 4], [
-                iaa.Add((-50, 50)),
+                iaa.Add((-20, 20)),
                 # Strengthen or weaken the contrast in each image.
-                iaa.SigmoidContrast((3, 8)),
+                iaa.SigmoidContrast((1, 2)),
                 # which can end up changing the color of the images.
-                iaa.Multiply((0.5, 1.5))
+                iaa.Multiply((0.9, 1.1))
             ], True),
             iaa.SomeOf([1, 3], [
                 iaa.Fliplr(0.5),
                 iaa.Affine(scale={"x": (0.7, 1.1), "y": (0.7, 1.1)},
-                           backend='cv2', order=[0, 1], cval=(0, 255), mode=ia.ALL),
-                iaa.Affine(translate_percent={"x": (-0.2, 0.2), "y": (-0.2, 0.2)},
-                           backend='cv2', order=[0, 1], cval=(0, 255), mode=ia.ALL),
-                iaa.Affine(rotate=(-20, 20),
-                           backend='cv2', order=[0, 1], cval=(0, 255), mode=ia.ALL)
+                           backend='cv2'),
+                iaa.Affine(translate_percent={"x": (-0.1, 0.1), "y": (-0.1, 0.1)},
+                           backend='cv2'),
+                iaa.Affine(rotate=(-10, 10),
+                           backend='cv2')
             ], True)
         ], True)
 
@@ -678,8 +608,39 @@ class YOLOHelper(BaseHelper):
 
         return image_aug, new_ann
 
-    def resize_train_img(self, img: tf.Tensor, in_hw: tf.Tensor, ann: tf.Tensor
-                         ) -> [tf.Tensor, tf.Tensor]:
+    def tf_augment_img(self, img: tf.Tensor, ann: tf.Tensor,
+                       hue=0.3, sat=0.2, val=0.3) -> [tf.Tensor, tf.Tensor]:
+        """ augmenter for image
+
+        Parameters
+        ----------
+        img : tf.Tensor
+
+            img src
+
+        ann : tf.Tensor
+
+            one annotation
+            [p,x1,y1,x2,y2]
+
+        Returns
+        -------
+        tuple
+
+            [image src,ann] after data augmenter
+            image src dtype is uint8
+        """
+        if hue > 0:
+            img = tf.image.random_hue(img, hue)
+        if sat > 0:
+            img = tf.image.random_saturation(img, 1 - sat, 1 + sat)
+        if val > 0:
+            img = tf.image.random_brightness(img, val)
+        return img, ann
+
+    def resize_train_img(self, img: tf.Tensor, in_hw: tf.Tensor,
+                         ann: tf.Tensor, min_scale=0.25, max_scale=2,
+                         jitter=0.3, flip=True) -> [tf.Tensor, tf.Tensor]:
         """ when training first crop image and resize image and keep ratio
 
         Parameters
@@ -695,17 +656,64 @@ class YOLOHelper(BaseHelper):
         [tf.Tensor, tf.Tensor]
             img, ann
         """
-        def false_fn(img: tf.Tensor, in_hw: tf.Tensor, ann: tf.Tensor) -> [tf.Tensor, tf.Tensor]:
-            im_wh = tf.shape(img)[1::-1]
-            new_ann, cbox = tf.numpy_function(
-                random_crop_with_constraints,
-                [ann, im_wh], [tf.float32, tf.int32])
-            img = img[cbox[1]:cbox[3], cbox[0]:cbox[2], :]
-            return self.resize_img(img, in_hw, new_ann)
+        iw, ih = tf.cast(tf.shape(img)[1], tf.float32), tf.cast(tf.shape(img)[0], tf.float32)
+        w, h = tf.cast(in_hw[1], tf.float32), tf.cast(in_hw[0], tf.float32)
+        label, x1, y1, x2, y2 = tf.split(ann, 5, -1)
 
-        return tf.cond(tf.random.uniform([], 0, 1) < 0.5,
-                       lambda: self.resize_img(img, in_hw, ann),
-                       lambda: false_fn(img, in_hw, ann))
+        new_ar = (w / h) * (tf.random.uniform([], 1 - jitter, 1 + jitter) /
+                            tf.random.uniform([], 1 - jitter, 1 + jitter))
+        scale = tf.random.uniform([], min_scale, max_scale)
+        ratio = tf.cond(tf.less(new_ar, 1),
+                        lambda: scale * new_ar,
+                        lambda: scale / new_ar)
+        ratio = tf.maximum(ratio, 1)
+        nw, nh = tf.cond(tf.less(new_ar, 1),
+                         lambda: (ratio * h, scale * h),
+                         lambda: (scale * w, ratio * w))
+        dx = tf.random.uniform([], 0, w - nw)
+        dy = tf.random.uniform([], 0, h - nh)
+        img = tf.image.resize(img, [tf.cast(nh, tf.int32), tf.cast(nw, tf.int32)])
+
+        def crop_and_pad(image, dx, dy):
+            dy_t = tf.cast(tf.maximum(-dy, 0), tf.int32)
+            dx_t = tf.cast(tf.maximum(-dx, 0), tf.int32)
+            image = tf.image.crop_to_bounding_box(
+                image, dy_t, dx_t,
+                tf.minimum(tf.cast(h, tf.int32), tf.cast(nh, tf.int32)),
+                tf.minimum(tf.cast(w, tf.int32), tf.cast(nw, tf.int32)))
+            image = tf.image.pad_to_bounding_box(
+                image, tf.cast(tf.maximum(dy, 0), tf.int32),
+                tf.cast(tf.maximum(dx, 0), tf.int32), tf.cast(
+                    h, tf.int32), tf.cast(w, tf.int32))
+            return image
+        img = tf.cond(tf.logical_or(nw > w, nh > h),
+                      lambda: crop_and_pad(img, dx, dy),
+                      lambda: tf.image.pad_to_bounding_box(
+            img, tf.cast(tf.maximum(dy, 0), tf.int32),
+            tf.cast(tf.maximum(dx, 0), tf.int32),
+            tf.cast(h, tf.int32), tf.cast(w, tf.int32)))
+
+        x1 = x1 * nw / iw + dx
+        x2 = x2 * nw / iw + dx
+        y1 = y1 * nh / ih + dy
+        y2 = y2 * nh / ih + dy
+
+        if flip:
+            img, x1, x2 = tf.cond(
+                tf.less(tf.random.uniform([]), 0.5),
+                lambda: (tf.image.flip_left_right(img), w - x2, w - x1),
+                lambda: (img, x1, x2))
+
+        x1 = tf.clip_by_value(x1, 0, w)
+        x2 = tf.clip_by_value(x2, 0, w)
+        y1 = tf.clip_by_value(y1, 0, h)
+        y2 = tf.clip_by_value(y2, 0, h)
+        new_ann = tf.concat([label, x1, y1, x2, y2], -1)
+
+        bbox_w = new_ann[:, 3] - new_ann[:, 1]
+        bbox_h = new_ann[:, 4] - new_ann[:, 2]
+        new_ann = tf.boolean_mask(new_ann, tf.logical_and(bbox_w > 1, bbox_h > 1))
+        return img, new_ann
 
     def resize_img(self, img: tf.Tensor, in_hw: tf.Tensor,
                    ann: tf.Tensor) -> [tf.Tensor, tf.Tensor]:
@@ -788,10 +796,12 @@ class YOLOHelper(BaseHelper):
         tuple
             image src , true box
         """
-        if is_resize:
+        if is_resize and is_augment:
+            img, ann = self.resize_train_img(img, in_hw, ann)
+        elif is_resize:
             img, ann = self.resize_img(img, in_hw, ann)
         if is_augment:
-            img, ann = tf.numpy_function(self.augment_img, [img, ann], [tf.uint8, tf.float32])
+            img, ann = self.tf_augment_img(img, ann)
         if is_normlize:
             img = self.normlize_img(img)
         else:
@@ -828,7 +838,13 @@ class YOLOHelper(BaseHelper):
                        batch(batch_size, True).
                        prefetch(-1))
         else:
-            dataset = (tf.data.Dataset.TFRecordDataset(image_ann_list, num_parallel_reads=4).
+            def _parser_wrapper(stream: bytes):
+                img_str, img_name, ann, img_hw = self.parser_example(stream)
+                raw_img = self.decode_img(img_str)
+                det_img, _ = self.process_img(raw_img, tf.zeros([0, 5]), self.in_hw, is_augment, True, is_normlize)
+                return det_img, img_name, tf.RaggedTensor.from_tensor(ann), img_hw
+
+            dataset = (tf.data.TFRecordDataset(image_ann_list, num_parallel_reads=4).
                        map(_parser_wrapper, -1).
                        batch(batch_size, True).
                        prefetch(-1))
@@ -1485,24 +1501,27 @@ def yolo_eval(infer_model: k.Model, h: YOLOHelper, det_obj_thresh: float,
     gt_path.mkdir(parents=True)
     res_path.mkdir(parents=True)
     class_name = np.array(class_name)
+    h.set_dataset(batch, False, True, False)
+    for det_imgs, img_names, true_anns, orig_hws in tqdm(h.test_dataset, total=int(h.test_epoch_step)):
+        # img_paths, true_anns, orig_hws = [], [], []
+        # for img_path, true_ann, orig_hw in test_list:
+        #     img_paths.append(img_path)
+        #     true_anns.append(true_ann)
+        #     orig_hws.append(orig_hw)
 
-    for test_list in tqdm(chunked(h.test_list, batch), total=len(h.test_list) // batch):
-        img_paths, true_anns, orig_hws = [], [], []
-        for img_path, true_ann, orig_hw in test_list:
-            img_paths.append(img_path)
-            true_anns.append(true_ann)
-            orig_hws.append(orig_hw)
+        # det_imgs = []
+        # img_names = []
+        # for img_path in img_paths:
+        #     img_names.append(Path(img_path).stem)
+        #     raw_img = h.read_img(img_path)
+        #     det_img, _ = h.process_img(raw_img, np.zeros([0, 5], 'float32'),
+        #                                h.org_in_hw, False, True, True)
+        #     det_imgs.append(det_img)
 
-        det_imgs = []
-        img_names = []
-        for img_path in img_paths:
-            img_names.append(Path(img_path).stem)
-            raw_img = h.read_img(img_path)
-            det_img, _ = h.process_img(raw_img, np.zeros([0, 5], 'float32'),
-                                       h.org_in_hw, False, True, True)
-            det_imgs.append(det_img)
+        # det_imgs = tf.stack(det_imgs)
+        img_names = img_names.numpy().astype('str')
+        orig_hws = orig_hws.numpy()
 
-        det_imgs = tf.stack(det_imgs)
         outputs = infer_model.predict(det_imgs, len(img_names))
         # NOTE change outputs List to n*[layer_num*[arr]]
         outputs = [[output[i] for output in outputs] for i in range(len(orig_hws))]
@@ -1510,6 +1529,7 @@ def yolo_eval(infer_model: k.Model, h: YOLOHelper, det_obj_thresh: float,
         for img_name, (p_xyxy, p_clas, p_score), true_ann in zip(img_names,
                                                                  results,
                                                                  true_anns):
+            true_ann = np.reshape(true_ann.values.numpy(), (-1, 5))
             p_s = p_score[:, None].astype('<U7')
             p_c = class_name[p_clas[:, None].astype(np.int)]
             p_x = p_xyxy.astype(np.int32).astype('<U6')

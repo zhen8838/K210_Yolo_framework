@@ -56,8 +56,8 @@ def test_augment_img():
     for i in range(120, 140):
         img_str, img_name, ann, hw = next(iters)
         img = h.decode_img(img_str)
-        img, ann = h.resize_img(img, h.in_hw, ann)
-        img, ann = tf.numpy_function(h.augment_img, [img, ann], [tf.uint8, tf.float32])
+        img, ann = h.resize_train_img(img, h.in_hw, ann)
+        img, ann = h.tf_augment_img(img, ann)
         h.draw_image(img.numpy(), ann.numpy())
 
 
