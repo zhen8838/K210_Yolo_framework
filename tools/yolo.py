@@ -1197,12 +1197,12 @@ class YOLOLoss(Loss):
                 labels=grid_true_wh, predictions=grid_pred_wh), [1, 2, 3, 4])
 
         obj_loss = self.obj_weight * tf.reduce_sum(
-            obj_mask * tf.nn.sigmoid_cross_entropy_with_logits(
-                labels=true_confidence, logits=pred_confidence), [1, 2, 3, 4])
+            obj_mask * K.binary_crossentropy(true_confidence, pred_confidence_sigmod),
+            [1, 2, 3, 4])
 
         noobj_loss = self.noobj_weight * tf.reduce_sum(
-            (1 - obj_mask) * ignore_mask * tf.nn.sigmoid_cross_entropy_with_logits(
-                labels=true_confidence, logits=pred_confidence), [1, 2, 3, 4])
+            (1 - obj_mask) * ignore_mask * K.binary_crossentropy(true_confidence, pred_confidence_sigmod),
+            [1, 2, 3, 4])
 
         cls_loss = tf.reduce_sum(
             obj_mask * self.cls_weight * tf.nn.sigmoid_cross_entropy_with_logits(
@@ -1503,22 +1503,6 @@ def yolo_eval(infer_model: k.Model, h: YOLOHelper, det_obj_thresh: float,
     class_name = np.array(class_name)
     h.set_dataset(batch, False, True, False)
     for det_imgs, img_names, true_anns, orig_hws in tqdm(h.test_dataset, total=int(h.test_epoch_step)):
-        # img_paths, true_anns, orig_hws = [], [], []
-        # for img_path, true_ann, orig_hw in test_list:
-        #     img_paths.append(img_path)
-        #     true_anns.append(true_ann)
-        #     orig_hws.append(orig_hw)
-
-        # det_imgs = []
-        # img_names = []
-        # for img_path in img_paths:
-        #     img_names.append(Path(img_path).stem)
-        #     raw_img = h.read_img(img_path)
-        #     det_img, _ = h.process_img(raw_img, np.zeros([0, 5], 'float32'),
-        #                                h.org_in_hw, False, True, True)
-        #     det_imgs.append(det_img)
-
-        # det_imgs = tf.stack(det_imgs)
         img_names = img_names.numpy().astype('str')
         orig_hws = orig_hws.numpy()
 

@@ -35,7 +35,7 @@ model:
     wh_weight: 3
     xy_weight: 2
     cls_weight: 1
-    verbose: 1
+    verbose: 0
 train:
   graph_optimizer: true
   graph_optimizer_kwarg: 
@@ -53,7 +53,7 @@ train:
   rand_seed: 10101
   epochs: 156
   log_dir: log
-  sub_log_dir: null
+  sub_log_dir: default_yolov3_mbv1
   debug: false
   verbose: 1
   vali_step_factor: 0.5
@@ -94,8 +94,8 @@ train:
     #     scale_range: [-3, 3]
     - name: StepLR
       kwarg:
-        steps: [5, 10, 15, 20, 100, 150]
-        rates: [0.0001, 0.0005, 0.001, 0.002, 0.001, 0.0002]
+        steps: [20, 100, 150]
+        rates: [0.0001, 0.0008, 0.0002]
 prune:
   is_prune: false
   init_sparsity: 0.5
