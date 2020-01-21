@@ -704,10 +704,10 @@ class YOLOHelper(BaseHelper):
                 lambda: (tf.image.flip_left_right(img), w - x2, w - x1),
                 lambda: (img, x1, x2))
 
-        x1 = tf.clip_by_value(x1, 0, w)
-        x2 = tf.clip_by_value(x2, 0, w)
-        y1 = tf.clip_by_value(y1, 0, h)
-        y2 = tf.clip_by_value(y2, 0, h)
+        x1 = tf.clip_by_value(x1, 0, w - 1)
+        x2 = tf.clip_by_value(x2, 0, w - 1)
+        y1 = tf.clip_by_value(y1, 0, h - 1)
+        y2 = tf.clip_by_value(y2, 0, h - 1)
         new_ann = tf.concat([label, x1, y1, x2, y2], -1)
 
         bbox_w = new_ann[:, 3] - new_ann[:, 1]
