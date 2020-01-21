@@ -312,21 +312,21 @@ class YOLOHelper(BaseHelper):
                                                        for i in range(self.output_number)]
 
         self.iaaseq = iaa.Sequential([
-            iaa.SomeOf([2, 4], [
-                iaa.Add((-20, 20)),
-                # Strengthen or weaken the contrast in each image.
-                iaa.SigmoidContrast((1, 2)),
-                # which can end up changing the color of the images.
-                iaa.Multiply((0.9, 1.1))
+            iaa.SomeOf([2, None], [
+                iaa.MultiplyHueAndSaturation(mul_hue=(0.7, 1.3), mul_saturation=(0.7, 1.3),
+                                             per_channel=True),
+                iaa.Multiply((0.7, 1.3), per_channel=True)
             ], True),
-            iaa.SomeOf([1, 3], [
+            iaa.SomeOf([1, None], [
                 iaa.Fliplr(0.5),
-                iaa.Affine(scale={"x": (0.7, 1.1), "y": (0.7, 1.1)},
-                           backend='cv2'),
-                iaa.Affine(translate_percent={"x": (-0.1, 0.1), "y": (-0.1, 0.1)},
-                           backend='cv2'),
-                iaa.Affine(rotate=(-10, 10),
-                           backend='cv2')
+                # iaa.Affine(scale={"x": (0.7, 1.1), "y": (0.7, 1.1)},
+                #            backend='cv2', mode=['constant', 'edge', 'reflect', 'wrap']),
+                # iaa.Affine(translate_percent={"x": (-0.1, 0.1), "y": (-0.1, 0.1)},
+                #            backend='cv2', mode=['constant', 'edge', 'reflect', 'wrap']),
+                # iaa.Affine(rotate=(-10, 10),
+                #            backend='cv2', mode=['constant', 'edge', 'reflect', 'wrap'])
+                iaa.Affine(scale={"x": (0.7, 1.1), "y": (0.7, 1.1)}, translate_percent={"x": (-0.1, 0.1), "y": (-0.1, 0.1)}, rotate=(-10, 10),
+                           backend='cv2', mode=['constant', 'edge', 'reflect', 'wrap']),
             ], True)
         ], True)
 
@@ -601,9 +601,9 @@ class YOLOHelper(BaseHelper):
         # remove out of bound bbox and the bbox which w or h < 0
         bbs_xy = (new_box[:, :2] + new_box[:, 2:]) / 2
         mask_c = np.all(np.logical_and(bbs_xy < im_wh, bbs_xy > 0))
-        mask_b = np.minimum(new_box[:, 2] - new_box[:, 0],
-                            new_box[:, 3] - new_box[:, 1]) > 1
-        mask = np.logical_and(mask_c, mask_b)
+        mask_w = (new_box[:, 2] - new_box[:, 0]) > 1
+        mask_h = (new_box[:, 3] - new_box[:, 1]) > 1
+        mask = np.logical_and(mask_c, np.logical_and(mask_w, mask_h))
         new_ann = np.hstack((p[mask], new_box[mask]))
 
         return image_aug, new_ann

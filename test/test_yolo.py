@@ -45,7 +45,7 @@ def test_resize_train_img():
         h.draw_image(img.numpy(), new_ann.numpy())
 
 
-def test_augment_img():
+def test_tf_augment_img():
     """ 测试augment和darw NOTE 主要为了检验augment是否正确"""
     h = YOLOHelper('data/voc_img_ann.npy', 20, 'data/voc_anchor.npy',
                    [224, 320], [[7, 10], [14, 20]])
@@ -61,9 +61,44 @@ def test_augment_img():
         h.draw_image(img.numpy(), ann.numpy())
 
 
+def test_iaa_augment_img():
+    """ 测试augment和darw NOTE 主要为了检验augment是否正确"""
+    h = YOLOHelper('data/voc_img_ann.npy', 20, 'data/voc_anchor.npy',
+                   [224, 320], [[7, 10], [14, 20]])
+    i = 213
+    ds = tf.data.TFRecordDataset(h.train_list).map(h.parser_example)
+    iters = iter(ds)
+
+    for i in range(120, 140):
+        img_str, img_name, ann, hw = next(iters)
+        img = h.decode_img(img_str)
+        img, ann = h.resize_img(img, h.in_hw, ann)
+        img, ann = tf.numpy_function(h.augment_img, [img, ann], [tf.uint8, tf.float32])
+        h.draw_image(img.numpy(), ann.numpy())
+
+test_iaa_augment_img()
+
 def test_process_img():
     """ 测试处理图像流程,并绘制 NOTE 主要为了检验整个流程是否正确"""
     h = YOLOHelper('data/voc_img_ann.npy', 20, 'data/voc_anchor.npy',
+                   [224, 320], [[7, 10], [14, 20]])
+    i = 213
+    in_hw = h.in_hw
+    is_resize = True
+    is_augment = True
+    is_normlize = False
+    ds = tf.data.TFRecordDataset(h.train_list).map(h.parser_example)
+    iters = iter(ds)
+    for i in tf.range(120, 140):
+        img_str, img_name, ann, hw = next(iters)
+        img = h.decode_img(img_str)
+        img, new_ann = h.process_img(img, ann, in_hw, is_augment, is_resize, is_normlize)
+        h.draw_image(img.numpy(), new_ann.numpy())
+
+
+def test_process_widerface_img():
+    """ 测试处理图像流程,并绘制 NOTE 主要为了检验整个流程是否正确"""
+    h = YOLOHelper('data/wdface_voc_img_ann.npy', 20, 'data/voc_anchor.npy',
                    [224, 320], [[7, 10], [14, 20]])
     i = 213
     in_hw = h.in_hw

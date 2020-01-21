@@ -18,7 +18,7 @@ This is a clear, extensible yolo v3 framework
 
 ## Prepare dataset
 
-first use [yolo](https://pjreddie.com/darknet/yolo/) scripts:
+1.  first use [yolo](https://pjreddie.com/darknet/yolo/) scripts:
 
 ```sh
 wget http://host.robots.ox.ac.uk/pascal/VOC/voc2012/VOCtrainval_11-May-2012.tar
@@ -38,6 +38,20 @@ now you have `train.txt`, then merge img path and annotation to one npy file:
 
 ```sh
 python3 make_voc_list.py xxxxx/train.txt xxxxx/val.txt xxxxx/test.txt data/voc_img_ann.npy
+```
+
+2. Or you can download [widerface](http://shuoyang1213.me/WIDERFACE/) dataset
+
+```sh
+unzip WIDER_test.zip
+sync
+unzip WIDER_val.zip
+sync
+unzip WIDER_train.zip
+sync
+unzip WIDER_train.zip
+unzip wider_face_split.zip
+python3 ./make_widerface_yolo_list.py root_path/  data/wdface_voc_img_ann.npy
 ```
 
 
