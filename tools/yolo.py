@@ -658,7 +658,7 @@ class YOLOHelper(BaseHelper):
         """
         iw, ih = tf.cast(tf.shape(img)[1], tf.float32), tf.cast(tf.shape(img)[0], tf.float32)
         w, h = tf.cast(in_hw[1], tf.float32), tf.cast(in_hw[0], tf.float32)
-        label, x1, y1, x2, y2 = tf.split(ann, 5, -1)
+        clses, x1, y1, x2, y2 = tf.split(ann, 5, -1)
 
         new_ar = (w / h) * (tf.random.uniform([], 1 - jitter, 1 + jitter) /
                             tf.random.uniform([], 1 - jitter, 1 + jitter))
@@ -708,7 +708,7 @@ class YOLOHelper(BaseHelper):
         x2 = tf.clip_by_value(x2, 0, w - 1)
         y1 = tf.clip_by_value(y1, 0, h - 1)
         y2 = tf.clip_by_value(y2, 0, h - 1)
-        new_ann = tf.concat([label, x1, y1, x2, y2], -1)
+        new_ann = tf.concat([clses, x1, y1, x2, y2], -1)
 
         bbox_w = new_ann[:, 3] - new_ann[:, 1]
         bbox_h = new_ann[:, 4] - new_ann[:, 2]
@@ -732,28 +732,45 @@ class YOLOHelper(BaseHelper):
         [tf.Tensor, tf.Tensor]
             img, ann [ uint8 , float32 ]
         """
-        clses, bbox = tf.split(ann, [1, 4], 1)
+        img_hw = tf.shape(img, tf.int64)[:2]
+        iw, ih = tf.cast(img_hw[1], tf.float32), tf.cast(img_hw[0], tf.float32)
+        w, h = tf.cast(in_hw[1], tf.float32), tf.cast(in_hw[0], tf.float32)
+        clses, x1, y1, x2, y2 = tf.split(ann, 5, -1)
 
         img.set_shape((None, None, 3))
         """ transform factor """
-        img_hw = tf.cast(tf.shape(img)[:2], tf.float32)
-        in_hw = tf.cast(in_hw, tf.float32)
+        def _resize(img, clses, x1, y1, x2, y2):
+            nh = ih * tf.minimum(w / iw, h / ih)
+            nw = iw * tf.minimum(w / iw, h / ih)
+            dx = (w - nw) / 2
+            dy = (h - nh) / 2
+            img = tf.image.resize(img, [tf.cast(nh, tf.int32),
+                                        tf.cast(nw, tf.int32)],
+                                  'nearest', antialias=True)
+            img = tf.image.pad_to_bounding_box(img, tf.cast(dy, tf.int32),
+                                               tf.cast(dx, tf.int32),
+                                               tf.cast(h, tf.int32),
+                                               tf.cast(w, tf.int32))
+            x1 = x1 * nw / iw + dx
+            x2 = x2 * nw / iw + dx
+            y1 = y1 * nh / ih + dy
+            y2 = y2 * nh / ih + dy
+            return img, clses, x1, y1, x2, y2
 
-        if tf.reduce_all(tf.equal(in_hw, img_hw)):
-            new_ann = tf.concat([clses, bbox], -1)
-            return img, new_ann
-        else:
-            scale = tf.reduce_min(in_hw / img_hw)
-            # NOTE calc the x,y offset
-            yx_off = tf.cast((in_hw - img_hw * scale) / 2, tf.int32)
-            img_hw = tf.cast(img_hw * scale, tf.int32)
-            in_hw = tf.cast(in_hw, tf.int32)
-            img = tf.image.resize(img, img_hw, 'nearest', antialias=True)
-            img = tf.image.pad_to_bounding_box(img, yx_off[0], yx_off[1], in_hw[0], in_hw[1])
-            """ calc the point transform """
-            bbox = bbox * scale + tf.tile(tf.cast(yx_off[::-1], tf.float32), [2])
-            new_ann = tf.concat([clses, bbox], -1)
-            return img, new_ann
+        img, clses, x1, y1, x2, y2 = tf.cond(tf.reduce_all(tf.equal(in_hw, img_hw)),
+                                             lambda: (img, clses, x1, y1, x2, y2),
+                                             lambda: _resize(img, clses, x1, y1, x2, y2))
+
+        x1 = tf.clip_by_value(x1, 0, w - 1)
+        x2 = tf.clip_by_value(x2, 0, w - 1)
+        y1 = tf.clip_by_value(y1, 0, h - 1)
+        y2 = tf.clip_by_value(y2, 0, h - 1)
+        new_ann = tf.concat([clses, x1, y1, x2, y2], -1)
+
+        bbox_w = new_ann[:, 3] - new_ann[:, 1]
+        bbox_h = new_ann[:, 4] - new_ann[:, 2]
+        new_ann = tf.boolean_mask(new_ann, tf.logical_and(bbox_w > 1, bbox_h > 1))
+        return img, new_ann
 
     def read_img(self, img_path: str) -> tf.Tensor:
         """ read image

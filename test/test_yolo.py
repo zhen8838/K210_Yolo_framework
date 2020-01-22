@@ -76,7 +76,6 @@ def test_iaa_augment_img():
         img, ann = tf.numpy_function(h.augment_img, [img, ann], [tf.uint8, tf.float32])
         h.draw_image(img.numpy(), ann.numpy())
 
-test_iaa_augment_img()
 
 def test_process_img():
     """ 测试处理图像流程,并绘制 NOTE 主要为了检验整个流程是否正确"""
@@ -111,6 +110,8 @@ def test_process_widerface_img():
         img_str, img_name, ann, hw = next(iters)
         img = h.decode_img(img_str)
         img, new_ann = h.process_img(img, ann, in_hw, is_augment, is_resize, is_normlize)
+        labels = tf.numpy_function(h.ann_to_label, [h.in_hw, h.out_hw, new_ann],
+                                   [tf.float32] * len(h.anchors))
         h.draw_image(img.numpy(), new_ann.numpy())
 
 

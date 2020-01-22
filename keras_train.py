@@ -50,7 +50,7 @@ def main(config_file, new_cfg, mode, model, train, prune):
     train_ds = h.train_dataset
     validation_ds = h.val_dataset
     train_epoch_step = h.train_epoch_step
-    vali_epoch_step = h.val_epoch_step * train.vali_step_factor
+    vali_epoch_step = int(h.val_epoch_step * train.vali_step_factor)
 
     """ Build Network """
     if model.name == 'feacrec':
