@@ -1,26 +1,27 @@
 BATCH_SIZE_REF: &BATCH_SIZE_REF 64
-WIDTH_REF: &WIDTH_REF 128
+WIDTH_REF: &WIDTH_REF 112
 
 mode: train
 model:
   name: feacrec
   helper: FcaeRecHelper
   helper_kwarg:
-    image_ann: data/celeba_facerec_img_ann.npy
+    image_ann: data/ms1m_img_ann.npy
     in_hw:
       - *WIDTH_REF
       - *WIDTH_REF
     embedding_size: 128
     use_softmax: true
-  network: mbv1_softmax_facerec
+  network: mbv1_facerec
   network_kwarg:
     input_shape:
       - *WIDTH_REF
       - *WIDTH_REF
       - 3
-    class_num: 10178
+    class_num: 85742
     embedding_size: 128
-    depth_multiplier: 1.0
+    depth_multiplier: 0.5
+    loss: 'asoftmax'
   loss: Sparse_AsoftmaxLoss
   loss_kwarg:
     batch_size: *BATCH_SIZE_REF

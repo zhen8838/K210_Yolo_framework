@@ -16,7 +16,7 @@ def main(ckpt_path: Path, argmap: dict2obj):
     h = helper_register[model.helper](**model.helper_kwarg)
 
     network = network_register[model.network]
-    infer_model, train_model = network(**model.network_kwarg)
+    infer_model = network(**model.network_kwarg)[0]
 
     print(INFO, f'Load CKPT from {str(ckpt_path)}')
     infer_model.load_weights(str(ckpt_path))

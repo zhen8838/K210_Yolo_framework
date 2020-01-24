@@ -172,33 +172,53 @@ def runkMeans(X: np.ndarray, initial_centroids: np.ndarray, max_iters: int,
     return new_centrois, idx_
 
 
+def parser_example(stream: bytes) -> [tf.Tensor, tf.Tensor]:
+    features = tf.io.parse_single_example(stream, {
+        'label': tf.io.VarLenFeature(tf.float32),
+        'x1': tf.io.VarLenFeature(tf.float32),
+        'y1': tf.io.VarLenFeature(tf.float32),
+        'x2': tf.io.VarLenFeature(tf.float32),
+        'y2': tf.io.VarLenFeature(tf.float32),
+        'img_hw': tf.io.VarLenFeature(tf.int64),
+    })
+    ann = tf.concat([features['label'].values[:, None],
+                     features['x1'].values[:, None],
+                     features['y1'].values[:, None],
+                     features['x2'].values[:, None],
+                     features['y2'].values[:, None]], 1)
+    img_hw = features['img_hw'].values
+
+    return ann, img_hw
+
+
 def main(ann_list_file: str, anchor_file: str, max_iters: int,
          in_hw: tuple, out_hw: tuple, anchor_num: int, is_random: bool,
          is_plot: bool, low: list, high: list):
-    data_dict = np.load(ann_list_file, allow_pickle=True)
-    data_dict = data_dict[()]  # type:dict
-    X = np.concatenate(list(data_dict.values()))
+    data_dict: dict = np.load(ann_list_file, allow_pickle=True)[()]
 
     in_wh = np.array(in_hw[::-1])
     low = np.array(low)
     high = np.array(high)
     # NOTE correct boxes
-    for i in range(len(X)):
-        # X[i, 1], X[i, 2]
-        img_wh = X[i, 2][::-1]
+    img_whs = []
+    for key in data_dict.keys():
+        if 'data' in key:
+            ds = tf.data.TFRecordDataset(data_dict[key]).map(parser_example, -1)
+            for ann, img_hw in ds:
+                ann, img_hw = ann.numpy(), img_hw.numpy()
+                img_wh = img_hw[::-1]
 
-        """ calculate the affine transform factor """
-        scale = in_wh / img_wh  # NOTE affine tranform sacle is [w,h]
-        scale = np.min(scale)
-        # NOTE translation is [x offset,y offset]
-        translation = ((in_wh - img_wh * scale) / 2).astype(int)
+                """ calculate the affine transform factor """
+                scale = in_wh / img_wh  # NOTE affine tranform sacle is [w,h]
+                scale = np.min(scale)
+                # NOTE translation is [x offset,y offset]
+                translation = ((in_wh - img_wh * scale) / 2).astype(int)
 
-        """ calculate the box transform matrix """
-        X[i, 1][:, 1:3] = (X[i, 1][:, 1:3] * scale + translation) / in_wh
-        X[i, 1][:, 3:5] = (X[i, 1][:, 3:5] * scale + translation) / in_wh
+                """ calculate the box transform matrix """
+                new_wh = ((ann[:, 3:5] - ann[:, 1:3]) * scale + translation) / in_wh
+                img_whs.append(new_wh)
 
-    x = np.vstack(X[:, 1])
-    x = x[:, 3:5] - x[:, 1:3]
+    x = np.vstack(img_whs)
     layers = len(out_hw) // 2
     if is_random == 'True':
         initial_centroids = np.hstack((np.random.uniform(low[0], high[0], (layers * anchor_num, 1)),

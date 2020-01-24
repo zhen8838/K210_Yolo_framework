@@ -3,8 +3,7 @@ k = tf.keras
 kcall = tf.keras.callbacks
 from tensorflow.python.keras.metrics import SparseCategoricalAccuracy, CategoricalAccuracy
 from tools.base import INFO, ERROR, NOTE
-from tools.facerec import TripletAccuracy
-from tools.custom import Lookahead, PFLDMetric, DummyMetric, SignalStopping
+from tools.custom import Lookahead, PFLDMetric, DummyMetric, DummyOnceMetric, SignalStopping
 from tools.base import BaseHelper
 from pathlib import Path
 from datetime import datetime
@@ -51,12 +50,15 @@ def main(config_file, new_cfg, mode, model, train, prune):
     train_ds = h.train_dataset
     validation_ds = h.val_dataset
     train_epoch_step = h.train_epoch_step
-    vali_epoch_step = h.val_epoch_step * train.vali_step_factor
+    vali_epoch_step = int(h.val_epoch_step * train.vali_step_factor)
 
     """ Build Network """
-
-    network = network_register[model.network]
-    infer_model, train_model = network(**model.network_kwarg)
+    if model.name == 'feacrec':
+        network = network_register[model.network]
+        infer_model, val_model, train_model = network(**model.network_kwarg)
+    else:
+        network = network_register[model.network]
+        infer_model, train_model = network(**model.network_kwarg)
 
     """  Config Prune Model Paramter """
     if prune.is_prune == 'True':
@@ -69,21 +71,20 @@ def main(config_file, new_cfg, mode, model, train, prune):
         }
         train_model = sparsity.prune_low_magnitude(train_model, **pruning_params)  # type:k.Model
 
-    """ Comile Model """
+    """ Comile Model, Set loss and metric """
     optimizer = optimizer_register[train.optimizer](**train.optimizer_kwarg)
+    metrics: List[k.metrics.Metric] = []
     if 'yolo' in model.name:
         loss_fn = loss_register[model.loss]  # type:YOLOAlignLoss
         losses = [loss_fn(h=h, layer=layer, name='loss', **model.loss_kwarg)
                   for layer in range(len(train_model.output) if isinstance(train_model.output, list) else 1)]  # type: List[YOLOAlignLoss]
 
-        metrics = []
         for loss_obj in losses:
             l = [DummyMetric(var, name) for (var, name) in loss_obj.lookups]
             metrics.append(l)
     elif model.name == 'retinaface':
         loss_obj = loss_register[model.loss](h=h, **model.loss_kwarg)
         losses = [loss_obj]
-        metrics = []
         l = [DummyMetric(var, name) for (var, name) in loss_obj.lookups]
         metrics.append(l)
 
@@ -103,11 +104,12 @@ def main(config_file, new_cfg, mode, model, train, prune):
         if model.helper_kwarg['use_softmax'] == True:
             metrics = [SparseCategoricalAccuracy(name='acc')]
         else:
-            metrics = [TripletAccuracy(loss_obj.dist_var, loss_obj.alpha)]
+            metrics = [DummyMetric(loss_obj.triplet_acc, name='acc')]
+        vali_acc_var = tf.Variable(0., False, dtype=tf.float32)
+        metrics.append(DummyOnceMetric(vali_acc_var, 'val_acc'))
     elif model.name == 'lffd':
         loss_fn = loss_register[model.loss]
         losses = [loss_fn(h=h, **model.loss_kwarg) for i in range(h.scale_num)]
-        metrics = []
     elif model.name in 'imagenet':
         loss_fn = loss_register[model.loss]
         losses = [loss_fn(**model.loss_kwarg)]
@@ -115,7 +117,6 @@ def main(config_file, new_cfg, mode, model, train, prune):
     else:
         loss_obj = loss_register[model.loss](h=h, **model.loss_kwarg)
         losses = [loss_obj]
-        metrics = []
 
     train_model.compile(optimizer, loss=losses, metrics=metrics)
 
@@ -149,15 +150,24 @@ def main(config_file, new_cfg, mode, model, train, prune):
             cbs.append(cbk_fn(h, **cbkparam.kwarg))
         elif cbkparam.name == 'TerminateOnNaN':
             cbs.append(cbk_fn())
+        elif cbkparam.name == 'FacerecValidation':
+            cbs.append(cbk_fn(val_model, validation_ds, vali_epoch_step, train_epoch_step, vali_acc_var, **cbkparam.kwarg))
         else:
             cbs.append(cbk_fn(**cbkparam.kwarg))
 
     """ Start Training """
-    train_model.fit(train_ds, epochs=initial_epoch + train.epochs,
-                    steps_per_epoch=train_epoch_step, callbacks=cbs,
-                    validation_data=validation_ds, validation_steps=vali_epoch_step,
-                    verbose=train.verbose,
-                    initial_epoch=initial_epoch)
+    if model.name == 'feacrec':
+        # NOTE when use facerec , need manual validation
+        train_model.fit(train_ds, epochs=initial_epoch + train.epochs,
+                        steps_per_epoch=train_epoch_step, callbacks=cbs,
+                        verbose=train.verbose,
+                        initial_epoch=initial_epoch)
+    else:
+        train_model.fit(train_ds, epochs=initial_epoch + train.epochs,
+                        steps_per_epoch=train_epoch_step, callbacks=cbs,
+                        validation_data=validation_ds, validation_steps=vali_epoch_step,
+                        verbose=train.verbose,
+                        initial_epoch=initial_epoch)
 
     """ Finish Training """
     model_name = f'train_model_{initial_epoch+int(train_model.optimizer.iterations / train_epoch_step)}.h5'
@@ -185,7 +195,7 @@ def main(config_file, new_cfg, mode, model, train, prune):
         auto_saved_list = list(zip(auto_saved_list, [int(p.stem.split('_')[-1]) for p in auto_saved_list]))
         if len(auto_saved_list) > 0:
             auto_saved_list.sort(key=lambda x: x[1])
-            train_model.load_weights(str(auto_saved_list[-1][0]))
+            train_model.load_weights(str(auto_saved_list[-1][0]), by_name=True)
             infer_ckpt = str(auto_saved_list[-1][0]).replace('train', 'infer')
             k.models.save_model(infer_model, infer_ckpt)
         print(INFO, f' Save Best Infer Model as {infer_ckpt}')

@@ -20,10 +20,12 @@ def test_resize_img():
     """ 测试resize和darw NOTE 主要为了检验resize是否正确"""
     h = YOLOHelper('data/voc_img_ann.npy', 20, 'data/voc_anchor.npy',
                    [224, 320], [[7, 10], [14, 20]])
+    ds = tf.data.TFRecordDataset(h.train_list).map(h.parser_example)
+    iters = iter(ds)
     i = 0
     for i in range(100, 120):
-        path, ann, hw = h.train_list[i]
-        img = h.read_img(path)
+        img_str, img_name, ann, hw = next(iters)
+        img = h.decode_img(img_str)
         img, new_ann = h.resize_img(img, h.in_hw, ann)
         h.draw_image(img.numpy(), new_ann.numpy())
 
@@ -34,26 +36,43 @@ def test_resize_train_img():
                    [224, 320], [[7, 10], [14, 20]])
     in_hw = h.in_hw
     i = 214
+    ds = tf.data.TFRecordDataset(h.train_list).map(h.parser_example)
+    iters = iter(ds)
     for i in range(100, 120):
-        path, ann, hw = h.train_list[i]
-        ann = tf.cast(ann, tf.float32)
-        img = h.read_img(path)
+        img_str, img_name, ann, hw = next(iters)
+        img = h.decode_img(img_str)
         img, new_ann = h.resize_train_img(img, in_hw, ann)
         h.draw_image(img.numpy(), new_ann.numpy())
 
 
-def test_augment_img():
+def test_tf_augment_img():
     """ 测试augment和darw NOTE 主要为了检验augment是否正确"""
     h = YOLOHelper('data/voc_img_ann.npy', 20, 'data/voc_anchor.npy',
                    [224, 320], [[7, 10], [14, 20]])
     i = 213
+    ds = tf.data.TFRecordDataset(h.train_list).map(h.parser_example)
+    iters = iter(ds)
+
     for i in range(120, 140):
-        path, ann, hw = h.train_list[i]
-        img = h.read_img(path)
-        img, ann = h.resize_img(img, h.in_hw, np.copy(ann))
-        img = img.numpy()
-        ann = ann.numpy()
-        self = h
+        img_str, img_name, ann, hw = next(iters)
+        img = h.decode_img(img_str)
+        img, ann = h.resize_train_img(img, h.in_hw, ann)
+        img, ann = h.tf_augment_img(img, ann)
+        h.draw_image(img.numpy(), ann.numpy())
+
+
+def test_iaa_augment_img():
+    """ 测试augment和darw NOTE 主要为了检验augment是否正确"""
+    h = YOLOHelper('data/voc_img_ann.npy', 20, 'data/voc_anchor.npy',
+                   [224, 320], [[7, 10], [14, 20]])
+    i = 213
+    ds = tf.data.TFRecordDataset(h.train_list).map(h.parser_example)
+    iters = iter(ds)
+
+    for i in range(120, 140):
+        img_str, img_name, ann, hw = next(iters)
+        img = h.decode_img(img_str)
+        img, ann = h.resize_img(img, h.in_hw, ann)
         img, ann = tf.numpy_function(h.augment_img, [img, ann], [tf.uint8, tf.float32])
         h.draw_image(img.numpy(), ann.numpy())
 
@@ -67,11 +86,32 @@ def test_process_img():
     is_resize = True
     is_augment = True
     is_normlize = False
+    ds = tf.data.TFRecordDataset(h.train_list).map(h.parser_example)
+    iters = iter(ds)
     for i in tf.range(120, 140):
-        path, ann = tf.numpy_function(lambda idx: tuple(h.train_list[idx][:2]),
-                                      [i], [tf.string, tf.float32])
-        img = h.read_img(path)
+        img_str, img_name, ann, hw = next(iters)
+        img = h.decode_img(img_str)
         img, new_ann = h.process_img(img, ann, in_hw, is_augment, is_resize, is_normlize)
+        h.draw_image(img.numpy(), new_ann.numpy())
+
+
+def test_process_widerface_img():
+    """ 测试处理图像流程,并绘制 NOTE 主要为了检验整个流程是否正确"""
+    h = YOLOHelper('data/wdface_voc_img_ann.npy', 20, 'data/voc_anchor.npy',
+                   [224, 320], [[7, 10], [14, 20]])
+    i = 213
+    in_hw = h.in_hw
+    is_resize = True
+    is_augment = True
+    is_normlize = False
+    ds = tf.data.TFRecordDataset(h.train_list).map(h.parser_example)
+    iters = iter(ds)
+    for i in tf.range(120, 140):
+        img_str, img_name, ann, hw = next(iters)
+        img = h.decode_img(img_str)
+        img, new_ann = h.process_img(img, ann, in_hw, is_augment, is_resize, is_normlize)
+        labels = tf.numpy_function(h.ann_to_label, [h.in_hw, h.out_hw, new_ann],
+                                   [tf.float32] * len(h.anchors))
         h.draw_image(img.numpy(), new_ann.numpy())
 
 
@@ -93,11 +133,12 @@ def test_multi_scale_process_img():
 def test_label_to_ann_draw():
     """ 处理图像,并且从label转换为ann 并绘制 NOTE 主要为了检验整个处理以及label生成是否正确"""
     h = YOLOHelper('data/voc_img_ann.npy', 20, 'data/voc_anchor.npy', [224, 320], [[7, 10], [14, 20]])
-    i = tf.constant(213)
-    for i in tf.range(156, 200):
-        path, ann = tf.numpy_function(lambda idx: tuple(h.train_list[idx][:2]),
-                                      [i], [tf.string, tf.float32])
-        img = h.read_img(path)
+
+    ds = tf.data.TFRecordDataset(h.train_list).map(h.parser_example)
+    iters = iter(ds)
+    for i in tf.range(120, 140):
+        img_str, img_name, ann, hw = next(iters)
+        img = h.decode_img(img_str)
         img, ann = h.process_img(img, ann, h.in_hw, True, True, False)
         labels = tf.numpy_function(h.ann_to_label, [h.in_hw, h.out_hw, ann],
                                    [tf.float32] * len(h.anchors))
@@ -109,36 +150,37 @@ def test_label_to_ann_draw():
 def test_label_to_ann_compare():
     """ 处理图像,并且从label转换为ann 并对比 NOTE 主要为了检验整个处理以及label生成是否正确"""
     h = YOLOHelper('data/voc_img_ann.npy', 20, 'data/voc_anchor.npy', [224, 320], [[7, 10], [14, 20]])
-    i = 213
+    ds = tf.data.TFRecordDataset(h.train_list).map(h.parser_example)
+    iters = iter(ds)
     for i in tf.range(156, 200):
-        path, ann = tf.numpy_function(lambda idx: tuple(h.train_list[idx][:2]),
-                                      [i], [tf.string, tf.float32])
-        img = h.read_img(path)
+        img_str, img_name, ann, hw = next(iters)
+        img = h.decode_img(img_str)
         img, ann = h.process_img(img, ann, h.in_hw, True, True, False)
-        labels = tf.numpy_function(h.ann_to_label, [h.in_hw, h.out_hw, ann],
-                                   [tf.float32] * len(h.anchors))
+        labels = tf.numpy_function(h.ann_to_label, [h.in_hw, h.out_hw, ann], [tf.float32] * len(h.anchors))
         labels = [l.numpy() for l in labels]
-        new_ann = h.label_to_ann(labels)
         ann = ann.numpy()
+        new_ann = h.label_to_ann(labels)
         try:
             ann = np.array(sorted(ann, key=lambda x: (-x[0], -x[1], -x[3], -x[4])))
             new_ann = np.array(sorted(new_ann, key=lambda x: (-x[0], -x[1], -x[3], -x[4])))
-            assert np.allclose(ann, new_ann)
+            assert np.allclose(ann, new_ann, 1e-04)
         except AssertionError:
             print(ann)
             print(new_ann)
 
-        # h.draw_image(img, new_ann)
+        # h.draw_image(img.numpy(), new_ann)
 
 
 def test_label_to_ann_v3_compare():
     """ 处理图像,并且从label转换为ann 并对比 NOTE 主要为了检验整个处理以及label生成是否正确"""
     h = YOLOHelper('data/voc_img_ann.npy', 20, 'data/voc_anchor_v3.npy', [416, 416], [[13, 13], [26, 26], [52, 52]])
     i = 213
+    ds = tf.data.TFRecordDataset(h.train_list).map(h.parser_example)
+    iters = iter(ds)
+
     for i in tf.range(156, 200):
-        path, ann = tf.numpy_function(lambda idx: tuple(h.train_list[idx][:2]),
-                                      [i], [tf.string, tf.float32])
-        img = h.read_img(path)
+        img_str, img_name, ann, hw = next(iters)
+        img = h.decode_img(img_str)
         img, ann = h.process_img(img, ann, h.in_hw, True, True, False)
         labels = tf.numpy_function(h.ann_to_label, [h.in_hw, h.out_hw, ann],
                                    [tf.float32] * len(h.anchors))
@@ -148,7 +190,7 @@ def test_label_to_ann_v3_compare():
         try:
             ann = np.array(sorted(ann, key=lambda x: (-x[0], -x[1], -x[3], -x[4])))
             new_ann = np.array(sorted(new_ann, key=lambda x: (-x[0], -x[1], -x[3], -x[4])))
-            assert np.allclose(ann, new_ann)
+            assert np.allclose(ann, new_ann, 1e-04)
         except AssertionError:
             print(ann)
             print(new_ann)

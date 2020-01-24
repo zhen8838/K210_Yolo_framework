@@ -3,7 +3,7 @@ from tensorflow.python import keras
 from tensorflow.python.ops.math_ops import reduce_mean, reduce_sum,\
     sigmoid, sqrt, square, logical_and, cast, logical_not, div_no_nan, add
 from tensorflow.python.ops.gen_array_ops import reshape
-from tensorflow.python.keras.metrics import Metric, MeanMetricWrapper
+from tensorflow.python.keras.metrics import Metric, MeanMetricWrapper, Sum
 from tensorflow.python.keras.callbacks import Callback
 from tensorflow.python.keras import backend as K
 import signal
@@ -35,7 +35,23 @@ class DummyMetric(MeanMetricWrapper):
         super().__init__(lambda y_true, y_pred, v: v, name=name, dtype=dtype, v=var)
 
 
+class DummyOnceMetric(Metric):
+    def __init__(self, var: ResourceVariable, name=None, dtype=None, **kwargs):
+        super().__init__(name=name, dtype=dtype, **kwargs)
+        self.var = var
+
+    def update_state(self, *args, **kwargs):
+        pass
+
+    def result(self):
+        return self.var.read_value()
+
+    def reset_states(self):
+        self.var.assign(0.)
+
 # NOTE from https://github.com/bojone/keras_lookahead
+
+
 class Lookahead(object):
     """Add the [Lookahead Optimizer](https://arxiv.org/abs/1907.08610)
      functionality for [keras](https://keras.io/).

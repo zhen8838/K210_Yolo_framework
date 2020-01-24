@@ -1,5 +1,4 @@
-from models.networks import mbv1_softmax_facerec, mbv1_triplet_facerec,\
-    mbv1_amsoftmax_facerec, mbv2_ctdet, yolo, tiny_yolo, pfld,\
+from models.networks import mbv1_facerec, mbv2_ctdet, yolo, tiny_yolo, pfld,\
     shuffle_ctdet, yolo3_nano, yolo_mbv1, mbv1_imgnet, mbv2_imgnet,\
     retinafacenet, retinaface_slim, retinaface_rfb
 from models.receptivefieldnet import rffacedetnet
@@ -18,7 +17,7 @@ from tools.lffd import LFFDHelper, LFFDLoss
 from tools.retinaface import RetinaFaceHelper, RetinaFaceLoss, retinaface_infer
 from tools.tinyimgnet import TinyImgnetHelper
 from tools.imgnet import ImgnetHelper, ClassifyLoss
-from tools.facerec import FcaeRecHelper, TripletLoss, Sparse_SoftmaxLoss, Sparse_AmsoftmaxLoss, Sparse_AsoftmaxLoss
+from tools.facerec import FcaeRecHelper, TripletLoss, Sparse_SoftmaxLoss, Sparse_AmsoftmaxLoss, Sparse_AsoftmaxLoss, FacerecValidation, facerec_eval
 from yaml import safe_dump
 
 
@@ -166,9 +165,7 @@ network_register = {
     'mbv1_amsoftmax_facerec_k210': mbv1_amsoftmax_facerec_k210,
     'mbv1_softmax_facerec_k210': mbv1_softmax_facerec_k210,
     'mbv1_triplet_facerec_k210': mbv1_triplet_facerec_k210,
-    'mbv1_amsoftmax_facerec': mbv1_amsoftmax_facerec,
-    'mbv1_softmax_facerec': mbv1_softmax_facerec,
-    'mbv1_triplet_facerec': mbv1_triplet_facerec,
+    'mbv1_facerec': mbv1_facerec,
     'mbv2_ctdet': mbv2_ctdet,
     'mbv1_imgnet': mbv1_imgnet,
     'mbv2_imgnet': mbv2_imgnet,
@@ -214,7 +211,8 @@ callback_register = {
     'EarlyStopping': tf.keras.callbacks.EarlyStopping,
     'ModelCheckpoint': tf.keras.callbacks.ModelCheckpoint,
     'TerminateOnNaN': tf.keras.callbacks.TerminateOnNaN,
-    'StepLR': StepLR
+    'StepLR': StepLR,
+    'FacerecValidation': FacerecValidation
 }
 
 optimizer_register = {
@@ -235,7 +233,8 @@ infer_register = {
 }
 
 eval_register = {
-    'yolo_eval': yolo_eval
+    'yolo_eval': yolo_eval,
+    'facerec_eval': facerec_eval
 }
 
 if __name__ == "__main__":
