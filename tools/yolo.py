@@ -312,10 +312,11 @@ class YOLOHelper(BaseHelper):
                                                        for i in range(self.output_number)]
 
         self.iaaseq = iaa.Sequential([
-            iaa.SomeOf([2, None], [
+            iaa.SomeOf([1, 3], [
                 iaa.MultiplyHueAndSaturation(mul_hue=(0.7, 1.3), mul_saturation=(0.7, 1.3),
                                              per_channel=True),
-                iaa.Multiply((0.7, 1.3), per_channel=True)
+                iaa.Multiply((0.5, 1.5), per_channel=True),
+                iaa.SigmoidContrast((3, 8)),
             ], True),
             iaa.SomeOf([1, None], [
                 iaa.Fliplr(0.5),
