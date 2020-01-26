@@ -140,11 +140,11 @@ def bbox_crop(ann: np.ndarray, crop_box=None, allow_outside_center=True) -> np.n
     return ann
 
 
-def random_crop_with_constraints(ann: np.ndarray, im_wh: np.ndarray,
-                                 min_scale: float = 0.3, max_scale: float = 1,
-                                 max_aspect_ratio: float = 2,
-                                 constraints: float = None,
-                                 max_trial: float = 50) -> [np.ndarray, list]:
+def bbox_crop_constraints(ann: np.ndarray, im_wh: np.ndarray,
+                          min_scale: float = 0.3, max_scale: float = 1,
+                          max_aspect_ratio: float = 2,
+                          max_trial: float = 50,
+                          constraints: float = None) -> [np.ndarray, list]:
     """
         Crop an image randomly with bounding box constraints.
 
@@ -244,7 +244,9 @@ def random_crop_with_constraints(ann: np.ndarray, im_wh: np.ndarray,
 
 class YOLOHelper(BaseHelper):
     def __init__(self, image_ann: str, class_num: int, anchors: str,
-                 in_hw: tuple, out_hw: tuple, validation_split: float = 0.1):
+                 in_hw: tuple, out_hw: tuple,
+                 resize_method: str = 'origin',
+                 augment_method: str = 'origin'):
         """ yolo helper
 
         Parameters
@@ -267,9 +269,13 @@ class YOLOHelper(BaseHelper):
 
             default output height width
 
-        validation_split : float, optional
+        resize_method : str, optional
 
-            validation split, by default 0.1
+            train image resize method, ['origin','gulon','none']
+
+        augment_method : str, optional
+
+            train image augment method, ['origin','iaa']
 
         """
         self.train_dataset: tf.data.Dataset = None
@@ -280,7 +286,6 @@ class YOLOHelper(BaseHelper):
         self.val_epoch_step: int = None
         self.test_epoch_step: int = None
 
-        self.validation_split = validation_split  # type:float
         if image_ann == None:
             self.train_list: np.ndarray = None
             self.val_list: np.ndarray = None
@@ -294,7 +299,8 @@ class YOLOHelper(BaseHelper):
             self.train_total_data: int = img_ann_list['train_num']
             self.val_total_data: int = img_ann_list['val_num']
             self.test_total_data: int = img_ann_list['test_num']
-
+        self.resize_method = resize_method
+        self.augment_method = augment_method
         self.org_in_hw = np.array(in_hw)
         self.org_out_hw = np.array(out_hw)
         assert self.org_in_hw.ndim == 1
@@ -312,7 +318,7 @@ class YOLOHelper(BaseHelper):
                                                        for i in range(self.output_number)]
 
         self.iaaseq = iaa.Sequential([
-            iaa.SomeOf([1, 3], [
+            iaa.SomeOf([1, None], [
                 iaa.MultiplyHueAndSaturation(mul_hue=(0.7, 1.3), mul_saturation=(0.7, 1.3),
                                              per_channel=True),
                 iaa.Multiply((0.5, 1.5), per_channel=True),
@@ -320,14 +326,12 @@ class YOLOHelper(BaseHelper):
             ], True),
             iaa.SomeOf([1, None], [
                 iaa.Fliplr(0.5),
-                # iaa.Affine(scale={"x": (0.7, 1.1), "y": (0.7, 1.1)},
-                #            backend='cv2', mode=['constant', 'edge', 'reflect', 'wrap']),
-                # iaa.Affine(translate_percent={"x": (-0.1, 0.1), "y": (-0.1, 0.1)},
-                #            backend='cv2', mode=['constant', 'edge', 'reflect', 'wrap']),
-                # iaa.Affine(rotate=(-10, 10),
-                #            backend='cv2', mode=['constant', 'edge', 'reflect', 'wrap'])
-                iaa.Affine(scale={"x": (0.7, 1.1), "y": (0.7, 1.1)}, translate_percent={"x": (-0.1, 0.1), "y": (-0.1, 0.1)}, rotate=(-10, 10),
-                           backend='cv2', mode=['constant', 'edge', 'reflect', 'wrap']),
+                iaa.Affine(scale={"x": (0.7, 1.3), "y": (0.7, 1.3)},
+                           backend='cv2'),
+                iaa.Affine(translate_percent={"x": (-0.15, 0.15), "y": (-0.15, 0.15)},
+                           backend='cv2'),
+                iaa.Affine(rotate=(-15, 15),
+                           backend='cv2')
             ], True)
         ], True)
 
@@ -536,7 +540,7 @@ class YOLOHelper(BaseHelper):
         layer_idx, anchor_idx = self._get_anchor_index(ann[:, 3: 5])
         for box, l, n in zip(ann, layer_idx, anchor_idx):
             # NOTE box [x y w h] are relative to the size of the entire image [0~1]
-            bb = box[1:5]
+            bb = box[1: 5]
             cnt = np.zeros(self.output_number, np.bool)  # assigned flag
             for i in range(len(l)):
                 x, y = self._xy_grid_index(out_hw, bb[0: 2], l[i])  # [x index , y index]
@@ -571,7 +575,24 @@ class YOLOHelper(BaseHelper):
         new_ann = self.center_to_corner(new_ann, self.org_in_hw)
         return new_ann
 
-    def augment_img(self, img: np.ndarray, ann: np.ndarray) -> tuple:
+    @staticmethod
+    def validate_ann(clses: tf.Tensor, x1: tf.Tensor, y1: tf.Tensor,
+                     x2: tf.Tensor, y2: tf.Tensor,
+                     im_w: tf.Tensor, im_h: tf.Tensor) -> tf.Tensor:
+        """ when resize or augment img, need validate ann value """
+        x1 = tf.clip_by_value(x1, 0, im_w - 1)
+        y1 = tf.clip_by_value(y1, 0, im_h - 1)
+        x2 = tf.clip_by_value(x2, 0, im_w - 1)
+        y2 = tf.clip_by_value(y2, 0, im_h - 1)
+        new_ann = tf.concat([clses, x1, y1, x2, y2], -1)
+        new_ann.set_shape((None, None))
+
+        bbox_w = new_ann[:, 3] - new_ann[:, 1]
+        bbox_h = new_ann[:, 4] - new_ann[:, 2]
+        new_ann = tf.boolean_mask(new_ann, tf.logical_and(bbox_w > 1, bbox_h > 1))
+        return new_ann
+
+    def iaa_augment_img(self, img: np.ndarray, ann: np.ndarray) -> [np.ndarray, np.ndarray]:
         """ augmenter for image
 
         Parameters
@@ -592,25 +613,29 @@ class YOLOHelper(BaseHelper):
             [image src,ann] after data augmenter
             image src dtype is uint8
         """
-        p = ann[:, 0: 1]
-        box = ann[:, 1:]
+        clses = ann[:, 0: 1]
+        bbox = ann[:, 1:]
         im_wh = img.shape[1::-1]
-        bbs = BoundingBoxesOnImage.from_xyxy_array(box, shape=img.shape)
 
+        bbs = BoundingBoxesOnImage.from_xyxy_array(bbox, shape=img.shape)
         image_aug, bbs_aug = self.iaaseq(image=img, bounding_boxes=bbs)
-        new_box = bbs_aug.to_xyxy_array()
-        # remove out of bound bbox and the bbox which w or h < 0
-        bbs_xy = (new_box[:, :2] + new_box[:, 2:]) / 2
-        mask_c = np.all(np.logical_and(bbs_xy < im_wh, bbs_xy > 0))
-        mask_w = (new_box[:, 2] - new_box[:, 0]) > 1
-        mask_h = (new_box[:, 3] - new_box[:, 1]) > 1
-        mask = np.logical_and(mask_c, np.logical_and(mask_w, mask_h))
-        new_ann = np.hstack((p[mask], new_box[mask]))
+        new_bbox = bbs_aug.to_xyxy_array()
 
+        # remove out of bound bbox and the bbox which w or h < 0
+        x1, y1, x2, y2 = np.split(new_bbox, 4, -1)
+        x1 = np.clip(x1, 0, im_wh[0] - 1)
+        y1 = np.clip(y1, 0, im_wh[1] - 1)
+        x2 = np.clip(x2, 0, im_wh[0] - 1)
+        y2 = np.clip(y2, 0, im_wh[1] - 1)
+        new_ann = np.concatenate([clses, x1, y1, x2, y2], -1)
+
+        bbox_w = new_ann[:, 3] - new_ann[:, 1]
+        bbox_h = new_ann[:, 4] - new_ann[:, 2]
+        new_ann = new_ann[np.logical_and(bbox_w > 1, bbox_h > 1)]
         return image_aug, new_ann
 
-    def tf_augment_img(self, img: tf.Tensor, ann: tf.Tensor,
-                       hue=0.3, sat=0.2, val=0.3) -> [tf.Tensor, tf.Tensor]:
+    def origin_augment_img(self, img: tf.Tensor, ann: tf.Tensor,
+                           hue=0.3, sat=0.2, val=0.3) -> [tf.Tensor, tf.Tensor]:
         """ augmenter for image
 
         Parameters
@@ -639,9 +664,9 @@ class YOLOHelper(BaseHelper):
             img = tf.image.random_brightness(img, val)
         return img, ann
 
-    def resize_train_img(self, img: tf.Tensor, in_hw: tf.Tensor,
-                         ann: tf.Tensor, min_scale=0.25, max_scale=2,
-                         jitter=0.3, flip=True) -> [tf.Tensor, tf.Tensor]:
+    def origin_resize_train_img(self, img: tf.Tensor, in_hw: tf.Tensor,
+                                ann: tf.Tensor, min_scale=0.25, max_scale=2,
+                                jitter=0.3, flip=True) -> [tf.Tensor, tf.Tensor]:
         """ when training first crop image and resize image and keep ratio
 
         Parameters
@@ -705,15 +730,20 @@ class YOLOHelper(BaseHelper):
                 lambda: (tf.image.flip_left_right(img), w - x2, w - x1),
                 lambda: (img, x1, x2))
 
-        x1 = tf.clip_by_value(x1, 0, w - 1)
-        x2 = tf.clip_by_value(x2, 0, w - 1)
-        y1 = tf.clip_by_value(y1, 0, h - 1)
-        y2 = tf.clip_by_value(y2, 0, h - 1)
-        new_ann = tf.concat([clses, x1, y1, x2, y2], -1)
+        new_ann = self.validate_ann(clses, x1, y1, x2, y2, w, h)
+        return img, new_ann
 
-        bbox_w = new_ann[:, 3] - new_ann[:, 1]
-        bbox_h = new_ann[:, 4] - new_ann[:, 2]
-        new_ann = tf.boolean_mask(new_ann, tf.logical_and(bbox_w > 1, bbox_h > 1))
+    def gluon_resize_train_img(self, img: tf.Tensor, in_hw: tf.Tensor,
+                               ann: tf.Tensor, min_scale: float = 0.3,
+                               max_scale: float = 1, max_aspect_ratio: float = 2,
+                               max_trial: int = 50) -> [tf.Tensor, tf.Tensor]:
+        new_ann, crop_idx = tf.numpy_function(
+            bbox_crop_constraints, [ann, tf.shape(img)[1::-1],
+                                    tf.constant(min_scale), tf.constant(max_scale),
+                                    tf.constant(max_aspect_ratio), tf.constant(max_trial)], [tf.float32, tf.int32])
+        # crop_idx (x1, y1, x2, y2)
+        img = img[crop_idx[1]:crop_idx[3], crop_idx[0]:crop_idx[2], :]
+        img, new_ann = self.resize_img(img, in_hw, new_ann)
         return img, new_ann
 
     def resize_img(self, img: tf.Tensor, in_hw: tf.Tensor,
@@ -762,39 +792,23 @@ class YOLOHelper(BaseHelper):
                                              lambda: (img, clses, x1, y1, x2, y2),
                                              lambda: _resize(img, clses, x1, y1, x2, y2))
 
-        x1 = tf.clip_by_value(x1, 0, w - 1)
-        x2 = tf.clip_by_value(x2, 0, w - 1)
-        y1 = tf.clip_by_value(y1, 0, h - 1)
-        y2 = tf.clip_by_value(y2, 0, h - 1)
-        new_ann = tf.concat([clses, x1, y1, x2, y2], -1)
-
-        bbox_w = new_ann[:, 3] - new_ann[:, 1]
-        bbox_h = new_ann[:, 4] - new_ann[:, 2]
-        new_ann = tf.boolean_mask(new_ann, tf.logical_and(bbox_w > 1, bbox_h > 1))
+        new_ann = self.validate_ann(clses, x1, y1, x2, y2, w, h)
         return img, new_ann
 
     def read_img(self, img_path: str) -> tf.Tensor:
         """ read image
-
-        Parameters
-        ----------
-        img_path : str
-
-
-        Returns
-        -------
-        tf.Tensor
-            image src
         """
         return tf.image.decode_jpeg(tf.io.read_file(img_path), channels=3)
 
     def decode_img(self, img_str: bytes) -> tf.Tensor:
+        """ decode image string
+        """
         return tf.image.decode_jpeg(img_str, channels=3)
 
     def process_img(self, img: tf.Tensor, ann: tf.Tensor, in_hw: tf.Tensor,
                     is_augment: bool, is_resize: bool,
                     is_normlize: bool) -> [tf.Tensor, tf.Tensor]:
-        """ process image and true box , if is training then use data augmenter
+        """ origin yolo process image and true box , if is training then use data augmenter
 
         Parameters
         ----------
@@ -815,11 +829,25 @@ class YOLOHelper(BaseHelper):
             image src , true box
         """
         if is_resize and is_augment:
-            img, ann = self.resize_train_img(img, in_hw, ann)
+            # print(INFO, f'resize_method : {self.resize_method}')
+            if self.resize_method == 'origin':
+                img, ann = self.origin_resize_train_img(img, in_hw, ann)
+            elif self.resize_method == 'gluon':
+                img, ann = self.gluon_resize_train_img(img, in_hw, ann)
+            elif self.resize_method == 'none':
+                img, ann = self.resize_img(img, in_hw, ann)
+            else:
+                raise ValueError(f'resize_method: {self.resize_method} is error')
         elif is_resize:
             img, ann = self.resize_img(img, in_hw, ann)
         if is_augment:
-            img, ann = self.tf_augment_img(img, ann)
+            # print(INFO, f'augment_method : {self.augment_method}')
+            if self.augment_method == 'origin':
+                img, ann = self.origin_augment_img(img, ann)
+            elif self.augment_method == 'iaa':
+                img, ann = tf.numpy_function(self.iaa_augment_img, [img, ann], [tf.uint8, tf.float32])
+            else:
+                raise ValueError(f'augment_method: {self.augment_method} is error')
         if is_normlize:
             img = self.normlize_img(img)
         else:
@@ -1081,52 +1109,6 @@ class YOLOLoss(Loss):
         all_pred_wh = tf.exp(grid_pred_wh) * anchors
         return all_pred_xy, all_pred_wh
 
-    @staticmethod
-    def iou(pred_xy: tf.Tensor, pred_wh: tf.Tensor,
-            vaild_xy: tf.Tensor, vaild_wh: tf.Tensor) -> tf.Tensor:
-        """ calc the iou form pred box with vaild box
-
-        Parameters
-        ----------
-        pred_xy : tf.Tensor
-            pred box shape = [out h, out w, anchor num, 2]
-
-        pred_wh : tf.Tensor
-            pred box shape = [out h, out w, anchor num, 2]
-
-        vaild_xy : tf.Tensor
-            vaild box shape = [? , 2]
-
-        vaild_wh : tf.Tensor
-            vaild box shape = [? , 2]
-
-        Returns
-        -------
-        tf.Tensor
-            iou value shape = [out h, out w, anchor num ,?]
-        """
-        b1_xy = tf.expand_dims(pred_xy, -2)
-        b1_wh = tf.expand_dims(pred_wh, -2)
-        b1_wh_half = b1_wh / 2.
-        b1_mins = b1_xy - b1_wh_half
-        b1_maxes = b1_xy + b1_wh_half
-
-        b2_xy = tf.expand_dims(vaild_xy, 0)
-        b2_wh = tf.expand_dims(vaild_wh, 0)
-        b2_wh_half = b2_wh / 2.
-        b2_mins = b2_xy - b2_wh_half
-        b2_maxes = b2_xy + b2_wh_half
-
-        intersect_mins = tf.maximum(b1_mins, b2_mins)
-        intersect_maxes = tf.minimum(b1_maxes, b2_maxes)
-        intersect_wh = tf.maximum(intersect_maxes - intersect_mins, 0.)
-        intersect_area = intersect_wh[..., 0] * intersect_wh[..., 1]
-        b1_area = b1_wh[..., 0] * b1_wh[..., 1]
-        b2_area = b2_wh[..., 0] * b2_wh[..., 1]
-        iou = intersect_area / (b1_area + b2_area - intersect_area)
-
-        return iou
-
     def smoothl1loss(self, labels: tf.Tensor, predictions: tf.Tensor, delta=1.0):
         error = tf.math.subtract(predictions, labels)
         abs_error = tf.math.abs(error)
@@ -1165,17 +1147,18 @@ class YOLOLoss(Loss):
         obj_mask_bool = tf.cast(y_true[..., 4], tf.bool)
 
         """ calc the ignore mask  """
-        pred_xy, pred_wh = self.xywh_to_all(grid_pred_xy, grid_pred_wh,
-                                            out_hw, self.xy_offset, self.anchors)
-
+        all_pred_xy, all_pred_wh = self.xywh_to_all(grid_pred_xy, grid_pred_wh,
+                                                    out_hw, self.xy_offset, self.anchors)
+        all_pred_bbox = tf.concat([all_pred_xy - all_pred_wh / 2,
+                                   all_pred_xy + all_pred_wh / 2], -1)
+        all_true_bbox = tf.concat([all_true_xy - all_true_wh / 2,
+                                   all_true_xy + all_true_wh / 2], -1)
         obj_cnt = tf.reduce_sum(obj_mask)
 
         def lmba(bc):
             # NOTE use location_mask find all ground truth
-            gt_xy = tf.boolean_mask(all_true_xy[bc], location_mask[bc])
-            gt_wh = tf.boolean_mask(all_true_wh[bc], location_mask[bc])
-            iou_score = tf_bbox_iou(tf.concat([pred_xy[bc] - pred_wh[bc] / 2, pred_xy[bc] + pred_wh[bc] / 2], -1),
-                                    tf.concat([gt_xy - gt_wh / 2, gt_xy + gt_wh / 2], -1))  # [h,w,anchor,box_num]
+            one_all_true_bbox = tf.boolean_mask(all_true_bbox[bc], location_mask[bc])
+            iou_score = tf_bbox_iou(all_pred_bbox[bc], one_all_true_bbox)  # [h,w,anchor,box_num]
             # NOTE find this layer gt and pred iou score
             idx = tf.where(tf.boolean_mask(obj_mask_bool[bc], location_mask[bc]))
             mask_iou_score = tf.gather_nd(tf.boolean_mask(iou_score, obj_mask_bool[bc]), idx, 1)
@@ -1246,8 +1229,96 @@ class YOLOLoss(Loss):
         return total_loss
 
 
+class YOLOIouLoss(YOLOLoss):
+    def __init__(self, h: YOLOHelper, iou_thresh: float, obj_thresh: float,
+                 obj_weight: float, noobj_weight: float, bbox_weight: float,
+                 cls_weight: float, layer: int, iou_method: str,
+                 reduction='auto', name=None):
+        self.reduction = reduction
+        self.name = name
+        self.h = h
+        self.iou_thresh = iou_thresh
+        self.obj_thresh = obj_thresh
+        self.obj_weight = obj_weight
+        self.iou_method = iou_method
+        self.noobj_weight = noobj_weight
+        self.bbox_weight = bbox_weight
+        self.cls_weight = cls_weight
+        self.layer = layer
+        self.anchors: np.ndarray = np.copy(self.h.anchors[self.layer])
+        self.xy_offset: ResourceVariable = self.h.xy_offsets[self.layer]
+        self.op_list = []
+        self.lookups: Iterable[Tuple[ResourceVariable, AnyStr]] = []
+
+    def call(self, y_true: tf.Tensor, y_pred: tf.Tensor):
+        """ reshape y pred """
+        out_hw = tf.cast(tf.shape(y_true)[1:3], tf.float32)
+
+        y_true = tf.reshape(y_true, [-1, out_hw[0], out_hw[1],
+                                     self.h.anchor_number, self.h.class_num + 5 + 1])
+        y_pred = tf.reshape(y_pred, [-1, out_hw[0], out_hw[1],
+                                     self.h.anchor_number, self.h.class_num + 5])
+
+        """ split the label """
+        grid_pred_xy = y_pred[..., 0:2]
+        grid_pred_wh = y_pred[..., 2:4]
+        pred_confidence = y_pred[..., 4:5]
+        pred_cls = y_pred[..., 5:]
+
+        all_true_xy = y_true[..., 0:2]
+        all_true_wh = y_true[..., 2:4]
+        true_confidence = y_true[..., 4:5]
+        true_cls = y_true[..., 5:5 + self.h.class_num]
+        location_mask = tf.cast(y_true[..., -1], tf.bool)
+
+        obj_mask = true_confidence
+        obj_mask_bool = tf.cast(y_true[..., 4], tf.bool)
+
+        """ calc the ignore mask  """
+        all_pred_xy, all_pred_wh = self.xywh_to_all(grid_pred_xy, grid_pred_wh,
+                                                    out_hw, self.xy_offset, self.anchors)
+        all_pred_bbox = tf.concat([all_pred_xy - all_pred_wh / 2,
+                                   all_pred_xy + all_pred_wh / 2], -1)
+        all_true_bbox = tf.concat([all_true_xy - all_true_wh / 2,
+                                   all_true_xy + all_true_wh / 2], -1)
+        obj_cnt = tf.reduce_sum(obj_mask)
+
+        def lmba(bc):
+            # NOTE use location_mask find all ground truth
+            one_all_true_bbox = tf.boolean_mask(all_true_bbox[bc], location_mask[bc])
+            iou_score = tf_bbox_iou(all_pred_bbox[bc], one_all_true_bbox)  # [h,w,anchor,box_num]
+            # if iou for any ground truth larger than iou_thresh, the pred is true.
+            match_num = tf.reduce_sum(tf.cast(iou_score > self.iou_thresh, tf.float32), -1, keepdims=True)
+            return tf.cast(tf.less(match_num, 1), tf.float32)
+
+        ignore_mask = tf.map_fn(lmba, tf.range(self.h.batch_size), dtype=tf.float32)
+
+        """ calc the loss """
+        pred_confidence_sigmod = tf.sigmoid(pred_confidence)
+
+        bbox_loss = self.bbox_weight * tf.reduce_sum(
+            obj_mask * (1 - tf_bbox_iou(all_pred_bbox, all_true_bbox[..., None, :], method=self.iou_method)),
+            [1, 2, 3, 4])
+
+        obj_loss = self.obj_weight * tf.reduce_sum(
+            obj_mask * K.binary_crossentropy(true_confidence, pred_confidence_sigmod),
+            [1, 2, 3, 4])
+
+        noobj_loss = self.noobj_weight * tf.reduce_sum(
+            (1 - obj_mask) * ignore_mask * K.binary_crossentropy(true_confidence, pred_confidence_sigmod),
+            [1, 2, 3, 4])
+
+        cls_loss = tf.reduce_sum(
+            obj_mask * self.cls_weight * tf.nn.sigmoid_cross_entropy_with_logits(
+                labels=true_cls, logits=pred_cls), [1, 2, 3, 4])
+
+        """ sum loss """
+        total_loss = obj_loss + noobj_loss + cls_loss + bbox_loss
+        return total_loss
+
+
 def parser_outputs(outputs: List[List[np.ndarray]], orig_hws: List[np.ndarray],
-                   obj_thresh: float, nms_thresh: float, h: YOLOHelper
+                   obj_thresh: float, nms_thresh: float, iou_method: str, h: YOLOHelper
                    ) -> List[Tuple[np.ndarray, np.ndarray, np.ndarray]]:
     """ yolo parser one image output
 
@@ -1311,7 +1382,8 @@ def parser_outputs(outputs: List[List[np.ndarray]], orig_hws: List[np.ndarray],
         for c in range(h.class_num):
             class_boxes = xyxy_box[mask[:, c]]
             class_box_scores = xyxy_box_scores[:, c][mask[:, c]]
-            select = nms_oneclass(class_boxes, class_box_scores, nms_thresh)
+            select = nms_oneclass(class_boxes, class_box_scores,
+                                  nms_thresh, method=iou_method)
             class_boxes = class_boxes[select]
             class_box_scores = class_box_scores[select]
             _boxes.append(class_boxes)
@@ -1327,6 +1399,7 @@ def parser_outputs(outputs: List[List[np.ndarray]], orig_hws: List[np.ndarray],
 
 def yolo_infer(img_path: Path, infer_model: k.Model,
                result_path: Path, h: YOLOHelper,
+               iou_method: str = 'iou',
                obj_thresh: float = .7, nms_thresh: float = .3):
     """ yolo infer function
 
@@ -1395,7 +1468,8 @@ def yolo_infer(img_path: Path, infer_model: k.Model,
     # NOTE change outputs List to n*[layer_num*[arr]]
     outputs = [[output[i] for output in outputs] for i in range(len(orig_hws))]
     """ parser batch out """
-    results = parser_outputs(outputs, orig_hws, obj_thresh, nms_thresh, h)
+    results = parser_outputs(outputs, orig_hws, obj_thresh,
+                             nms_thresh, iou_method, h)
 
     if result_path is None:
         """ draw gpu result """
@@ -1414,7 +1488,8 @@ def yolo_infer(img_path: Path, infer_model: k.Model,
                                   [1, 2, 0]) for (l, pred) in enumerate(preds)]
             ncc_preds.append(preds)
 
-        ncc_results = parser_outputs(ncc_preds, orig_hws, obj_thresh, nms_thresh, h)
+        ncc_results = parser_outputs(ncc_preds, orig_hws, obj_thresh,
+                                     nms_thresh, iou_method, h)
         for img_path, (bbox, cals, scores), (ncc_bbox, ncc_cals, ncc_scores) in zip(img_paths, results, ncc_results):
             draw_img = h.read_img(img_path)
             gpu_img = h.draw_image(draw_img.numpy(), np.hstack([cals[:, None], bbox]),
@@ -1477,7 +1552,8 @@ def voc_ap(recall: np.ndarray, precision: np.ndarray) -> float:
 
 def yolo_eval(infer_model: k.Model, h: YOLOHelper, det_obj_thresh: float,
               det_iou_thresh: float, mAp_iou_thresh: float, class_name: list,
-              save_result: bool = False, save_result_dir: str = 'tmp', batch: int = 32):
+              iou_method: str = 'iou', save_result: bool = False,
+              save_result_dir: str = 'tmp', batch: int = 32):
     """ calc yolo pre-class Ap and mAp
 
     Parameters
@@ -1527,7 +1603,7 @@ def yolo_eval(infer_model: k.Model, h: YOLOHelper, det_obj_thresh: float,
         outputs = infer_model.predict(det_imgs, len(img_names))
         # NOTE change outputs List to n*[layer_num*[arr]]
         outputs = [[output[i] for output in outputs] for i in range(len(orig_hws))]
-        results = parser_outputs(outputs, orig_hws, det_obj_thresh, det_iou_thresh, h)
+        results = parser_outputs(outputs, orig_hws, det_obj_thresh, det_iou_thresh, iou_method, h)
         for img_name, (p_xyxy, p_clas, p_score), true_ann in zip(img_names,
                                                                  results,
                                                                  true_anns):

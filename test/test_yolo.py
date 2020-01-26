@@ -30,8 +30,8 @@ def test_resize_img():
         h.draw_image(img.numpy(), new_ann.numpy())
 
 
-def test_resize_train_img():
-    """ 测试resize和darw NOTE 主要为了检验resize是否正确"""
+def test_origin_resize_train_img():
+    """ 测试原始yolov3 训练resize方法"""
     h = YOLOHelper('data/voc_img_ann.npy', 20, 'data/voc_anchor.npy',
                    [224, 320], [[7, 10], [14, 20]])
     in_hw = h.in_hw
@@ -41,12 +41,27 @@ def test_resize_train_img():
     for i in range(100, 120):
         img_str, img_name, ann, hw = next(iters)
         img = h.decode_img(img_str)
-        img, new_ann = h.resize_train_img(img, in_hw, ann)
+        img, new_ann = h.origin_resize_train_img(img, in_hw, ann)
         h.draw_image(img.numpy(), new_ann.numpy())
 
 
-def test_tf_augment_img():
-    """ 测试augment和darw NOTE 主要为了检验augment是否正确"""
+def test_gluon_resize_train_img():
+    """ 测试gluon版 yolov3 训练resize方法"""
+    h = YOLOHelper('data/voc_img_ann.npy', 20, 'data/voc_anchor.npy',
+                   [224, 320], [[7, 10], [14, 20]])
+    in_hw = h.in_hw
+    i = 214
+    ds = tf.data.TFRecordDataset(h.train_list).map(h.parser_example)
+    iters = iter(ds)
+    for i in range(100, 120):
+        img_str, img_name, ann, hw = next(iters)
+        img = h.decode_img(img_str)
+        img, new_ann = h.gluon_resize_train_img(img, in_hw, ann)
+        h.draw_image(img.numpy(), new_ann.numpy())
+
+
+def test_origin_augment_img():
+    """ 测试原版yolo augment"""
     h = YOLOHelper('data/voc_img_ann.npy', 20, 'data/voc_anchor.npy',
                    [224, 320], [[7, 10], [14, 20]])
     i = 213
@@ -56,13 +71,13 @@ def test_tf_augment_img():
     for i in range(120, 140):
         img_str, img_name, ann, hw = next(iters)
         img = h.decode_img(img_str)
-        img, ann = h.resize_train_img(img, h.in_hw, ann)
-        img, ann = h.tf_augment_img(img, ann)
+        img, ann = h.origin_resize_train_img(img, h.in_hw, ann)
+        img, ann = h.origin_augment_img(img, ann)
         h.draw_image(img.numpy(), ann.numpy())
 
 
-def test_iaa_augment_img():
-    """ 测试augment和darw NOTE 主要为了检验augment是否正确"""
+def test_gluon_with_iaa_augment_img():
+    """ 测试gluon与iaa augment"""
     h = YOLOHelper('data/voc_img_ann.npy', 20, 'data/voc_anchor.npy',
                    [224, 320], [[7, 10], [14, 20]])
     i = 213
@@ -72,15 +87,17 @@ def test_iaa_augment_img():
     for i in range(120, 140):
         img_str, img_name, ann, hw = next(iters)
         img = h.decode_img(img_str)
-        img, ann = h.resize_img(img, h.in_hw, ann)
-        img, ann = tf.numpy_function(h.augment_img, [img, ann], [tf.uint8, tf.float32])
+        img, ann = h.gluon_resize_train_img(img, h.in_hw, ann)
+        img, ann = tf.numpy_function(h.iaa_augment_img, [img, ann], [tf.uint8, tf.float32])
         h.draw_image(img.numpy(), ann.numpy())
 
 
 def test_process_img():
     """ 测试处理图像流程,并绘制 NOTE 主要为了检验整个流程是否正确"""
     h = YOLOHelper('data/voc_img_ann.npy', 20, 'data/voc_anchor.npy',
-                   [224, 320], [[7, 10], [14, 20]])
+                   [224, 320], [[7, 10], [14, 20]],
+                   resize_method='gluon',
+                   augment_method='iaa')
     i = 213
     in_hw = h.in_hw
     is_resize = True
@@ -132,7 +149,9 @@ def test_multi_scale_process_img():
 
 def test_label_to_ann_draw():
     """ 处理图像,并且从label转换为ann 并绘制 NOTE 主要为了检验整个处理以及label生成是否正确"""
-    h = YOLOHelper('data/voc_img_ann.npy', 20, 'data/voc_anchor.npy', [224, 320], [[7, 10], [14, 20]])
+    h = YOLOHelper('data/voc_img_ann.npy', 20, 'data/voc_anchor.npy', [224, 320], [[7, 10], [14, 20]],
+                   resize_method='gluon',
+                   augment_method='iaa')
 
     ds = tf.data.TFRecordDataset(h.train_list).map(h.parser_example)
     iters = iter(ds)
@@ -285,17 +304,18 @@ def test_yolo_loss_compare():
         obj_mask_bool = tf.cast(y_true[..., 4], tf.bool)
 
         """ calc the ignore mask  """
-        pred_xy, pred_wh = self.xywh_to_all(grid_pred_xy, grid_pred_wh,
-                                            out_hw, self.xy_offset, self.anchors)
-
+        all_pred_xy, all_pred_wh = self.xywh_to_all(grid_pred_xy, grid_pred_wh,
+                                                    out_hw, self.xy_offset, self.anchors)
+        all_pred_bbox = tf.concat([all_pred_xy - all_pred_wh / 2,
+                                   all_pred_xy + all_pred_wh / 2], -1)
+        all_true_bbox = tf.concat([all_true_xy - all_true_wh / 2,
+                                   all_true_xy + all_true_wh / 2], -1)
         obj_cnt = tf.reduce_sum(obj_mask)
 
         def lmba(bc):
             # NOTE use location_mask find all ground truth
-            gt_xy = tf.boolean_mask(all_true_xy[bc], location_mask[bc])
-            gt_wh = tf.boolean_mask(all_true_wh[bc], location_mask[bc])
-            iou_score = tf_bbox_iou(tf.concat([pred_xy[bc] - pred_wh[bc] / 2, pred_xy[bc] + pred_wh[bc] / 2], -1),
-                                    tf.concat([gt_xy - gt_wh / 2, gt_xy + gt_wh / 2], -1))  # [h,w,anchor,box_num]
+            one_all_true_bbox = tf.boolean_mask(all_true_bbox[bc], location_mask[bc])
+            iou_score = tf_bbox_iou(all_pred_bbox[bc], one_all_true_bbox)  # [h,w,anchor,box_num]
             # NOTE find this layer gt and pred iou score
             idx = tf.where(tf.boolean_mask(obj_mask_bool[bc], location_mask[bc]))
             mask_iou_score = tf.gather_nd(tf.boolean_mask(iou_score, obj_mask_bool[bc]), idx, 1)
@@ -378,12 +398,14 @@ def test_yolo_loss_clac():
 
     imgs = []
     y_true = []
+    ds = tf.data.TFRecordDataset(h.train_list).map(h.parser_example)
+    iters = iter(ds)
+
     for idx in range(12, 12 + 16):
-        img_path, ann = h.test_list[idx][0].copy(), h.test_list[idx][1].copy()
-        # load image
-        raw_img = tf.image.decode_image(tf.io.read_file(img_path), channels=3, expand_animations=False)
+        img_str, img_name, ann, hw = next(iters)
+        raw_img = h.decode_img(img_str)
         # resize image -> image augmenter
-        raw_img, ann = h.process_img(raw_img.numpy(), ann, h.org_in_hw, False, True, False)
+        raw_img, ann = h.process_img(raw_img, ann, h.org_in_hw, False, True, False)
         # make labels
         print(ann)
         labels = h.ann_to_label(h.org_in_hw, h.org_out_hw, ann)
@@ -427,10 +449,8 @@ def test_yolo_loss_clac():
     obj_mask_bool = tf.cast(y_true[..., 4], tf.bool)
 
     """ calc the ignore mask  """
-    xy_offset = YOLOLoss.calc_xy_offset(out_hw, y_pred)
-
     pred_xy, pred_wh = YOLOLoss.xywh_to_all(grid_pred_xy, grid_pred_wh,
-                                            out_hw, xy_offset, h.anchors[layer])
+                                            out_hw, h.xy_offsets[layer], h.anchors[layer])
 
     # NOTE 添加 recall
     tp50 = tf.compat.v1.get_variable('tp50', (), tf.float32, tf.zeros_initializer())
@@ -481,7 +501,7 @@ def test_yolo_loss_clac():
     recall50 = tp50 / (tp50 + fn50)
     recall75 = tp75 / (tp75 + fn75)
 
-    grid_true_xy, grid_true_wh = YOLOLoss.xywh_to_grid(all_true_xy, all_true_wh, layer, h)
+    grid_true_xy, grid_true_wh = YOLOLoss.xywh_to_grid(all_true_xy, all_true_wh, out_hw, h.xy_offsets[layer], h.anchors[layer])
     # NOTE When wh=0 , tf.log(0) = -inf, so use tf.where to avoid it
     grid_true_wh = tf.where(tf.tile(obj_mask_bool[..., tf.newaxis], [1, 1, 1, 1, 2]),
                             grid_true_wh, tf.zeros_like(grid_true_wh))
@@ -549,3 +569,138 @@ def test_sigmoid_loss_nan():
     infer_model, train_model = yolo_mbv1((416, 416, 3), 3, 20, 1.0)
     train_model.outputs
     infer_model.outputs
+
+
+def test_bbox_iou():
+    boxes1 = tf.constant([[4.0, 3.0, 7.0, 5.0], [5.0, 6.0, 10.0, 7.0]]) / 20.
+    boxes2 = tf.constant([[3.0, 4.0, 6.0, 8.0], [14.0, 14.0, 15.0, 15.0]]) / 20.
+    """ 按元素求iou """
+    print(tf_bbox_iou(boxes1, boxes2[..., None, :], method='iou').numpy())
+    # [[0.12500001] [0.        ]]
+    print(tf_bbox_iou(boxes1, boxes2[..., None, :], method='diou').numpy())
+    # [[ 0.00304878] [-0.6243095 ]]
+    print(tf_bbox_iou(boxes1, boxes2[..., None, :], method='ciou').numpy())
+    # [[ 0.00283995] [-0.6250417 ]]
+    print(tf_bbox_iou(boxes1, boxes2[..., None, :], method='giou').numpy())
+    # [[-0.07499996] [-0.93333334]]
+
+    """ 交叉求iou """
+    print(tf_bbox_iou(boxes1, boxes2, method='iou').numpy())
+    # [[0.12500001 0.        ] [0.0625     0.        ]]
+    print(tf_bbox_iou(boxes1, boxes2, method='diou').numpy())
+    # [[ 0.00304878 -0.72169816] [-0.07980768 -0.6243095 ]]
+    print(tf_bbox_iou(boxes1, boxes2, method='ciou').numpy())
+    # [[ 0.00283995 -0.7217355 ] [-0.08119209 -0.6250417 ]]
+    print(tf_bbox_iou(boxes1, boxes2, method='giou').numpy())
+    # [[-0.07499996 -0.9469697 ] [-0.3660715  -0.93333334]]
+
+    boxes1 = tf.constant([[4.0, 3.0, 7.0, 5.0], [5.0, 6.0, 10.0, 7.0]]) / 20.
+    print(tf_bbox_iou(boxes1[0], boxes1[0], method='iou').numpy())
+
+
+def test_grad():
+    offset = 0.
+    a = tf.Variable([[4.0, 3.0, 7.0, 5.0], [5.0, 6.0, 10.0, 7.0]])
+    b = tf.Variable([[3.0, 4.0, 6.0, 8.0], [14.0, 14.0, 15.0, 15.0]])
+    with tf.GradientTape(True) as tape:
+        a = a[..., None, :]
+        b = b[..., None, :]
+        tl = tf.maximum(a[..., :2], b[..., :2])
+        br = tf.minimum(a[..., 2:4], b[..., 2:4])
+
+        area_i = tf.reduce_prod(tf.maximum(br - tl, 0) + offset, axis=-1)
+        area_a = tf.reduce_prod(a[..., 2:4] - a[..., :2] + offset, axis=-1)
+        area_b = tf.reduce_prod(b[..., 2:4] - b[..., :2] + offset, axis=-1)
+        iou = area_i / (area_a + area_b - area_i)
+
+        outer_tl = tf.minimum(a[..., :2], b[..., :2])
+        outer_br = tf.maximum(a[..., 2:4], b[..., 2:4])
+        # two bbox center distance sum((b_cent-a_cent)^2)
+        inter_diag = tf.reduce_sum(tf.square((b[..., :2] + b[..., 2:]) / 2
+                                             - (a[..., :2] + a[..., 2:]) / 2 + offset), -1)
+        # two bbox diagonal distance
+        outer_diag = tf.reduce_sum(tf.square(outer_tl - outer_br + offset), -1)
+        # calc ciou alpha paramter
+
+        arctan = (tf.math.atan(tf.math.divide_no_nan(b[..., 2] - b[..., 0],
+                                                     b[..., 3] - b[..., 1]))
+                  - tf.math.atan(tf.math.divide_no_nan(a[..., 2] - a[..., 0],
+                                                       a[..., 3] - a[..., 1])))
+
+        v = tf.math.square(2 / np.pi) * tf.square(arctan)
+        alpha = v / ((1 - iou) + v)
+        w_temp = 2 * (a[..., 2] - a[..., 0])
+
+        ar = (8 / tf.square(np.pi)) * arctan * ((a[..., 2] - a[..., 0] - w_temp) * (a[..., 3] - a[..., 1]))
+
+        ciou = iou - (inter_diag / outer_diag) - (alpha * ar)
+
+    tape.gradient(v, [a, b])
+    """ [[[-0.04231081,  0.06346621,  0.04231081, -0.06346621]],
+        [[-0.01833142,  0.09165711,  0.01833142, -0.09165711]]]
+
+        [[[ 0.04400324, -0.03300243, -0.04400324,  0.03300243]],
+        [[ 0.23830847, -0.23830847, -0.23830847,  0.23830847]]]"""
+    tape.gradient(ciou, [a, b])
+    """
+        [[[ 0.06351729, -0.08257562, -0.15244228,  0.27827212]],
+        [[ 0.08103281,  0.01117781, -0.07266921,  0.01513398]]],
+
+        [[[-0.0851735 , -0.06970734,  0.17409849, -0.12598914]],
+        [[-0.7246207 ,  0.6417478 ,  0.7162571 , -0.6680595 ]]]
+    """
+
+    offset = 0.
+    a = tf.Variable([[4.0, 3.0, 7.0, 5.0], [5.0, 6.0, 10.0, 7.0]])
+    b = tf.Variable([[3.0, 4.0, 6.0, 8.0], [14.0, 14.0, 15.0, 15.0]])
+    with tf.GradientTape(True) as tape:
+        a = a[..., None, :]
+        b = b[..., None, :]
+        tl = tf.maximum(a[..., :2], b[..., :2])
+        br = tf.minimum(a[..., 2:4], b[..., 2:4])
+
+        area_i = tf.reduce_prod(tf.maximum(br - tl, 0) + offset, axis=-1)
+        area_a = tf.reduce_prod(a[..., 2:4] - a[..., :2] + offset, axis=-1)
+        area_b = tf.reduce_prod(b[..., 2:4] - b[..., :2] + offset, axis=-1)
+        iou = area_i / (area_a + area_b - area_i)
+
+        outer_tl = tf.minimum(a[..., :2], b[..., :2])
+        outer_br = tf.maximum(a[..., 2:4], b[..., 2:4])
+        # two bbox center distance sum((b_cent-a_cent)^2)
+        inter_diag = tf.reduce_sum(tf.square((b[..., :2] + b[..., 2:]) / 2
+                                             - (a[..., :2] + a[..., 2:]) / 2 + offset), -1)
+        # two bbox diagonal distance
+        outer_diag = tf.reduce_sum(tf.square(outer_tl - outer_br + offset), -1)
+        # calc ciou alpha paramter
+
+        arctan = tf.stop_gradient(
+            (tf.math.atan(tf.math.divide_no_nan(b[..., 2] - b[..., 0],
+                                                b[..., 3] - b[..., 1]))
+             - tf.math.atan(tf.math.divide_no_nan(a[..., 2] - a[..., 0],
+                                                  a[..., 3] - a[..., 1]))))
+
+        v = tf.stop_gradient(tf.math.square(2 / np.pi) * tf.square(arctan))
+        alpha = tf.stop_gradient(v / ((1 - iou) + v))
+        w_temp = tf.stop_gradient(2 * (a[..., 2] - a[..., 0]))
+        ar = (8 / tf.square(np.pi)) * arctan * ((a[..., 2] - a[..., 0] - w_temp) * (a[..., 3] - a[..., 1]))
+
+        ciou = iou - (inter_diag / outer_diag) - (alpha * ar)
+
+    tape.gradient(ar, [a, b])
+    """
+        [[[ 0.5500405 , -0.8250607 , -0.5500405 ,  0.8250607 ]],
+        [[ 0.47661695, -2.3830848 , -0.47661695,  2.3830848 ]]],
+
+        None
+     """
+    tape.gradient(v, [a, b])
+    """ [None, None] """
+    tape.gradient(ciou, [a, b])
+
+    """
+        [[[-0.10692195,  0.08424009,  0.01162432,  0.12420168]],
+        [[-0.08888854,  0.27500343,  0.09725215, -0.24869165]]]
+
+        [[[ 0.03184488, -0.16596799,  0.06345274, -0.04247379]],
+        [[-0.03867403, -0.0441989 ,  0.03031043,  0.01788712]]]
+    """

@@ -9,8 +9,8 @@ from models.networks4k210 import yolo_mbv1_k210, yolo_mbv2_k210, yolo2_mbv1_k210
     mbv2_imgnet_k210, yoloalgin_mbv1_k210, retinafacenet_k210,\
     retinafacenet_k210_v1, retinafacenet_k210_v2, retinafacenet_k210_v3
 import tensorflow as tf
-from tools.custom import StepLR
-from tools.yolo import YOLOHelper, YOLOLoss, yolo_infer, yolo_eval, MultiScaleTrain
+from tools.custom import StepLR, CosineLR
+from tools.yolo import YOLOHelper, YOLOLoss, yolo_infer, yolo_eval, MultiScaleTrain, YOLOIouLoss
 from tools.yoloalign import YOLOAlignHelper, YOLOAlignLoss, yoloalgin_infer
 from tools.pfld import PFLDHelper, PFLDLoss, pfld_infer
 from tools.ctdet import CtdetHelper, CtdetLoss, ctdet_infer
@@ -204,6 +204,7 @@ network_register = {
 
 loss_register = {
     'YOLOLoss': YOLOLoss,
+    'YOLOIouLoss': YOLOIouLoss,
     'YOLOAlignLoss': YOLOAlignLoss,
     'PFLDLoss': PFLDLoss,
     'CtdetLoss': CtdetLoss,
@@ -223,6 +224,7 @@ callback_register = {
     'ModelCheckpoint': tf.keras.callbacks.ModelCheckpoint,
     'TerminateOnNaN': tf.keras.callbacks.TerminateOnNaN,
     'StepLR': StepLR,
+    'CosineLR': CosineLR,
     'FacerecValidation': FacerecValidation,
     'LwlrapValidation': LwlrapValidation
 }
