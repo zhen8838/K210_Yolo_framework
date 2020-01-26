@@ -53,7 +53,7 @@ def main(config_file, new_cfg, mode, model, train, prune):
     vali_epoch_step = int(h.val_epoch_step * train.vali_step_factor)
 
     """ Build Network """
-    if model.name == 'feacrec':
+    if model.name in ['feacrec', 'semiaudio']:
         network = network_register[model.network]
         infer_model, val_model, train_model = network(**model.network_kwarg)
     else:
@@ -107,6 +107,13 @@ def main(config_file, new_cfg, mode, model, train, prune):
             metrics = [DummyMetric(loss_obj.triplet_acc, name='acc')]
         vali_acc_var = tf.Variable(0., False, dtype=tf.float32)
         metrics.append(DummyOnceMetric(vali_acc_var, 'val_acc'))
+    elif model.name == 'semiaudio':
+        loss_obj = loss_register[model.loss](**model.loss_kwarg)
+        losses = [loss_obj]
+        val_lwlrap = tf.Variable(0., False, dtype=tf.float32, shape=())
+        metrics = [DummyMetric(loss_obj.lwlrap, name='lwlrap'),
+                   DummyMetric(loss_obj.lwlrap_noisy, name='lwlrap_noisy'),
+                   DummyOnceMetric(val_lwlrap, 'val_lwlrap')]
     elif model.name == 'lffd':
         loss_fn = loss_register[model.loss]
         losses = [loss_fn(h=h, **model.loss_kwarg) for i in range(h.scale_num)]
@@ -152,11 +159,13 @@ def main(config_file, new_cfg, mode, model, train, prune):
             cbs.append(cbk_fn())
         elif cbkparam.name == 'FacerecValidation':
             cbs.append(cbk_fn(val_model, validation_ds, vali_epoch_step, train_epoch_step, vali_acc_var, **cbkparam.kwarg))
+        elif cbkparam.name == 'LwlrapValidation':
+            cbs.append(cbk_fn(val_model, validation_ds, vali_epoch_step, train_epoch_step, val_lwlrap, **cbkparam.kwarg))
         else:
             cbs.append(cbk_fn(**cbkparam.kwarg))
 
     """ Start Training """
-    if model.name == 'feacrec':
+    if model.name in ['feacrec', 'semiaudio']:
         # NOTE when use facerec , need manual validation
         train_model.fit(train_ds, epochs=initial_epoch + train.epochs,
                         steps_per_epoch=train_epoch_step, callbacks=cbs,

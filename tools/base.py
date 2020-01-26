@@ -3,6 +3,8 @@ import numpy as np
 import abc
 from termcolor import colored
 
+np.set_printoptions(suppress=True)
+
 INFO = colored('[ INFO  ]', 'blue')  # type:str
 ERROR = colored('[ ERROR ]', 'red')  # type:str
 NOTE = colored('[ NOTE ]', 'green')  # type:str

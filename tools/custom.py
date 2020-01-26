@@ -258,3 +258,46 @@ class StepLR(Callback):
     def on_epoch_end(self, epoch, logs=None):
         logs = logs or {}
         logs['lr'] = K.get_value(self.model.optimizer.lr)
+
+
+class CosineLR(Callback):
+    def __init__(self, init_lr: float, decay_steps: int, lowest_lr: float):
+        """ 
+        Applies cosine to the learning rate.
+
+        See [Loshchilov & Hutter, ICLR2016], SGDR: Stochastic Gradient Descent
+        with Warm Restarts. https://arxiv.org/abs/1608.03983
+
+        eg. CosineLR(0.001,30,0.0001)
+
+            init_lr=0.001
+
+            decay_steps=30
+
+            lowest_lr=0.0001
+
+        lr will be :
+              0.001   | _       __       _    
+                      |  \     /  \     /    
+                      |   \   /    \   /    
+            0.001*0.9 |    \_/      \_/    
+              epochs  :    30        60
+        """
+        super().__init__()
+        self.init_lr = init_lr
+        self.decay_steps = decay_steps
+        lowest_lr = 0.0001
+        assert lowest_lr < init_lr, 'lowest_lr must smaller than init_lr'
+        self.alpha = lowest_lr / self.init_lr
+
+    def decayed_learning_rate(self, step: tf.Tensor):
+        cosine_decay = 0.5 * (1 + np.cos(np.pi * step / self.decay_steps))
+        decayed = (1 - self.alpha) * cosine_decay + self.alpha
+        return self.init_lr * decayed
+
+    def on_epoch_begin(self, epoch, logs=None):
+        K.set_value(self.model.optimizer.lr, self.decayed_learning_rate(epoch))
+
+    def on_epoch_end(self, epoch, logs=None):
+        logs = logs or {}
+        logs['lr'] = K.get_value(self.model.optimizer.lr)

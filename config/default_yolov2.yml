@@ -12,7 +12,8 @@ model:
     out_hw:
       - - 7
         - 10
-    validation_split: 0.3
+    resize_method: gluon
+    augment_method: iaa
   network: yolo2_mbv1_k210
   network_kwarg:
     input_shape:
@@ -103,12 +104,14 @@ inference:
   infer_fn_kwarg:
     obj_thresh: 0.7
     nms_thresh: 0.3
+    iou_method: iou
 evaluate:
   eval_fn: yolo_eval
   eval_fn_kwarg:
     det_obj_thresh: 0.1
     det_iou_thresh: 0.3
     mAp_iou_thresh: 0.3
+    iou_method: iou
     class_name:
       - aeroplane
       - bicycle
@@ -131,3 +134,4 @@ evaluate:
       - train
       - tvmonitor
     save_result: true
+    save_result_dir: /home/zqh/Documents/mAP/input

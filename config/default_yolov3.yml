@@ -16,7 +16,8 @@ model:
         - 26
       - - 52
         - 52
-    validation_split: 0.3
+    resize_method: gluon
+    augment_method: iaa
   network: yolo
   network_kwarg:
     input_shape:
@@ -91,6 +92,11 @@ train:
       kwarg:
         interval: 10
         scale_range: [-3, 3]
+    # - name: CosineLR
+    #   kwarg:
+    #      init_lr: 0.0005
+    #      decay_steps: 30
+    #      lowest_lr: 0.0001
     - name: StepLR
       kwarg:
         steps: [400, 700, 900, 1000, 40000, 60000]
@@ -106,12 +112,14 @@ inference:
   infer_fn_kwarg:
     obj_thresh: 0.7
     nms_thresh: 0.3
+    iou_method: iou
 evaluate:
   eval_fn: yolo_eval
   eval_fn_kwarg:
     det_obj_thresh: 0.1
     det_iou_thresh: 0.3
     mAp_iou_thresh: 0.3
+    iou_method: iou
     class_name:
       - aeroplane
       - bicycle
@@ -134,3 +142,4 @@ evaluate:
       - train
       - tvmonitor
     save_result: true
+    save_result_dir: /home/zqh/Documents/mAP/input

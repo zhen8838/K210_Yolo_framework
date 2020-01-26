@@ -130,7 +130,7 @@ def tf_corner_to_center(bbox: tf.Tensor, from_all_scale=True, in_hw=None) -> tf.
     return xywh
 
 
-def bbox_iou(a: np.ndarray, b: np.ndarray, offset: int = 0) -> np.ndarray:
+def bbox_iou(a: np.ndarray, b: np.ndarray, offset: int = 0, method='iou') -> np.ndarray:
     """Calculate Intersection-Over-Union(IOU) of two bounding boxes.
 
     Parameters
@@ -143,9 +143,11 @@ def bbox_iou(a: np.ndarray, b: np.ndarray, offset: int = 0) -> np.ndarray:
 
         (m,4) x1,y1,x2,y2
 
-
     offset : int, optional
         by default 0
+
+    method : str, optional
+        by default 'iou', can choice ['iou','giou','diou','ciou']
 
     Returns
     -------
@@ -153,16 +155,46 @@ def bbox_iou(a: np.ndarray, b: np.ndarray, offset: int = 0) -> np.ndarray:
 
         iou (n,m)
     """
-    tl = np.maximum(a[:, None, :2], b[:, :2])
-    br = np.minimum(a[:, None, 2:4], b[:, 2:4])
+    a = a[..., None, :]
+    tl = np.maximum(a[..., :2], b[..., :2])
+    br = np.minimum(a[..., 2:4], b[..., 2:4])
 
-    area_i = np.prod(br - tl + offset, axis=2) * (tl < br).all(axis=2)
-    area_a = np.prod(a[:, 2:4] - a[:, :2] + offset, axis=1)
-    area_b = np.prod(b[:, 2:4] - b[:, :2] + offset, axis=1)
-    return area_i / (area_a[:, None] + area_b - area_i)
+    area_i = np.prod(np.maximum(br - tl, 0) + offset, axis=-1)
+    area_a = np.prod(a[..., 2:4] - a[..., :2] + offset, axis=-1)
+    area_b = np.prod(b[..., 2:4] - b[..., :2] + offset, axis=-1)
+
+    if method == 'iou':
+        return area_i / (area_a + area_b - area_i)
+    elif method in ['ciou', 'diou']:
+        iou = area_i / (area_a + area_b - area_i)
+        outer_tl = np.minimum(a[..., :2], b[..., :2])
+        outer_br = np.maximum(a[..., 2:4], b[..., 2:4])
+        # two bbox center distance sum((b_cent-a_cent)^2)
+        inter_diag = np.sum(np.square((b[..., :2] + b[..., 2:]) / 2
+                                      - (a[..., :2] + a[..., 2:]) / 2 + offset), -1)
+        # two bbox diagonal distance
+        outer_diag = np.sum(np.square(outer_tl - outer_br + offset), -1)
+        if method == 'diou':
+            return iou - inter_diag / outer_diag
+        else:
+            # calc ciou alpha paramter
+            arctan = ((np.math.atan((b[..., 2] - b[..., 0]) / (b[..., 3] - b[..., 1]))
+                       - np.math.atan((a[..., 2] - a[..., 0]) / (a[..., 3] - a[..., 1]))))
+            v = np.square(2 / np.pi * arctan)
+            alpha = v / ((1 - iou) + v)
+            w_temp = 2 * (a[..., 2] - a[..., 0])
+            ar = (8 / np.square(np.pi)) * arctan * ((a[..., 2] - a[..., 0] - w_temp) * (a[..., 3] - a[..., 1]))
+            return np.clip(iou - inter_diag / outer_diag - alpha * ar, -1., 1.)
+
+    elif method in 'giou':
+        outer_tl = np.minimum(a[..., :2], b[..., :2])
+        outer_br = np.maximum(a[..., 2:4], b[..., 2:4])
+        area_o = np.prod(np.maximum(outer_br - outer_tl, 0) + offset, axis=-1)
+        union = (area_a + area_b - area_i)
+        return (area_i / union) - ((area_o - union) / area_o)
 
 
-def tf_bbox_iou(a: tf.Tensor, b: tf.Tensor, offset: int = 0) -> tf.Tensor:
+def tf_bbox_iou(a: tf.Tensor, b: tf.Tensor, offset: int = 0, method='iou') -> tf.Tensor:
     """Calculate Intersection-Over-Union(IOU) of two bounding boxes.
 
     Parameters
@@ -179,103 +211,58 @@ def tf_bbox_iou(a: tf.Tensor, b: tf.Tensor, offset: int = 0) -> tf.Tensor:
     offset : int, optional
         by default 0
 
+    method : str, optional
+        by default 'iou', can choice ['iou','giou','diou','ciou']
+
     Returns
     -------
     tf.Tensor
 
         iou (n,m)
     """
-
-    tl = tf.maximum(a[..., None, :2], b[..., :2])
-    br = tf.minimum(a[..., None, 2:4], b[..., 2:4])
-
-    area_i = tf.reduce_prod(tf.maximum(br - tl, 0) + offset, axis=-1)
-    area_a = tf.reduce_prod(a[..., 2:4] - a[..., :2] + offset, axis=-1)
-    area_b = tf.reduce_prod(b[..., 2:4] - b[..., :2] + offset, axis=-1)
-    return area_i / (area_a[..., None] + area_b - area_i)
-
-
-def tf_bbox_diou(a: tf.Tensor, b: tf.Tensor, offset: int = 0) -> tf.Tensor:
-    """Calculate DIoU of two bounding boxes.
-
-    Parameters
-    ----------
-    a : tf.Tensor
-
-        (n,4) x1,y1,x2,y2
-
-    b : tf.Tensor
-
-        (m,4) x1,y1,x2,y2
-
-    offset : int, optional
-        by default 0
-
-    Returns
-    -------
-    tf.Tensor
-
-        diou (n,m)
-    """
-
-    tl = tf.maximum(a[..., None, :2], b[..., :2])
-    br = tf.minimum(a[..., None, 2:4], b[..., 2:4])
+    a = a[..., None, :]
+    tl = tf.maximum(a[..., :2], b[..., :2])
+    br = tf.minimum(a[..., 2:4], b[..., 2:4])
 
     area_i = tf.reduce_prod(tf.maximum(br - tl, 0) + offset, axis=-1)
     area_a = tf.reduce_prod(a[..., 2:4] - a[..., :2] + offset, axis=-1)
     area_b = tf.reduce_prod(b[..., 2:4] - b[..., :2] + offset, axis=-1)
-    iou = area_i / (area_a[..., None] + area_b - area_i)
+    if method == 'iou':
+        return area_i / (area_a + area_b - area_i)
+    elif method in ['ciou', 'diou']:
+        iou = area_i / (area_a + area_b - area_i)
 
-    # two bbox diagonal distance
-    diag = tf.math.reduce_sum(tf.math.square(br - tl + offset), axis=-1)
-    # two bbox center distance sum((b_cent-a_cent)^2)
-    cent = tf.reduce_sum(tf.square(((b[..., :2] + b[..., 2:]) - (a[..., :2] + a[..., 2:])[..., None, :]) / 2) + offset, -1)
+        outer_tl = tf.minimum(a[..., :2], b[..., :2])
+        outer_br = tf.maximum(a[..., 2:4], b[..., 2:4])
+        # two bbox center distance sum((b_cent-a_cent)^2)
+        inter_diag = tf.reduce_sum(tf.square((b[..., :2] + b[..., 2:]) / 2
+                                             - (a[..., :2] + a[..., 2:]) / 2 + offset), -1)
+        # two bbox diagonal distance
+        outer_diag = tf.reduce_sum(tf.square(outer_tl - outer_br + offset), -1)
+        if method == 'diou':
+            return iou - inter_diag / outer_diag
+        else:
+            # calc ciou alpha paramter
+            arctan = tf.stop_gradient(
+                (tf.math.atan(tf.math.divide_no_nan(b[..., 2] - b[..., 0],
+                                                    b[..., 3] - b[..., 1]))
+                 - tf.math.atan(tf.math.divide_no_nan(a[..., 2] - a[..., 0],
+                                                      a[..., 3] - a[..., 1]))))
 
-    return iou - cent / diag
+            v = tf.stop_gradient(tf.math.square(2 / np.pi * arctan))
+            alpha = tf.stop_gradient(v / ((1 - iou) + v))
+            w_temp = tf.stop_gradient(2 * (a[..., 2] - a[..., 0]))
 
+            ar = (8 / tf.square(np.pi)) * arctan * ((a[..., 2] - a[..., 0] - w_temp) * (a[..., 3] - a[..., 1]))
 
-def tf_bbox_ciou(a: tf.Tensor, b: tf.Tensor, offset: int = 0) -> tf.Tensor:
-    """Calculate CIoU of two bounding boxes.
+            return tf.clip_by_value(iou - inter_diag / outer_diag - alpha * ar, -1., 1.)
 
-    Parameters
-    ----------
-    a : tf.Tensor
-
-        (n,4) x1,y1,x2,y2
-
-    b : tf.Tensor
-
-        (m,4) x1,y1,x2,y2
-
-    offset : int, optional
-        by default 0
-
-    Returns
-    -------
-    tf.Tensor
-
-        diou (n,m)
-    """
-
-    tl = tf.maximum(a[..., None, :2], b[..., :2])
-    br = tf.minimum(a[..., None, 2:4], b[..., 2:4])
-
-    area_i = tf.reduce_prod(tf.maximum(br - tl, 0) + offset, axis=-1)
-    area_a = tf.reduce_prod(a[..., 2:4] - a[..., :2] + offset, axis=-1)
-    area_b = tf.reduce_prod(b[..., 2:4] - b[..., :2] + offset, axis=-1)
-    iou = area_i / (area_a[..., None] + area_b - area_i)
-
-    # two bbox diagonal distance
-    diag = tf.math.reduce_sum(tf.math.square(br - tl), axis=-1)
-    # two bbox center distance sum((b_cent-a_cent)^2)
-    cent = tf.reduce_sum(tf.square(((b[..., :2] + b[..., 2:]) - (a[..., :2] + a[..., 2:])[..., None, :]) / 2), -1)
-    # calc ciou alpha paramter
-    pi = tf.constant(np.pi, tf.float32)
-    v = tf.math.square(2 / pi) * tf.math.square(
-        tf.math.atan((b[:, 2] - b[:, 0]) / (b[:, 3] - b[:, 1]))
-        - tf.math.atan((a[:, 2] - a[:, 0]) / (a[:, 3] - a[:, 1]))[:, None])
-
-    return iou - (cent / diag + tf.square(v) / (1 - iou + v))  # CIoU
+    elif method in 'giou':
+        outer_tl = tf.minimum(a[..., :2], b[..., :2])
+        outer_br = tf.maximum(a[..., 2:4], b[..., 2:4])
+        area_o = tf.reduce_prod(tf.maximum(outer_br - outer_tl, 0) + offset, axis=-1)
+        union = (area_a + area_b - area_i)
+        return (area_i / union) - ((area_o - union) / area_o)
 
 
 def bbox_iof(a: np.ndarray, b: np.ndarray) -> np.ndarray:
@@ -309,8 +296,8 @@ def bbox_iof(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     return area_i / np.maximum(area_a[:, np.newaxis], 1)
 
 
-def nms_oneclass(bbox: np.ndarray, score: np.ndarray, thresh: float) -> np.ndarray:
-    """Pure Python NMS oneclass baseline. 
+def nms_oneclass(bbox: np.ndarray, score: np.ndarray, thresh: float, method='iou') -> np.ndarray:
+    """Pure Python NMS oneclass baseline.
 
     Parameters
     ----------
@@ -331,29 +318,13 @@ def nms_oneclass(bbox: np.ndarray, score: np.ndarray, thresh: float) -> np.ndarr
     np.ndarray
         keep index
     """
-    x1 = bbox[:, 0]
-    y1 = bbox[:, 1]
-    x2 = bbox[:, 2]
-    y2 = bbox[:, 3]
-
-    areas = (x2 - x1 + 1) * (y2 - y1 + 1)
     order = score.argsort()[::-1]
-
     keep = []
     while order.size > 0:
         i = order[0]
         keep.append(i)
-        xx1 = np.maximum(x1[i], x1[order[1:]])
-        yy1 = np.maximum(y1[i], y1[order[1:]])
-        xx2 = np.minimum(x2[i], x2[order[1:]])
-        yy2 = np.minimum(y2[i], y2[order[1:]])
-
-        w = np.maximum(0.0, xx2 - xx1 + 1)
-        h = np.maximum(0.0, yy2 - yy1 + 1)
-        inter = w * h
-        ovr = inter / (areas[i] + areas[order[1:]] - inter)
-
-        inds = np.where(ovr <= thresh)[0]
+        iou = bbox_iou(bbox[i], bbox[order[1:]], method=method)
+        inds = np.where(iou <= thresh)[0]
         order = order[inds + 1]
 
     return keep

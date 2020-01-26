@@ -14,7 +14,8 @@ model:
         - 10
       - - 14
         - 20
-    validation_split: 0.3
+    resize_method: gluon
+    augment_method: iaa
   network: yolo_mbv2_k210
   network_kwarg:
     input_shape:
@@ -90,6 +91,11 @@ train:
     #   kwarg:
     #     interval: 50
     #     scale_range: [-3, 5]
+    # - name: CosineLR
+    #   kwarg:
+    #      init_lr: 0.0005
+    #      decay_steps: 30
+    #      lowest_lr: 0.0001
     - name: StepLR
       kwarg:
         steps: [ 50  ,  80    ,  120   ]
@@ -105,12 +111,14 @@ inference:
   infer_fn_kwarg:
     obj_thresh: 0.7
     nms_thresh: 0.3
+    iou_method: iou
 evaluate:
   eval_fn: yolo_eval
   eval_fn_kwarg:
     det_obj_thresh: 0.1
     det_iou_thresh: 0.3
     mAp_iou_thresh: 0.3
+    iou_method: iou
     class_name:
       - aeroplane
       - bicycle
