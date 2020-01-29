@@ -128,8 +128,15 @@ class DCASETask5Helper(BaseHelper):
         return new_img, ann
 
     @staticmethod
+    def random_beta(shape, alpha, beta) -> tf.Tensor:
+        gamma1_sample = tf.random.gamma(shape, beta)
+        gamma2_sample = tf.random.gamma(shape, alpha)
+        beta_sample = gamma1_sample / (gamma1_sample + gamma2_sample)
+        return beta_sample
+
+    @staticmethod
     def mixup_img(imga, anna, imgb, annb) -> [tf.Tensor, tf.Tensor]:
-        rate = tf.random.uniform([], 0, 1)
+        rate = DCASETask5Helper.random_beta([], 1., 1.)
         img = imga * rate + imgb * (1 - rate)
         ann = tf.cast(anna, tf.float32) * rate + tf.cast(annb, tf.float32) * (1 - rate)
         return img, ann
@@ -206,27 +213,36 @@ class DCASETask5Helper(BaseHelper):
                              is_normlize: bool) -> tf.data.Dataset:
 
         def _parser(train_stream: List[tf.Tensor], unlabel_stream: List[tf.Tensor]):
-            def __parser(stream: List[tf.Tensor]):
-                mel_rawa, anna = self.parser_example(stream[0])
-                mel_rawb, annb = self.parser_example(stream[1])
-                imga = self.decode_img(mel_rawa)
-                imgb = self.decode_img(mel_rawb)
-                imga.set_shape((None, None))
-                imgb.set_shape((None, None))
+            stream = train_stream
+            mel_rawa, anna = self.parser_example(stream[0])
+            mel_rawb, annb = self.parser_example(stream[1])
+            imga = self.decode_img(mel_rawa)
+            imgb = self.decode_img(mel_rawb)
+            imga.set_shape((None, None))
+            imgb.set_shape((None, None))
+            anna.set_shape((None))
+            annb.set_shape((None))
+            img, label = self.process_img(imga, anna, imgb, annb, self.in_hw,
+                                          is_augment, True, is_normlize)
+            train_img, train_label = img, label
 
-                img, label = self.process_img(imga, anna, imgb, annb, self.in_hw,
-                                              is_augment, True, is_normlize)
-                return img, label
-            train_img, train_label = __parser(train_stream)
-            unlabel_img, unlabel_label = __parser(unlabel_stream)
+            stream = unlabel_stream
+            mel_rawa, anna = self.parser_example(stream[0])
+            mel_rawb, annb = self.parser_example(stream[1])
+            imga = self.decode_img(mel_rawa)
+            imgb = self.decode_img(mel_rawb)
+            imga.set_shape((None, None))
+            imgb.set_shape((None, None))
+            anna.set_shape((None))
+            annb.set_shape((None))
+            img, label = self.process_img(imga, anna, imgb, annb, self.in_hw,
+                                          is_augment, True, is_normlize)
+            unlabel_img, unlabel_label = img, label
             return (train_img, unlabel_img), tf.concat([train_label, unlabel_label], -1)
 
-        ds = (tf.data.Dataset.zip((tf.data.TFRecordDataset(self.train_list, None, None, 4).
-                                   shuffle(1000).
-                                   repeat(),
-                                   tf.data.TFRecordDataset(self.unlabel_list, None, None, 4).
-                                   shuffle(1000).
-                                   repeat())).
+        ds = (tf.data.Dataset.zip((tf.data.TFRecordDataset(self.train_list, None, None, 4),
+                                   tf.data.TFRecordDataset(self.unlabel_list, None, None, 4))).
+              repeat().
               batch(2, True).
               map(_parser, -1).
               batch(batch_size, True).
@@ -252,7 +268,6 @@ class DCASETask5Helper(BaseHelper):
 
         ds = (tf.data.TFRecordDataset(self.val_list,
                                       None, None, 4).
-              shuffle(1000).
               repeat().
               batch(2, True).
               map(_parser, -1).
@@ -355,7 +370,7 @@ class LwlrapValidation(k.callbacks.Callback):
         self.val_step = validation_steps
         self.lwlrap_var = lwlrap_var
 
-    def on_train_batch_end(self, batch, logs=None):
+    def on_train_batch_begin(self, batch, logs=None):
         if batch == self.trian_step:
             def fn(i: tf.Tensor):
                 img, y_true = next(self.val_iter)
@@ -364,5 +379,4 @@ class LwlrapValidation(k.callbacks.Callback):
                 per_class_lwlrap, weight_per_class = SemiBCELoss.per_class_lwlrap(y_true, y_pred)
                 lwlrap = tf.reduce_sum(per_class_lwlrap * weight_per_class)
                 return lwlrap
-
-            self.lwlrap_var.assign(tf.reduce_mean(tf.map_fn(fn, tf.range(self.val_step), tf.float32)))
+            K.set_value(self.lwlrap_var, tf.reduce_mean(tf.map_fn(fn, tf.range(self.val_step), tf.float32)))

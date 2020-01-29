@@ -30,10 +30,10 @@ train:
     scoped_allocator_optimization: true
     layout_optimizer: true
   augmenter: true
-  batch_size: 16
+  batch_size: 32
   pre_ckpt: null
   rand_seed: 10101
-  epochs: 30
+  epochs: 150
   log_dir: log
   sub_log_dir: default_dcasetask5_exp
   debug: false
@@ -50,24 +50,24 @@ train:
     k: 5
     alpha: 0.5
   callbacks:
-    # - name: EarlyStopping
-    #   kwarg:
-    #     monitor: val_acc
-    #     min_delta: 0
-    #     patience: 4
-    #     verbose: 0
-    #     mode: max
-    #     baseline: null
-    #     restore_best_weights: false
-    # - name: ModelCheckpoint
-    #   kwarg:
-    #     monitor: val_lwlrap
-    #     verbose: 0
-    #     save_best_only: true
-    #     save_weights_only: false
-    #     mode: max
-    #     save_freq: epoch
-    #     load_weights_on_restart: false
+    - name: EarlyStopping
+      kwarg:
+        monitor: val_lwlrap
+        min_delta: 0
+        patience: 30
+        verbose: 0
+        mode: max
+        baseline: null
+        restore_best_weights: false
+    - name: ModelCheckpoint
+      kwarg:
+        monitor: val_lwlrap
+        verbose: 0
+        save_best_only: true
+        save_weights_only: false
+        mode: max
+        save_freq: epoch
+        load_weights_on_restart: false
     - name: LwlrapValidation
       kwarg: null
     - name: StepLR

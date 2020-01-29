@@ -1264,7 +1264,9 @@ class YOLOIouLoss(YOLOLoss):
         grid_pred_wh = y_pred[..., 2:4]
         pred_confidence = y_pred[..., 4:5]
         pred_cls = y_pred[..., 5:]
-
+        pred_confidence = tf.clip_by_value(pred_confidence, -16.118095, 15.942385)
+        pred_cls = tf.clip_by_value(pred_cls, -16.118095, 15.942385)
+        
         all_true_xy = y_true[..., 0:2]
         all_true_wh = y_true[..., 2:4]
         true_confidence = y_true[..., 4:5]
@@ -1294,18 +1296,16 @@ class YOLOIouLoss(YOLOLoss):
         ignore_mask = tf.map_fn(lmba, tf.range(self.h.batch_size), dtype=tf.float32)
 
         """ calc the loss """
-        pred_confidence_sigmod = tf.sigmoid(pred_confidence)
-
         bbox_loss = self.bbox_weight * tf.reduce_sum(
             obj_mask * (1 - tf_bbox_iou(all_pred_bbox, all_true_bbox[..., None, :], method=self.iou_method)),
             [1, 2, 3, 4])
 
         obj_loss = self.obj_weight * tf.reduce_sum(
-            obj_mask * K.binary_crossentropy(true_confidence, pred_confidence_sigmod),
+            obj_mask * tf.nn.sigmoid_cross_entropy_with_logits(true_confidence, pred_confidence),
             [1, 2, 3, 4])
 
         noobj_loss = self.noobj_weight * tf.reduce_sum(
-            (1 - obj_mask) * ignore_mask * K.binary_crossentropy(true_confidence, pred_confidence_sigmod),
+            (1 - obj_mask) * ignore_mask * tf.nn.sigmoid_cross_entropy_with_logits(true_confidence, pred_confidence),
             [1, 2, 3, 4])
 
         cls_loss = tf.reduce_sum(
@@ -1388,7 +1388,7 @@ def parser_outputs(outputs: List[List[np.ndarray]], orig_hws: List[np.ndarray],
             class_box_scores = class_box_scores[select]
             _boxes.append(class_boxes)
             _scores.append(class_box_scores)
-            _classes.append(tf.ones_like(class_box_scores) * c)
+            _classes.append(np.ones_like(class_box_scores) * c)
 
         box: np.ndarray = np.concatenate(_boxes, axis=0)
         clss: np.ndarray = np.concatenate(_classes, axis=0)

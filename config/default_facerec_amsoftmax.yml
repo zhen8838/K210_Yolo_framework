@@ -42,7 +42,7 @@ train:
   batch_size: *BATCH_SIZE_REF
   pre_ckpt: null
   rand_seed: 10101
-  epochs: 30
+  epochs: 100
   log_dir: log
   sub_log_dir: default_facerec_amsoftmax_exp
   debug: false
@@ -63,7 +63,7 @@ train:
       kwarg:
         monitor: val_acc
         min_delta: 0
-        patience: 4
+        patience: 40
         verbose: 0
         mode: max
         baseline: null
@@ -84,7 +84,7 @@ train:
         threshold: 0.3
     - name: StepLR
       kwarg:
-        steps: [ 50  ,  80    ,  120   ]
+        steps: [ 20  ,  80    ,  120   ]
         rates: [0.0001, 0.0004,  0.0001]
 
 prune:
