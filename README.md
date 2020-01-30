@@ -42,17 +42,28 @@ python3 make_voc_list.py xxxxx/train.txt xxxxx/val.txt xxxxx/test.txt data/voc_i
 
 2. Or you can download [widerface](http://shuoyang1213.me/WIDERFACE/) dataset
 
-```sh
-unzip WIDER_test.zip
-sync
-unzip WIDER_val.zip
-sync
-unzip WIDER_train.zip
-sync
-unzip WIDER_train.zip
-unzip wider_face_split.zip
-python3 ./make_widerface_yolo_list.py root_path/  data/wdface_voc_img_ann.npy
-```
+   1.  Download RetinaFace annotations (face bounding boxes & five facial landmarks) from [baidu cloud](https://pan.baidu.com/s/1Laby0EctfuJGgGMgRRgykA) or [dropbox](https://www.dropbox.com/s/7j70r3eeepe4r2g/retinaface_gt_v1.1.zip?dl=0)
+
+   2.  Download the [WIDERFACE](http://shuoyang1213.me/WIDERFACE/WiderFace_Results.html) dataset.
+
+   3.  Organise the dataset directory under `yourdatasetdir/` as follows:
+
+        ```
+        yourdatasetdir/
+            train/
+                images/
+                label.txt
+            val/
+                images/
+                label.txt
+            test/
+                images/
+                label.txt
+        ```
+
+        ```sh
+        python3 ./make_widerface_yolo_list.py root_path/  data/wdface_voc_img_ann.npy
+        ```
 
 
 ## Make anchors
