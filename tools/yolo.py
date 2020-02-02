@@ -1266,7 +1266,7 @@ class YOLOIouLoss(YOLOLoss):
         pred_cls = y_pred[..., 5:]
         pred_confidence = tf.clip_by_value(pred_confidence, -16.118095, 15.942385)
         pred_cls = tf.clip_by_value(pred_cls, -16.118095, 15.942385)
-        
+
         all_true_xy = y_true[..., 0:2]
         all_true_wh = y_true[..., 2:4]
         true_confidence = y_true[..., 4:5]
@@ -1510,44 +1510,134 @@ def yolo_infer(img_path: Path, infer_model: k.Model,
             plt.show()
 
 
-def voc_ap(recall: np.ndarray, precision: np.ndarray) -> float:
-    """
-        Compute VOC AP given precision and recall
+class YOLOMap(k.callbacks.Callback):
+    def __init__(self, h: YOLOHelper,
+                 test_dataset: tf.data.Dataset,
+                 val_map: ResourceVariable,
+                 epoch_freq: int,
+                 class_names: list,
+                 obj_thresh=.45,
+                 nms_thresh=.5,
+                 nms_iou_method='iou',
+                 iou_thresh=.5,
+                 verbose=False):
+        """Calculate the AP given the recall and precision array 1st) We compute a
+        version of the measured precision/recall curve with precision monotonically
+        decreasing 2nd) We compute the AP as the area under this curve by numerical
+        integration."""
+        self.h = h
+        self.class_names = class_names
+        self.class_num = len(self.class_names)
+        assert self.class_num == self.h.class_num, 'Class names not equal YOLOHelper class num'
+        self.iou_thresh = iou_thresh
+        self.obj_thresh = obj_thresh
+        self.nms_iou_method = nms_iou_method
+        self.nms_thresh = nms_thresh
+        self.test_dataset = test_dataset
+        self.verbose = verbose
+        self.epoch_freq = epoch_freq
+        self.val_map = val_map
 
-    Parameters
-    ----------
-    recall : np.ndarray
+    def _voc_ap(self, rec, prec):
+        # correct AP calculation
+        # first append sentinel values at the end
+        mrec = np.concatenate(([0.], rec, [1.]))
+        mpre = np.concatenate(([0.], prec, [0.]))
 
-        recall, shape = [len(imgs)]
+        # compute the precision envelope
+        for i in range(mpre.size - 1, 0, -1):
+            mpre[i - 1] = np.maximum(mpre[i - 1], mpre[i])
 
-    precision : np.ndarray
+        # to calculate area under PR curve, look for points
+        # where X axis (recall) changes value
+        i = np.where(mrec[1:] != mrec[:-1])[0]
 
-        precison, shape = [len(imgs)]
+        # and sum (\Delta recall) * prec
+        ap = np.sum((mrec[i + 1] - mrec[i]) * mpre[i + 1])
+        return ap
 
+    def calculate_aps(self):
+        true_res = {}
+        pred_res = []
+        idx = 0
+        APs = {}
+        for det_img, _, true_anns, orig_hws in self.test_dataset:
+            outputs = self.model.predict(det_img)
+            outputs = [[output[i] for output in outputs] for i in range(len(orig_hws))]
 
-    Returns
-    -------
+            results = parser_outputs(outputs, orig_hws.numpy(), self.obj_thresh, self.nms_thresh, self.nms_iou_method, self.h)
+            for (out_boxes, out_classes, out_scorees), true_ann in zip(results, true_anns):
+                pred = np.hstack([np.ones((len(out_boxes), 1)) * idx, out_classes.reshape((-1, 1)), out_scorees.reshape(-1, 1), out_boxes])
+                true_ann = np.reshape(true_ann.values.numpy(), (-1, 5))
+                pred_res.append(pred)
+                true_res[idx] = true_ann
+                idx += 1
+        pred_res = np.vstack(pred_res)
+        for cls in range(self.class_num):
+            pred_res_cls = pred_res[pred_res[:, 1] == cls]
+            if len(pred_res_cls) == 0:
+                APs[cls] = 0
+                continue
+            true_res_cls = {}
+            npos = 0
+            for index in true_res:
+                objs = [obj for obj in true_res[index] if obj[0] == cls]
+                npos += len(objs)
+                BBGT = np.array([x[1:] for x in objs])
+                true_res_cls[index] = {
+                    'bbox': BBGT,
+                    'difficult': [False] * len(objs),
+                    'det': [False] * len(objs)}
 
-    float
+            ids = pred_res_cls[:, 0]
+            scores = pred_res_cls[:, 2]
+            bboxs = pred_res_cls[:, 3:]
+            sorted_ind = np.argsort(-scores)
+            bboxs = bboxs[sorted_ind, :]
+            ids = ids[sorted_ind]
 
-        ap
+            nd = len(ids)
+            tp = np.zeros(nd)
+            fp = np.zeros(nd)
+            for j in range(nd):
+                res = true_res_cls[ids[j]]
+                bbox = bboxs[j, :].astype(float)
+                ovmax = -np.inf
+                BBGT = res['bbox'].astype(float)
+                if BBGT.size > 0:
+                    overlaps = bbox_iou(BBGT, bbox)
+                    ovmax = np.max(overlaps)
+                    jmax = np.argmax(overlaps)
+                if ovmax > self.iou_thresh:
+                    if not res['difficult'][jmax]:
+                        if not res['det'][jmax]:
+                            tp[j] = 1.
+                            res['det'][jmax] = 1
+                        else:
+                            fp[j] = 1.
+                else:
+                    fp[j] = 1.
 
-    """
+            fp = np.cumsum(fp)
+            tp = np.cumsum(tp)
+            rec = tp / np.maximum(float(npos), np.finfo(np.float64).eps)
+            prec = tp / np.maximum(tp + fp, np.finfo(np.float64).eps)
+            ap = self._voc_ap(rec, prec)
+            APs[cls] = ap
+        return APs
 
-    mrec = np.concatenate(([0.], recall, [1.]))
-    mpre = np.concatenate(([0.], precision, [0.]))
-
-    # compute the precision envelope
-    for i in range(len(mpre) - 1, 0, -1):
-        mpre[i - 1] = np.maximum(mpre[i - 1], mpre[i])
-
-    # to calculate area under PR curve, look for points
-    #  where X axis (recall) changes value
-
-    i = np.where(mrec[1:] != mrec[: -1])[0]
-    # and sum (\Delta recall) * prec
-    Ap = np.sum((mrec[i + 1] - mrec[i]) * mpre[i + 1])
-    return Ap
+    def on_epoch_begin(self, epoch, logs=None):
+        if (epoch > 2) and ((epoch % self.epoch_freq) == 0):
+            logs = logs or {}
+            APs = self.calculate_aps()
+            mAP = np.mean([APs[cls] for cls in APs])
+            if self.verbose:
+                for cls in range(self.class_num):
+                    if cls in APs:
+                        print(f'{self.class_names[cls]} ap: {APs[cls]:.4f}')
+                print(f'mAP: {mAP:.4f}')
+            K.set_value(self.val_map, mAP)
+            logs['mAP'] = mAP
 
 
 def yolo_eval(infer_model: k.Model, h: YOLOHelper, det_obj_thresh: float,

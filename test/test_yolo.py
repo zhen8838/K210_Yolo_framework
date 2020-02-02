@@ -1,6 +1,6 @@
 """ yolo单元测试文件
 """
-from tools.yolo import YOLOHelper, YOLOLoss
+from tools.yolo import YOLOHelper, YOLOLoss, YOLOMap, parser_outputs
 from tools.bbox_utils import corner_to_center, tf_bbox_iou
 import tensorflow as tf
 import numpy as np
@@ -704,3 +704,39 @@ def test_grad():
         [[[ 0.03184488, -0.16596799,  0.06345274, -0.04247379]],
         [[-0.03867403, -0.0441989 ,  0.03031043,  0.01788712]]]
     """
+
+
+def test_yolo_map():
+    physical_devices = tf.config.experimental.list_physical_devices('GPU')
+    assert len(physical_devices) > 0, "Not enough GPU hardware devices available"
+    tf.config.experimental.set_memory_growth(physical_devices[0], True)
+    h = YOLOHelper('data/voc_img_ann.npy', 20, 'data/voc_anchor_v3.npy', [416, 416], [[13, 13], [26, 26], [52, 52]])
+    infer_model, train_model = yolo_mbv1([416, 416, 3], h.anchor_number, h.class_num, 1.0)
+    infer_model.load_weights('log/default_yolov3_mbv1_ciou/infer_model_205.h5')
+    h.set_dataset(32, False, True, False)
+    name = ['aeroplane',
+            'bicycle',
+            'bird',
+            'boat',
+            'bottle',
+            'bus',
+            'car',
+            'cat',
+            'chair',
+            'cow',
+            'diningtable',
+            'dog',
+            'horse',
+            'motorbike',
+            'person',
+            'pottedplant',
+            'sheep',
+            'sofa',
+            'train',
+            'tvmonitor', ]
+    maps = YOLOMap(h, h.test_dataset.take(10), tf.Variable(0., False), 1, name, 0.1, 0.3, 'iou', 0.5)
+    maps.set_model(infer_model)
+    self = maps
+    maps.on_train_end()
+
+    # maps.on_epoch_begin(0)
