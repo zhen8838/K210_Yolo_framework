@@ -194,6 +194,23 @@ def bbox_iou(a: np.ndarray, b: np.ndarray, offset: int = 0, method='iou') -> np.
         return (area_i / union) - ((area_o - union) / area_o)
 
 
+def _get_v(b1_height, b1_width, b2_height, b2_width):
+    @tf.custom_gradient
+    def _get_grad_v(height, width):
+        arctan = tf.atan(tf.math.divide_no_nan(b1_width, b1_height)) - tf.atan(
+            tf.math.divide_no_nan(width, height))
+        v = 4 * ((arctan / np.pi)**2)
+
+        def _grad_v(dv):
+            gdw = dv * 8 * arctan * height / (np.pi**2)
+            gdh = -dv * 8 * arctan * width / (np.pi**2)
+            return [gdh, gdw]
+
+        return v, _grad_v
+
+    return _get_grad_v(b2_height, b2_width)
+
+
 def tf_bbox_iou(a: tf.Tensor, b: tf.Tensor, offset: int = 0, method='iou') -> tf.Tensor:
     """Calculate Intersection-Over-Union(IOU) of two bounding boxes.
 
@@ -242,20 +259,23 @@ def tf_bbox_iou(a: tf.Tensor, b: tf.Tensor, offset: int = 0, method='iou') -> tf
         if method == 'diou':
             return iou - inter_diag / outer_diag
         else:
-            # calc ciou alpha paramter
-            arctan = tf.stop_gradient(
-                (tf.math.atan(tf.math.divide_no_nan(b[..., 2] - b[..., 0],
-                                                    b[..., 3] - b[..., 1]))
-                 - tf.math.atan(tf.math.divide_no_nan(a[..., 2] - a[..., 0],
-                                                      a[..., 3] - a[..., 1]))))
+            # # calc ciou alpha paramter
+            # arctan = tf.stop_gradient(
+            #     (tf.math.atan(tf.math.divide_no_nan(b[..., 2] - b[..., 0],
+            #                                         b[..., 3] - b[..., 1]))
+            #      - tf.math.atan(tf.math.divide_no_nan(a[..., 2] - a[..., 0],
+            #                                           a[..., 3] - a[..., 1]))))
 
-            v = tf.stop_gradient(tf.math.square(2 / np.pi * arctan))
-            alpha = tf.stop_gradient(v / ((1 - iou) + v))
-            w_temp = tf.stop_gradient(2 * (a[..., 2] - a[..., 0]))
+            # v = tf.stop_gradient(tf.math.square(2 / np.pi * arctan))
+            # alpha = tf.stop_gradient(v / ((1 - iou) + v))
+            # w_temp = tf.stop_gradient(2 * (a[..., 2] - a[..., 0]))
 
-            ar = (8 / tf.square(np.pi)) * arctan * ((a[..., 2] - a[..., 0] - w_temp) * (a[..., 3] - a[..., 1]))
+            # ar = (8 / tf.square(np.pi)) * arctan * ((a[..., 2] - a[..., 0] - w_temp) * (a[..., 3] - a[..., 1]))
+            v = _get_v(a[..., 3] - a[..., 1], a[..., 2] - a[..., 0],
+                       b[..., 3] - b[..., 1], b[..., 2] - b[..., 0])
+            alpha = tf.math.divide_no_nan(v, ((1 - iou) + v))
 
-            return tf.clip_by_value(iou - inter_diag / outer_diag - alpha * ar, -1., 1.)
+            return iou - inter_diag / outer_diag - alpha * v
 
     elif method in 'giou':
         outer_tl = tf.minimum(a[..., :2], b[..., :2])

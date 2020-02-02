@@ -49,7 +49,7 @@ def main(config_file, new_cfg, mode, model, train, prune):
 
     train_ds = h.train_dataset
     validation_ds = h.val_dataset
-    train_epoch_step = h.train_epoch_step
+    train_epoch_step = int(h.train_epoch_step)
     vali_epoch_step = int(h.val_epoch_step * train.vali_step_factor)
 
     """ Build Network """
@@ -110,7 +110,7 @@ def main(config_file, new_cfg, mode, model, train, prune):
     elif model.name == 'semiaudio':
         loss_obj = loss_register[model.loss](**model.loss_kwarg)
         losses = [loss_obj]
-        val_lwlrap = tf.Variable(0., False, dtype=tf.float32, shape=())
+        val_lwlrap = tf.Variable(0., False, dtype=tf.float32)
         metrics = [DummyMetric(loss_obj.lwlrap, name='lwlrap'),
                    DummyMetric(loss_obj.lwlrap_noisy, name='lwlrap_noisy'),
                    DummyOnceMetric(val_lwlrap, 'val_lwlrap')]
@@ -158,9 +158,9 @@ def main(config_file, new_cfg, mode, model, train, prune):
         elif cbkparam.name == 'TerminateOnNaN':
             cbs.append(cbk_fn())
         elif cbkparam.name == 'FacerecValidation':
-            cbs.append(cbk_fn(val_model, validation_ds, vali_epoch_step, train_epoch_step, vali_acc_var, **cbkparam.kwarg))
+            cbs.append(cbk_fn(val_model, validation_ds, vali_epoch_step, train_epoch_step - 1, vali_acc_var, **cbkparam.kwarg))
         elif cbkparam.name == 'LwlrapValidation':
-            cbs.append(cbk_fn(val_model, validation_ds, vali_epoch_step, train_epoch_step, val_lwlrap, **cbkparam.kwarg))
+            cbs.append(cbk_fn(val_model, validation_ds, vali_epoch_step, train_epoch_step - 1, val_lwlrap, **cbkparam.kwarg))
         else:
             cbs.append(cbk_fn(**cbkparam.kwarg))
 

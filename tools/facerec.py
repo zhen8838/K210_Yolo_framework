@@ -407,7 +407,7 @@ class FacerecValidation(k.callbacks.Callback):
         self.threshold = threshold
         self.batch_size = batch_size
 
-    def on_train_batch_end(self, batch, logs=None):
+    def on_train_batch_begin(self, batch, logs=None):
         if batch == self.trian_step:
             def fn(i: tf.Tensor):
                 x, actual_issame = next(self.val_iter)  # actual_issame:tf.Bool
@@ -424,8 +424,8 @@ class FacerecValidation(k.callbacks.Callback):
                 tpr = tf.math.divide_no_nan(tp, tp + fn)
                 fpr = tf.math.divide_no_nan(fp, fp + tn)
                 return (tp + tn) / tf.cast(tf.shape(dist)[0], tf.float32)
-
-            self.acc_var.assign(tf.reduce_mean(tf.map_fn(fn, tf.range(self.val_step), tf.float32)))
+            
+            k.backend.set_value(self.acc_var, tf.reduce_mean(tf.map_fn(fn, tf.range(self.val_step), tf.float32)))
 
 
 def calculate_accuracy(threshold: float, dist: np.ndarray, issame: np.ndarray):
