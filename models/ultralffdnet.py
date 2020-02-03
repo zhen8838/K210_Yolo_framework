@@ -5,59 +5,74 @@ import tensorflow.python.keras.layers as kl
 from models.darknet import compose
 
 
-def UltraLightFastGenericFaceBaseNet(inputs: tf.Tensor, base_filters=16) -> k.Model:
+def UltraLightFastGenericFaceBaseNet(inputs: tf.Tensor, base_filters=16, extras=False) -> k.Model:
+
     def conv_bn(filters, strides, number):
         channel_axis = 1 if k.backend.image_data_format() == 'channels_first' else -1
         if strides == 2:
-            l = [kl.ZeroPadding2D(),
-                 kl.Conv2D(filters, 3, strides, 'valid', use_bias=False,
-                           kernel_regularizer=k.regularizers.l2(5e-4),
-                           name=f'conv_bn_{number}_conv')]
+            l = compose(
+                kl.ZeroPadding2D(),
+                kl.Conv2D(filters, 3, strides, 'valid', use_bias=False,
+                          kernel_regularizer=k.regularizers.l2(5e-4),
+                          name=f'conv_bn_{number}_conv'))
+
         else:
-            l = [kl.Conv2D(filters, 3, strides, 'valid', use_bias=False,
-                           kernel_regularizer=k.regularizers.l2(5e-4),
-                           name=f'conv_bn_{number}_conv')]
-        return l + [kl.BatchNormalization(channel_axis, name=f'conv_bn_{number}_bn'),
-                    kl.ReLU(name=f'conv_bn_{number}_relu')]
+            l = kl.Conv2D(filters, 3, strides, 'valid', use_bias=False,
+                          kernel_regularizer=k.regularizers.l2(5e-4),
+                          name=f'conv_bn_{number}_conv')
+        return compose(
+            l,
+            kl.BatchNormalization(channel_axis, name=f'conv_bn_{number}_bn'),
+            kl.ReLU(name=f'conv_bn_{number}_relu'))
 
     def conv_dw(filters, strides, number):
         channel_axis = 1 if k.backend.image_data_format() == 'channels_first' else -1
         if strides == 2:
-            l = [kl.ZeroPadding2D(),
-                 kl.DepthwiseConv2D(3, strides, padding='valid', use_bias=False,
-                                    name=f'conv_dw_{number}_dw'), ]
+            l = compose(
+                kl.ZeroPadding2D(),
+                kl.DepthwiseConv2D(3, strides, padding='valid', use_bias=False,
+                                   name=f'conv_dw_{number}_dw'), )
         else:
-            l = [kl.DepthwiseConv2D(3, strides, padding='same', use_bias=False,
-                                    name=f'conv_dw_{number}_dw'), ]
+            l = kl.DepthwiseConv2D(3, strides, padding='same', use_bias=False,
+                                   name=f'conv_dw_{number}_dw')
 
-        return l + [kl.BatchNormalization(channel_axis, name=f'conv_dw_{number}_bn_1'),
-                    kl.ReLU(name=f'conv_dw_{number}_relu_1'),
-                    kl.Conv2D(filters, 1, 1, use_bias=False,
-                              kernel_regularizer=k.regularizers.l2(5e-4),
-                              name=f'conv_dw_{number}_conv'),
-                    kl.BatchNormalization(channel_axis, name=f'conv_dw_{number}_bn_2'),
-                    kl.ReLU(name=f'conv_dw_{number}_relu_2')]
-    l = (
+        return compose(
+            l,
+            kl.BatchNormalization(channel_axis, name=f'conv_dw_{number}_bn_1'),
+            kl.ReLU(name=f'conv_dw_{number}_relu_1'),
+            kl.Conv2D(filters, 1, 1, use_bias=False,
+                      kernel_regularizer=k.regularizers.l2(5e-4),
+                      name=f'conv_dw_{number}_conv'),
+            kl.BatchNormalization(channel_axis, name=f'conv_dw_{number}_bn_2'),
+            kl.ReLU(name=f'conv_dw_{number}_relu_2'))
+
+    l = compose(
         # 120*160
-        conv_bn(base_filters, 2, 0) +
-        conv_dw(base_filters * 2, 1, 1) +
+        conv_bn(base_filters, 2, 0),
+        conv_dw(base_filters * 2, 1, 1),
         # 60*80
-        conv_dw(base_filters * 2, 2, 2) +
-        conv_dw(base_filters * 2, 1, 3) +
+        conv_dw(base_filters * 2, 2, 2),
+        conv_dw(base_filters * 2, 1, 3),
         # 30*40
-        conv_dw(base_filters * 4, 2, 4) +
-        conv_dw(base_filters * 4, 1, 5) +
-        conv_dw(base_filters * 4, 1, 6) +
-        conv_dw(base_filters * 4, 1, 7) +
+        conv_dw(base_filters * 4, 2, 4),
+        conv_dw(base_filters * 4, 1, 5),
+        conv_dw(base_filters * 4, 1, 6),
+        conv_dw(base_filters * 4, 1, 7),
         # 15*20
-        conv_dw(base_filters * 8, 2, 8) +
-        conv_dw(base_filters * 8, 1, 9) +
-        conv_dw(base_filters * 8, 1, 10) +
+        conv_dw(base_filters * 8, 2, 8),
+        conv_dw(base_filters * 8, 1, 9),
+        conv_dw(base_filters * 8, 1, 10),
         # 8*10
-        conv_dw(base_filters * 16, 2, 11) +
+        conv_dw(base_filters * 16, 2, 11),
         conv_dw(base_filters * 16, 1, 12))
+    if extras:
+        l = compose(
+            l,
+            kl.Conv2D(base_filters * 4, 1),
+            kl.ReLU(),
+            conv_dw(base_filters * 16, 2, 13))
 
-    return k.Model(inputs, compose(*l)(inputs))
+    return k.Model(inputs, l(inputs))
 
 
 def SeperableConv2d(filters, kernel_size=1, strides=1, padding='valid'):
