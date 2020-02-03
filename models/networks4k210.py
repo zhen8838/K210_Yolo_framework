@@ -840,3 +840,124 @@ def retinafacenet_k210_v3(input_shape: list, anchor: List[Tuple],
     train_model = k.Model(inputs, out)
 
     return infer_model, train_model
+
+
+def ullfd_k210(input_shape: list, class_num: int, anchor: List[Tuple],
+               branch_index=[7, 10, 12],
+               base_filters=16) -> k.Model:
+    inputs = k.Input(input_shape)
+    base_model = UltraLightFastGenericFaceBaseNet(inputs, base_filters,
+                                                  len(branch_index) == 4)
+    assert len(anchor) == len(branch_index), 'anchor layer num must == branch num'
+    features = []
+    for index in branch_index:
+        # round(in_hw / 8),round(in_hw / 16),round(in_hw / 32),round(in_hw / 64)
+        features.append(base_model.get_layer(f'conv_dw_{index}_relu_2').output)
+
+    out = [SeperableConv2d(len(anchor[i]) * (4 + 1 + class_num), 3, padding='same')(feat) for (i, feat) in enumerate(features)]
+    out = [kl.Reshape((-1, (4 + 1 + class_num)))(o) for o in out]
+    out = kl.Concatenate(1)(out)
+
+    infer_model = k.Model(inputs, out)
+    train_model = infer_model
+
+    return infer_model, train_model
+
+
+def ullfd_k210_v1(input_shape: list, class_num: int, anchor: List[Tuple],
+                  branch_index=[7, 10, 12],
+                  base_filters=16) -> k.Model:
+    """ Use SSH block """
+    inputs = k.Input(input_shape)
+    base_model = UltraLightFastGenericFaceBaseNet(inputs, base_filters,
+                                                  len(branch_index) == 4)
+    assert len(anchor) == len(branch_index), 'anchor layer num must == branch num'
+    features = []
+    for index in branch_index:
+        # round(in_hw / 8),round(in_hw / 16),round(in_hw / 32),round(in_hw / 64)
+        features.append(base_model.get_layer(f'conv_dw_{index}_relu_2').output)
+
+    """ SSH block """
+    features = [SSH(feat, base_filters * 4, depth=2) for feat in features]
+    out = [kl.Conv2D(len(anchor[i]) * (4 + 1 + class_num), 1, 1)(feat) for (i, feat) in enumerate(features)]
+    out = [kl.Reshape((-1, (4 + 1 + class_num)))(o) for o in out]
+    out = kl.Concatenate(1)(out)
+
+    infer_model = k.Model(inputs, out)
+    train_model = infer_model
+
+    return infer_model, train_model
+
+
+def ullfd_k210_v2(input_shape: list, class_num: int, anchor: List[Tuple],
+                  branch_index=[7, 10, 12],
+                  base_filters=16) -> k.Model:
+    """ Add FPN block for feature merge
+    """
+    inputs = k.Input(input_shape)
+    channel_axis = 1 if k.backend.image_data_format() == 'channels_first' else -1
+    base_model = UltraLightFastGenericFaceBaseNet(inputs, base_filters, len(branch_index) == 4)
+
+    assert len(anchor) == len(branch_index), 'anchor layer num must == branch num'
+    features = []
+    for index in branch_index:
+        # round(in_hw / 8),round(in_hw / 16),round(in_hw / 32),round(in_hw / 64)
+        features.append(base_model.get_layer(f'conv_dw_{index}_relu_2').output)
+
+    if len(branch_index) == 4:
+        #  FPN in featrues[0]-featrues[1] and featrues[2]-featrues[3]
+        up = kl.UpSampling2D()(Conv2D_BN_Relu(base_filters, 1, 1)(features[1]))
+        features[0] = kl.Concatenate(channel_axis)([features[0], up])
+        up1 = kl.UpSampling2D()(Conv2D_BN_Relu(base_filters, 1, 1)(features[3]))
+        features[2] = kl.Concatenate(channel_axis)([features[2], up1])
+    else:
+        #  FPN only featrues[0] and featrues[1]
+        up = kl.UpSampling2D()(Conv2D_BN_Relu(base_filters, 1, 1)(features[1]))
+        features[0] = kl.Concatenate(channel_axis)([features[0], up])
+
+    out = [SeperableConv2d(len(anchor[i]) * (4 + 1 + class_num), 3, padding='same')(feat) for (i, feat) in enumerate(features)]
+    out = [kl.Reshape((-1, (4 + 1 + class_num)))(o) for o in out]
+    out = kl.Concatenate(1)(out)
+
+    infer_model = k.Model(inputs, out)
+    train_model = infer_model
+
+    return infer_model, train_model
+
+
+def ullfd_k210_v3(input_shape: list, class_num: int, anchor: List[Tuple],
+                  branch_index=[7, 10, 12],
+                  base_filters=16) -> k.Model:
+    """ 1.  Add FPN block for feature merge
+        2.  Use SSH block for better regerssion
+    """
+    inputs = k.Input(input_shape)
+    channel_axis = 1 if k.backend.image_data_format() == 'channels_first' else -1
+    base_model = UltraLightFastGenericFaceBaseNet(inputs, base_filters, len(branch_index) == 4)
+
+    assert len(anchor) == len(branch_index), 'anchor layer num must == branch num'
+    features = []
+    for index in branch_index:
+        # round(in_hw / 8),round(in_hw / 16),round(in_hw / 32),round(in_hw / 64)
+        features.append(base_model.get_layer(f'conv_dw_{index}_relu_2').output)
+
+    if len(branch_index) == 4:
+        #  FPN in featrues[0]-featrues[1] and featrues[2]-featrues[3]
+        up = kl.UpSampling2D()(Conv2D_BN_Relu(base_filters, 1, 1)(features[1]))
+        features[0] = kl.Concatenate(channel_axis)([features[0], up])
+        up1 = kl.UpSampling2D()(Conv2D_BN_Relu(base_filters, 1, 1)(features[3]))
+        features[2] = kl.Concatenate(channel_axis)([features[2], up1])
+    else:
+        #  FPN only featrues[0] and featrues[1]
+        up = kl.UpSampling2D()(Conv2D_BN_Relu(base_filters, 1, 1)(features[1]))
+        features[0] = kl.Concatenate(channel_axis)([features[0], up])
+    """ SSH block """
+    features = [SSH(feat, base_filters * 4, depth=2) for feat in features]
+    out = [kl.Conv2D(len(anchor[i]) * (4 + 1 + class_num), 1, 1)(feat) for (i, feat) in enumerate(features)]
+    out = [kl.Reshape((-1, (4 + 1 + class_num)))(o) for o in out]
+    out = kl.Concatenate(1)(out)
+
+    infer_model = k.Model(inputs, out)
+    train_model = infer_model
+
+    return infer_model, train_model

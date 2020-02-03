@@ -9,7 +9,7 @@ from models.darknet import DarknetConv2D, darknet_body, DarknetConv2D_BN_Leaky, 
     make_last_layers, make_last_layers_mobilenet, MobilenetConv2D
 from models.shufflenet import conv_bn_relu, shufflenet_block, deconv_bn_relu
 from models.yolo_nano import yolo3_nano
-from models.retinanet import retinafacenet, retinaface_rfb, retinaface_slim
+from models.retinanet import retinafacenet, retinaface_rfb, retinaface_slim, ullfd_slim
 from models.facenet import mbv1_facerec
 
 

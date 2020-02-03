@@ -1,13 +1,14 @@
 from models.networks import mbv1_facerec, mbv2_ctdet, yolo, tiny_yolo, pfld,\
     shuffle_ctdet, yolo3_nano, yolo_mbv1, mbv1_imgnet, mbv2_imgnet,\
-    retinafacenet, retinaface_slim, retinaface_rfb
+    retinafacenet, retinaface_slim, retinaface_rfb, ullfd_slim
 from models.receptivefieldnet import rffacedetnet
 from models.audionet import dualmbv2net
 from models.networks4k210 import yolo_mbv1_k210, yolo_mbv2_k210, yolo2_mbv1_k210,\
     yolov2algin_mbv1_k210, pfld_k210, mbv1_softmax_facerec_k210, \
     mbv1_triplet_facerec_k210, mbv1_amsoftmax_facerec_k210, mbv1_imgnet_k210, \
     mbv2_imgnet_k210, yoloalgin_mbv1_k210, retinafacenet_k210,\
-    retinafacenet_k210_v1, retinafacenet_k210_v2, retinafacenet_k210_v3
+    retinafacenet_k210_v1, retinafacenet_k210_v2, retinafacenet_k210_v3,\
+    ullfd_k210, ullfd_k210_v1, ullfd_k210_v2, ullfd_k210_v3
 import tensorflow as tf
 from tools.custom import StepLR, CosineLR
 from tools.yolo import YOLOHelper, YOLOLoss, yolo_infer, yolo_eval, MultiScaleTrain, YOLOIouLoss, YOLOMap
@@ -15,6 +16,7 @@ from tools.yoloalign import YOLOAlignHelper, YOLOAlignLoss, yoloalgin_infer
 from tools.pfld import PFLDHelper, PFLDLoss, pfld_infer
 from tools.ctdet import CtdetHelper, CtdetLoss, ctdet_infer
 from tools.lffd import LFFDHelper, LFFDLoss
+from tools.ssd import SSDHelper, SSDLoss, ssd_infer
 from tools.retinaface import RetinaFaceHelper, RetinaFaceLoss, retinaface_infer
 from tools.tinyimgnet import TinyImgnetHelper
 from tools.imgnet import ImgnetHelper, ClassifyLoss
@@ -166,7 +168,8 @@ helper_register = {
     'TinyImgnetHelper': TinyImgnetHelper,
     'ImgnetHelper': ImgnetHelper,
     'RetinaFaceHelper': RetinaFaceHelper,
-    'DCASETask5Helper': DCASETask5Helper
+    'DCASETask5Helper': DCASETask5Helper,
+    'SSDHelper': SSDHelper,
 }
 
 
@@ -199,6 +202,11 @@ network_register = {
     'retinafacenet_k210_v2': retinafacenet_k210_v2,
     'retinafacenet_k210_v3': retinafacenet_k210_v3,
     'retinaface_slim': retinaface_slim,
+    'ullfd_slim': ullfd_slim,
+    'ullfd_k210': ullfd_k210,
+    'ullfd_k210_v1': ullfd_k210_v1,
+    'ullfd_k210_v2': ullfd_k210_v2,
+    'ullfd_k210_v3': ullfd_k210_v3,
     'dualmbv2net': dualmbv2net
 }
 
@@ -215,7 +223,8 @@ loss_register = {
     'LFFDLoss': LFFDLoss,
     'ClassifyLoss': ClassifyLoss,
     'RetinaFaceLoss': RetinaFaceLoss,
-    'SemiBCELoss': SemiBCELoss
+    'SemiBCELoss': SemiBCELoss,
+    'SSDLoss': SSDLoss
 }
 
 callback_register = {
@@ -244,7 +253,8 @@ infer_register = {
     'yoloalgin_infer': yoloalgin_infer,
     'pfld_infer': pfld_infer,
     'ctdet_infer': ctdet_infer,
-    'retinaface_infer': retinaface_infer
+    'retinaface_infer': retinaface_infer,
+    'ssd_infer': ssd_infer
 }
 
 eval_register = {
