@@ -510,7 +510,7 @@ def parser_outputs(outputs: List[np.ndarray], orig_hws: List[np.ndarray], obj_th
     for bbox, clses, orig_hw in zip(bbox_outs, class_outs, orig_hws):
         """ softmax class"""
         clses = softmax(clses, -1)
-        score = np.max(clses[:, 1:], -1, keepdims=True)
+        score = np.max(clses[:, 1:], -1)
         """ decode """
         bbox = decode_bbox(bbox, h.anchors.numpy(), h.variances.numpy())
         bbox = bbox * np.tile(h.org_in_hw[::-1], [2])
