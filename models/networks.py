@@ -1,8 +1,8 @@
 import tensorflow as tf
-import tensorflow.python.keras as k
-import tensorflow.python.keras.backend as K
-import tensorflow.python.keras.layers as kl
-from tensorflow.python.keras.applications import MobileNet, MobileNetV2
+k = tf.keras
+K = tf.keras.backend
+kl = tf.keras.layers
+from tensorflow.keras.applications import MobileNet, MobileNetV2
 from models.dcn import DCN, DeconvLayer
 from toolz import pipe
 from models.darknet import DarknetConv2D, darknet_body, DarknetConv2D_BN_Leaky, compose, \

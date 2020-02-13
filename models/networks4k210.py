@@ -845,6 +845,7 @@ def retinafacenet_k210_v3(input_shape: list, anchor: List[Tuple],
 def ullfd_k210(input_shape: list, class_num: int, anchor: List[Tuple],
                branch_index=[7, 10, 12],
                base_filters=16) -> k.Model:
+    """ K210 Main memory usage: 212520 B """
     inputs = k.Input(input_shape)
     base_model = UltraLightFastGenericFaceBaseNet(inputs, base_filters,
                                                   len(branch_index) == 4)
@@ -859,7 +860,7 @@ def ullfd_k210(input_shape: list, class_num: int, anchor: List[Tuple],
     out = kl.Concatenate(1)(out)
 
     infer_model = k.Model(inputs, out)
-    train_model = infer_model
+    train_model = k.Model(inputs, out)
 
     return infer_model, train_model
 

@@ -4,7 +4,7 @@ K = tf.keras.backend
 kl = tf.keras.layers
 from typing import List, Callable
 from tensorflow.python.keras.utils.tf_utils import smart_cond
-from tensorflow.python.keras.applications import MobileNet, MobileNetV2
+from tensorflow.keras.applications import MobileNet, MobileNetV2
 from models.darknet import compose
 
 

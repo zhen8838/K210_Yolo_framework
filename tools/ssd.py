@@ -587,12 +587,13 @@ def ssd_infer(img_path: Path, infer_model: tf.keras.Model,
             h.draw_image(draw_img.numpy(), [bbox, np.ones_like(score[:, None])])
     else:
         """ draw gpu result and nncase result """
-        ncc_preds = [[], [], []]
+        ncc_preds = [[], []]
         for ncc_result in ncc_results:
             # NOTE ncc result is (N,C,H,W) ,but output bbox no `Channels` , so is [anchor_num,4]
-            pred = list(map(lambda x: np.reshape(x, (len(outputs[0][0]), -1)),
-                            np.split(ncc_result, [len(outputs[0][0]) * 4, -len(outputs[0][0]) * 2])))
-            [ncc_preds[i].append(p) for (i, p) in enumerate(pred)]
+            ncc_result = np.reshape(ncc_result, (len(outputs[0]), -1))
+            ncc_result = np.split(ncc_result, [4], -1)
+            ncc_preds[0].append(ncc_result[0])
+            ncc_preds[1].append(ncc_result[1])
         ncc_preds = [np.stack(pred) for pred in ncc_preds]
         ncc_results = parser_outputs(ncc_preds, orig_hws, obj_thresh, nms_thresh, batch, h)
         for img_path, (bbox, score), (ncc_bbox, ncc_score) in zip(img_paths, results, ncc_results):

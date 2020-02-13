@@ -1,4 +1,5 @@
 import tensorflow as tf
+import tensorflow_probability as tfp
 import numpy as np
 import matplotlib.pyplot as plt
 from tools.base import BaseHelper, INFO
@@ -128,15 +129,8 @@ class DCASETask5Helper(BaseHelper):
         return new_img, ann
 
     @staticmethod
-    def random_beta(shape, alpha, beta) -> tf.Tensor:
-        gamma1_sample = tf.random.gamma(shape, beta)
-        gamma2_sample = tf.random.gamma(shape, alpha)
-        beta_sample = gamma1_sample / (gamma1_sample + gamma2_sample)
-        return beta_sample
-
-    @staticmethod
     def mixup_img(imga, anna, imgb, annb) -> [tf.Tensor, tf.Tensor]:
-        rate = DCASETask5Helper.random_beta([], 1., 1.)
+        rate = tfp.distributions.Beta(1., 1.).sample([])
         img = imga * rate + imgb * (1 - rate)
         ann = tf.cast(anna, tf.float32) * rate + tf.cast(annb, tf.float32) * (1 - rate)
         return img, ann
@@ -148,7 +142,7 @@ class DCASETask5Helper(BaseHelper):
         return new_img
 
     @staticmethod
-    def freqmask_img(img, max_w=32):
+    def freqmask_img(img, max_w=26):
         coord = tf.random.uniform([], 0, tf.shape(img, tf.int64)[0], tf.int64)
         width = tf.random.uniform([], 8, max_w, tf.int64)
         cut = tf.stack([coord - width, coord + width])
@@ -289,6 +283,68 @@ class DCASETask5Helper(BaseHelper):
             self.test_dataset = self.build_datapipe(self.test_list, batch_size,
                                                     False, is_normlize, is_training)
             self.test_epoch_step = self.test_total_data // self.batch_size
+
+
+class FixMatchHelper(DCASETask5Helper):
+    def __init__(self, image_ann, in_hw, fold):
+        super().__init__(image_ann, in_hw, fold)
+
+    def process_img(self, img, ann, in_hw, is_augment, is_resize, is_normlize):
+        """ is_augment=0 is none aug
+            is_augment=1 is weak aug
+            is_augment=2 is strong aug
+        """
+        if is_resize and is_augment == 0:
+            img, ann = self.resize_img(img, in_hw, ann)
+        elif is_resize and is_augment == 1:
+            img, ann = self.resize_img(img, in_hw, ann)
+        elif is_resize and is_augment == 2:
+            img, ann = self.resize_train_img(img, in_hw, ann)
+        if is_augment == 2:
+            img = tf.cond(tf.random.uniform([], 0, 1.) < 0.5,
+                          lambda: self.freqmask_img(img),
+                          lambda: img)
+        if is_normlize:
+            img = self.normlize_img(img)
+        return img, ann
+
+    def build_train_datapipe(self, batch_size: int, naugment: int, is_normlize: bool) -> tf.data.Dataset:
+
+        def labeled_parser(stream: tf.Tensor):
+            mel_raw, ann = self.parser_example(stream)
+            img = self.decode_img(mel_raw)
+            img.set_shape((None, None))
+            ann.set_shape((None))
+            img, label = self.process_img(img, ann, self.in_hw,
+                                          1, True, is_normlize)
+            return img, label
+
+        def unlabel_parser(stream: tf.Tensor):
+            mel_raw, ann = self.parser_example(stream)
+            img = self.decode_img(mel_raw)
+            img.set_shape((None, None))
+            ann.set_shape((None))
+            weak_img, _ = self.process_img(img, ann, self.in_hw,
+                                           1, True, is_normlize)
+            strong_img, _ = self.process_img(img, ann, self.in_hw,
+                                             2, True, is_normlize)
+            return weak_img, strong_img
+
+        ds_labeled = (tf.data.TFRecordDataset(self.train_list).
+                      shuffle(200).
+                      repeat().
+                      map(labeled_parser, -1).
+                      batch(batch_size, True).
+                      prefetch(-1))
+        
+        ds_unlabeled = (tf.data.TFRecordDataset(self.unlabel_list).
+                        shuffle(200).
+                        repeat().
+                        map(unlabel_parser, -1).
+                        batch(batch_size * naugment, True).
+                        prefetch(-1))
+
+        return tf.data.Dataset.zip((ds_labeled, ds_unlabeled))
 
 
 class SemiBCELoss(k.losses.Loss):
