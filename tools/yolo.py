@@ -19,6 +19,7 @@ from matplotlib.pyplot import text
 from PIL import Image, ImageFont, ImageDraw
 from tools.base import BaseHelper, INFO, ERROR, NOTE
 from tools.bbox_utils import bbox_iou, center_to_corner, tf_bbox_iou, nms_oneclass
+from tools.custom import focal_sigmoid_cross_entropy_with_logits
 from pathlib import Path
 import shutil
 from tqdm import trange, tqdm
@@ -1013,7 +1014,8 @@ class MultiScaleTrain(Callback):
 class YOLOLoss(Loss):
     def __init__(self, h: YOLOHelper, iou_thresh: float, obj_thresh: float,
                  obj_weight: float, noobj_weight: float, wh_weight: float,
-                 xy_weight: float, cls_weight: float, layer: int, verbose=1,
+                 xy_weight: float, cls_weight: float, use_focalloss: bool,
+                 focal_gamma: float, focal_alpha: float, layer: int, verbose=1,
                  reduction='auto', name=None):
         """ yolo loss obj
 
@@ -1042,6 +1044,17 @@ class YOLOLoss(Loss):
         self.wh_weight = wh_weight
         self.xy_weight = xy_weight
         self.cls_weight = cls_weight
+        if use_focalloss == True:
+            self.bce_fn = (lambda labels, logits:
+                           focal_sigmoid_cross_entropy_with_logits(
+                               labels, logits,
+                               focal_gamma, focal_alpha))
+        else:
+            self.bce_fn = (lambda labels, logits:
+                           tf.nn.sigmoid_cross_entropy_with_logits(
+                               labels, logits))
+
+        # focal_gamma: float, alpha: float,
         self.layer = layer
         self.anchors: np.ndarray = np.copy(self.h.anchors[self.layer])
         self.xy_offset: ResourceVariable = self.h.xy_offsets[self.layer]
@@ -1198,11 +1211,11 @@ class YOLOLoss(Loss):
                 labels=grid_true_wh, predictions=grid_pred_wh), [1, 2, 3, 4])
 
         obj_loss = self.obj_weight * tf.reduce_sum(
-            obj_mask * K.binary_crossentropy(true_confidence, pred_confidence_sigmod),
+            obj_mask * self.bce_fn(true_confidence, pred_confidence),
             [1, 2, 3, 4])
 
         noobj_loss = self.noobj_weight * tf.reduce_sum(
-            (1 - obj_mask) * ignore_mask * K.binary_crossentropy(true_confidence, pred_confidence_sigmod),
+            (1 - obj_mask) * ignore_mask * self.bce_fn(true_confidence, pred_confidence),
             [1, 2, 3, 4])
 
         cls_loss = tf.reduce_sum(
@@ -1232,7 +1245,9 @@ class YOLOLoss(Loss):
 class YOLOIouLoss(YOLOLoss):
     def __init__(self, h: YOLOHelper, iou_thresh: float, obj_thresh: float,
                  obj_weight: float, noobj_weight: float, bbox_weight: float,
-                 cls_weight: float, layer: int, iou_method: str,
+                 cls_weight: float, use_focalloss: bool,
+                 focal_gamma: float, focal_alpha: float,
+                 layer: int, iou_method: str,
                  reduction='auto', name=None):
         self.reduction = reduction
         self.name = name
@@ -1244,6 +1259,15 @@ class YOLOIouLoss(YOLOLoss):
         self.noobj_weight = noobj_weight
         self.bbox_weight = bbox_weight
         self.cls_weight = cls_weight
+        if use_focalloss == True:
+            self.bce_fn = (lambda labels, logits:
+                           focal_sigmoid_cross_entropy_with_logits(
+                               labels, logits,
+                               focal_gamma, focal_alpha))
+        else:
+            self.bce_fn = (lambda labels, logits:
+                           tf.nn.sigmoid_cross_entropy_with_logits(
+                               labels, logits))
         self.layer = layer
         self.anchors: np.ndarray = np.copy(self.h.anchors[self.layer])
         self.xy_offset: ResourceVariable = self.h.xy_offsets[self.layer]
@@ -1301,11 +1325,11 @@ class YOLOIouLoss(YOLOLoss):
             [1, 2, 3, 4])
 
         obj_loss = self.obj_weight * tf.reduce_sum(
-            obj_mask * tf.nn.sigmoid_cross_entropy_with_logits(true_confidence, pred_confidence),
+            obj_mask * self.bce_fn(true_confidence, pred_confidence),
             [1, 2, 3, 4])
 
         noobj_loss = self.noobj_weight * tf.reduce_sum(
-            (1 - obj_mask) * ignore_mask * tf.nn.sigmoid_cross_entropy_with_logits(true_confidence, pred_confidence),
+            (1 - obj_mask) * ignore_mask * self.bce_fn(true_confidence, pred_confidence),
             [1, 2, 3, 4])
 
         cls_loss = tf.reduce_sum(

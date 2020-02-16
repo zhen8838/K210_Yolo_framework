@@ -21,7 +21,7 @@ from tools.retinaface import RetinaFaceHelper, RetinaFaceLoss, retinaface_infer
 from tools.tinyimgnet import TinyImgnetHelper
 from tools.imgnet import ImgnetHelper, ClassifyLoss
 from tools.facerec import FcaeRecHelper, TripletLoss, Sparse_SoftmaxLoss, Sparse_AmsoftmaxLoss, Sparse_AsoftmaxLoss, FacerecValidation, facerec_eval
-from tools.dcasetask5 import DCASETask5Helper, SemiBCELoss, LwlrapValidation
+from tools.dcasetask2 import DCASETask5Helper, SemiBCELoss, LwlrapValidation
 from yaml import safe_dump
 
 

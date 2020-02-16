@@ -336,7 +336,7 @@ class FixMatchHelper(DCASETask5Helper):
                       map(labeled_parser, -1).
                       batch(batch_size, True).
                       prefetch(-1))
-        
+
         ds_unlabeled = (tf.data.TFRecordDataset(self.unlabel_list).
                         shuffle(200).
                         repeat().
@@ -345,6 +345,26 @@ class FixMatchHelper(DCASETask5Helper):
                         prefetch(-1))
 
         return tf.data.Dataset.zip((ds_labeled, ds_unlabeled))
+
+    def build_val_datapipe(self, batch_size: int, is_normlize: bool) -> tf.data.Dataset:
+
+        def labeled_parser(stream: tf.Tensor):
+            mel_raw, ann = self.parser_example(stream)
+            img = self.decode_img(mel_raw)
+            img.set_shape((None, None))
+            ann.set_shape((None))
+            img, label = self.process_img(img, ann, self.in_hw,
+                                          0, True, is_normlize)
+            return img, label
+
+        ds_labeled = (tf.data.TFRecordDataset(self.val_list).
+                      shuffle(200).
+                      repeat().
+                      map(labeled_parser, -1).
+                      batch(batch_size, True).
+                      prefetch(-1))
+
+        return ds_labeled
 
 
 class SemiBCELoss(k.losses.Loss):

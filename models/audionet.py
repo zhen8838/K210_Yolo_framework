@@ -73,3 +73,30 @@ def sslmbv2net(input_shape: list, class_num: int,
     model = k.Model(inputs, outputs)
 
     return model
+
+
+def sslresnet50(input_shape: list, class_num: int,
+                depth_multiplier: float = 1.0) -> k.Model:
+    inputs = k.Input(input_shape)
+
+    conv1 = kl.Conv2D(3, kernel_size=7, strides=2, padding='same', use_bias=False, name='pre_conv')(inputs)
+
+    base_model: k.Model = k.applications.ResNet50V2(input_tensor=conv1,
+                                                    include_top=False, weights=None)
+    base_model.load_weights('/home/zqh/.keras/models/resnet50v2_weights_tf_dim_ordering_tf_kernels_notop.h5',
+                            by_name=True)
+
+    tmp = kl.GlobalMaxPooling2D()(base_model.output)
+
+    # [batch,calss_num]
+    outputs = compose(kl.Dense(1024),
+                      kl.LeakyReLU(),
+                      kl.Dropout(0.2),
+                      kl.Dense(1024),
+                      kl.LeakyReLU(),
+                      kl.Dropout(0.1),
+                      kl.Dense(class_num))(tmp)
+
+    model = k.Model(inputs, outputs)
+
+    return model

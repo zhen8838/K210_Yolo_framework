@@ -34,6 +34,9 @@ model:
     wh_weight: 3
     xy_weight: 2
     cls_weight: 1
+    use_focalloss: false
+    focal_gamma: 2.0
+    focal_alpha: 0.25
     verbose: 1
 train:
   graph_optimizer: true
