@@ -79,6 +79,7 @@ def preprocess_input(x, **kwargs):
     """
     return imagenet_utils.preprocess_input(x, mode='tf', **kwargs)
 
+
 @keras_modules_injection
 def MobileNet(input_shape=None,
               alpha=1.0,
@@ -282,7 +283,7 @@ def MobileNet(input_shape=None,
             weights_path = keras_utils.get_file(model_name,
                                                 weight_path,
                                                 cache_subdir='models')
-        model.load_weights(weights_path)
+        model.load_weights(weights_path, by_name=True, skip_mismatch=True)
     elif weights is not None:
         model.load_weights(weights)
 
@@ -338,23 +339,20 @@ def _conv_block(inputs, filters, alpha, kernel=(3, 3), strides=(1, 1)):
     # Returns
         Output tensor of block.
     """
-    # channel_axis = 1 if backend.image_data_format() == 'channels_first' else -1
+    channel_axis = 1 if backend.image_data_format() == 'channels_first' else -1
     filters = int(filters * alpha)
-    if tuple(strides) == (2, 2):
-        x = layers.ZeroPadding2D(padding=((1, 1), (1, 1)), name='conv1_pad')(inputs)
-        x = layers.Conv2D(filters, kernel,
-                          padding='valid',
-                          use_bias=False,
-                          strides=strides,
-                          name='conv1')(x)
+
+    if strides == (1, 1):
+        x = inputs
     else:
-        x = layers.Conv2D(filters, kernel,
-                          padding='same',
-                          use_bias=False,
-                          strides=strides,
-                          name='conv1')(inputs)
-    x = layers.BatchNormalization(name='conv1_bn')(x)
-    return layers.LeakyReLU(name='conv1_relu')(x)
+        x = layers.ZeroPadding2D(((1, 1), (1, 1)), name='conv1_pad')(inputs)
+    x = layers.Conv2D(filters, kernel,
+                      padding='valid',
+                      use_bias=False,
+                      strides=strides,
+                      name='conv1')(x)
+    x = layers.BatchNormalization(axis=channel_axis, name='conv1_bn')(x)
+    return layers.ReLU(6., name='conv1_relu')(x)
 
 
 def _depthwise_conv_block(inputs, pointwise_conv_filters, alpha,
@@ -410,7 +408,7 @@ def _depthwise_conv_block(inputs, pointwise_conv_filters, alpha,
     # Returns
         Output tensor of block.
     """
-    # channel_axis = 1 if backend.image_data_format() == 'channels_first' else -1
+    channel_axis = 1 if backend.image_data_format() == 'channels_first' else -1
     pointwise_conv_filters = int(pointwise_conv_filters * alpha)
 
     if strides == (1, 1):
@@ -424,14 +422,15 @@ def _depthwise_conv_block(inputs, pointwise_conv_filters, alpha,
                                strides=strides,
                                use_bias=False,
                                name='conv_dw_%d' % block_id)(x)
-
-    x = layers.BatchNormalization(name='conv_dw_%d_bn' % block_id)(x)
-    x = layers.ReLU(name='conv_dw_%d_relu' % block_id)(x)
+    x = layers.BatchNormalization(
+        axis=channel_axis, name='conv_dw_%d_bn' % block_id)(x)
+    x = layers.ReLU(6., name='conv_dw_%d_relu' % block_id)(x)
 
     x = layers.Conv2D(pointwise_conv_filters, (1, 1),
                       padding='same',
                       use_bias=False,
                       strides=(1, 1),
                       name='conv_pw_%d' % block_id)(x)
-    x = layers.BatchNormalization(name='conv_pw_%d_bn' % block_id)(x)
-    return layers.LeakyReLU(name='conv_pw_%d_relu' % block_id)(x)
+    x = layers.BatchNormalization(axis=channel_axis,
+                                  name='conv_pw_%d_bn' % block_id)(x)
+    return layers.ReLU(6., name='conv_pw_%d_relu' % block_id)(x)

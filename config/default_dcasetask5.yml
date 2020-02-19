@@ -1,17 +1,17 @@
 mode: train
 model:
   name: semiaudio
-  helper: DCASETask5Helper
+  helper: DCASETask2Helper
   helper_kwarg:
     image_ann: data/dcasetask5_img_ann.npy
     in_hw:
-      - 256
+      - 128
       - 512
     fold: 0
   network: dualmbv2net
   network_kwarg:
     input_shape:
-      - 256
+      - 128
       - 512
       - 1
     class_num: 80

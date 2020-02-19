@@ -10,7 +10,7 @@ kl = tf.keras.layers
 K = tf.keras.backend
 
 
-class DCASETask5Helper(BaseHelper):
+class DCASETask2Helper(BaseHelper):
     def __init__(self, image_ann: str, in_hw: list, fold: int):
         self.train_dataset: tf.data.Dataset = None
         self.val_dataset: tf.data.Dataset = None
@@ -178,11 +178,25 @@ class DCASETask5Helper(BaseHelper):
         new_img = img[..., None]
         return new_img
 
-    def process_img(self, imga: tf.Tensor, anna: tf.Tensor,
-                    imgb: tf.Tensor, annb: tf.Tensor,
+    def process_img(self, img: tf.Tensor, ann: tf.Tensor,
                     in_hw: tf.Tensor, is_augment: bool,
                     is_resize: bool,
                     is_normlize: bool) -> [tf.Tensor, tf.Tensor]:
+        """ process image and label , if is training then use data augmenter
+        """
+        if is_resize:
+            img, ann = self.resize_img(img, in_hw, ann)
+        if is_normlize:
+            img = self.normlize_img(img)
+        else:
+            img = tf.cast(img, tf.float32)
+        return img, ann
+
+    def process_two_img(self, imga: tf.Tensor, anna: tf.Tensor,
+                        imgb: tf.Tensor, annb: tf.Tensor,
+                        in_hw: tf.Tensor, is_augment: bool,
+                        is_resize: bool,
+                        is_normlize: bool) -> [tf.Tensor, tf.Tensor]:
         """ process image and label , if is training then use data augmenter
         """
         if is_resize and is_augment:
@@ -216,8 +230,8 @@ class DCASETask5Helper(BaseHelper):
             imgb.set_shape((None, None))
             anna.set_shape((None))
             annb.set_shape((None))
-            img, label = self.process_img(imga, anna, imgb, annb, self.in_hw,
-                                          is_augment, True, is_normlize)
+            img, label = self.process_two_img(imga, anna, imgb, annb, self.in_hw,
+                                              is_augment, True, is_normlize)
             train_img, train_label = img, label
 
             stream = unlabel_stream
@@ -229,13 +243,14 @@ class DCASETask5Helper(BaseHelper):
             imgb.set_shape((None, None))
             anna.set_shape((None))
             annb.set_shape((None))
-            img, label = self.process_img(imga, anna, imgb, annb, self.in_hw,
-                                          is_augment, True, is_normlize)
+            img, label = self.process_two_img(imga, anna, imgb, annb, self.in_hw,
+                                              is_augment, True, is_normlize)
             unlabel_img, unlabel_label = img, label
             return (train_img, unlabel_img), tf.concat([train_label, unlabel_label], -1)
 
         ds = (tf.data.Dataset.zip((tf.data.TFRecordDataset(self.train_list, None, None, 4),
                                    tf.data.TFRecordDataset(self.unlabel_list, None, None, 4))).
+              shuffle(300).
               repeat().
               batch(2, True).
               map(_parser, -1).
@@ -248,22 +263,18 @@ class DCASETask5Helper(BaseHelper):
                            is_augment: bool, is_normlize: bool
                            ) -> tf.data.Dataset:
 
-        def _parser(stream: List[bytes]):
-            mel_rawa, anna = self.parser_example(stream[0])
-            mel_rawb, annb = self.parser_example(stream[1])
-            imga = self.decode_img(mel_rawa)
-            imgb = self.decode_img(mel_rawb)
-            imga.set_shape((None, None))
-            imgb.set_shape((None, None))
+        def _parser(stream: bytes):
+            mel_raw, ann = self.parser_example(stream)
+            img = self.decode_img(mel_raw)
+            img.set_shape((None, None))
 
-            img, label = self.process_img(imga, anna, imgb, annb, self.in_hw,
+            img, label = self.process_img(img, ann, self.in_hw,
                                           is_augment, True, is_normlize)
             return img, label
 
         ds = (tf.data.TFRecordDataset(self.val_list,
                                       None, None, 4).
               repeat().
-              batch(2, True).
               map(_parser, -1).
               batch(batch_size, True).
               prefetch(-1))
@@ -285,7 +296,7 @@ class DCASETask5Helper(BaseHelper):
             self.test_epoch_step = self.test_total_data // self.batch_size
 
 
-class FixMatchHelper(DCASETask5Helper):
+class FixMatchHelper(DCASETask2Helper):
     def __init__(self, image_ann, in_hw, fold):
         super().__init__(image_ann, in_hw, fold)
 
@@ -423,6 +434,7 @@ class SemiBCELoss(k.losses.Loss):
     def call(self, y_true: tf.Tensor, y_pred: tf.Tensor):
         target, target_noisy = tf.split(y_true, 2, -1)
         output, output_noisy = tf.split(y_pred, 2, -1)
+        bc = tf.cast(tf.shape(output)[0], tf.float32)
         pred = tf.sigmoid(output)
         pred_noisy = tf.sigmoid(output_noisy)
 
@@ -433,7 +445,7 @@ class SemiBCELoss(k.losses.Loss):
         self.lwlrap.assign(tf.reduce_sum(per_class_lwlrap * weight_per_class))
         per_class_lwlrap, weight_per_class = self.per_class_lwlrap(target_noisy, pred_noisy)
         self.lwlrap_noisy.assign(tf.reduce_sum(per_class_lwlrap * weight_per_class))
-        loss = tf.reduce_sum(bce + bce_noisy)
+        loss = tf.reduce_sum(bce + bce_noisy / bc)
         return loss
 
 

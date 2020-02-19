@@ -9,6 +9,7 @@ from models.ultralffdnet import UltraLightFastGenericFaceBaseNet, SeperableConv2
 from models.retinanet import SSH, Conv2D_BN_Relu
 from toolz import pipe
 from typing import List, Tuple
+import numpy as np
 
 
 def yolo_mbv1_k210(input_shape: list, anchor_num: int, class_num: int, alpha: float) -> [k.Model, k.Model]:
@@ -530,155 +531,6 @@ def pfld_k210(input_shape: list, landmark_num: int,
     return pflp_infer_model, train_model
 
 
-def mbv1_triplet_facerec_k210(input_shape: list, embedding_size: int,
-                              depth_multiplier: float = 1.0) -> [k.Model, k.Model]:
-    in_a = k.Input(input_shape, name='in_a')
-    in_p = k.Input(input_shape, name='in_p')
-    in_n = k.Input(input_shape, name='in_n')
-
-    """ build dummy model body """
-
-    base_model = MobileNet(input_tensor=in_a, input_shape=input_shape,
-                           include_top=False, alpha=depth_multiplier)  # type: keras.Model
-
-    if depth_multiplier == .25:
-        base_model.load_weights('data/mobilenet_v1_base_2.h5')
-    elif depth_multiplier == .5:
-        base_model.load_weights('data/mobilenet_v1_base_5.h5')
-    elif depth_multiplier == .75:
-        base_model.load_weights('data/mobilenet_v1_base_7.h5')
-    elif depth_multiplier == 1.:
-        base_model.load_weights('data/mobilenet_v1_base_10.h5')
-
-    w = base_model.output.shape.as_list()[1]
-
-    embedd = kl.Conv2D(128 // (w * w), 1, use_bias=False)(base_model.output)
-    out_a = compose(kl.Permute([3, 1, 2]),
-                    kl.Flatten())(embedd)
-
-    encoder_model = k.Model(in_a, embedd)
-    infer_model = k.Model(in_a, out_a)
-
-    out_p = infer_model(in_p)
-    out_n = infer_model(in_n)
-
-    """ build train model """
-    train_model = k.Model([in_a, in_p, in_n], kl.Concatenate()([out_a, out_p, out_n]))
-
-    return encoder_model, train_model
-
-
-def mbv1_softmax_facerec_k210(input_shape: list, class_num: int,
-                              embedding_size: int, depth_multiplier: float = 1.0) -> [k.Model, k.Model]:
-    """ mobilenet v1 face recognition model for softmax loss
-
-    Parameters
-    ----------
-    input_shape : list
-
-    class_num : int
-
-        all class num
-
-    embedding_size : int
-
-    depth_multiplier : float, optional
-
-        by default 1.0
-
-    Returns
-    -------
-
-    [k.Model, k.Model]
-
-       encoder,train_model 
-
-    """
-    inputs = k.Input(input_shape)
-    base_model = MobileNet(input_tensor=inputs, input_shape=input_shape,
-                           include_top=False, weights=None,
-                           alpha=depth_multiplier)  # type: keras.Model
-
-    if depth_multiplier == .25:
-        base_model.load_weights('data/mobilenet_v1_base_2.h5')
-    elif depth_multiplier == .5:
-        base_model.load_weights('data/mobilenet_v1_base_5.h5')
-    elif depth_multiplier == .75:
-        base_model.load_weights('data/mobilenet_v1_base_7.h5')
-    elif depth_multiplier == 1.:
-        base_model.load_weights('data/mobilenet_v1_base_10.h5')
-
-    w = base_model.output.shape.as_list()[1]
-
-    embedds = kl.Conv2D(128 // (w * w), 1, use_bias=False)(base_model.output)
-    outputs = compose(
-        kl.Permute([3, 1, 2]),
-        kl.Flatten(),
-        kl.Dense(class_num, use_bias=False))(embedds)
-
-    infer_model = k.Model(inputs, embedds)  # encoder to infer
-    train_model = k.Model(inputs, outputs)  # full model to train
-    return infer_model, train_model
-
-
-def mbv1_amsoftmax_facerec_k210(input_shape: list, class_num: int,
-                                embedding_size: int, depth_multiplier: float = 1.0) -> [k.Model, k.Model]:
-    """ mobilenet v1 face recognition model for Additve Margin Softmax loss
-
-    Parameters
-    ----------
-    input_shape : list
-
-    class_num : int
-
-        all class num
-
-    embedding_size : int
-
-    depth_multiplier : float, optional
-
-        by default 1.0
-
-    Returns
-    -------
-
-    [k.Model, k.Model]
-
-       encoder,train_model 
-
-    """
-    inputs = k.Input(input_shape)
-    base_model = MobileNet(input_tensor=inputs, input_shape=input_shape,
-                           include_top=False, weights=None,
-                           alpha=depth_multiplier)  # type: keras.Model
-
-    if depth_multiplier == .25:
-        base_model.load_weights('data/mobilenet_v1_base_2.h5')
-    elif depth_multiplier == .5:
-        base_model.load_weights('data/mobilenet_v1_base_5.h5')
-    elif depth_multiplier == .75:
-        base_model.load_weights('data/mobilenet_v1_base_7.h5')
-    elif depth_multiplier == 1.:
-        base_model.load_weights('data/mobilenet_v1_base_10.h5')
-
-    w = base_model.output.shape.as_list()[1]
-    embedds = kl.Conv2D(128 // (w * w), 1, use_bias=False)(base_model.output)
-
-    outputs = compose(
-        kl.Permute([3, 1, 2]),
-        kl.Flatten(),
-        # normalize Classification vector len = 1
-        kl.Lambda(lambda x: tf.math.l2_normalize(x, 1)),
-        kl.Dense(class_num, use_bias=False,
-                 # normalize Classification Matrix len = 1
-                 # f·W = (f·W)/(‖f‖×‖W‖) = (f·W)/(1×1) = cos(θ)
-                 kernel_constraint=k.constraints.unit_norm()))(embedds)
-
-    infer_model = k.Model(inputs, embedds)  # encoder to infer
-    train_model = k.Model(inputs, outputs)  # full model to train
-    return infer_model, train_model
-
-
 def mbv1_imgnet_k210(input_shape: list, class_num: int,
                      depth_multiplier: float = 1.0, weights=None):
 
@@ -962,3 +814,171 @@ def ullfd_k210_v3(input_shape: list, class_num: int, anchor: List[Tuple],
     train_model = infer_model
 
     return infer_model, train_model
+
+
+def _depthwise_conv_block(inputs, pointwise_conv_filters, alpha,
+                          depth_multiplier=1, strides=(1, 1), block_id=1):
+    """Adds a depthwise convolution block.
+
+    A depthwise convolution block consists of a depthwise conv,
+    batch normalization, relu6, pointwise convolution,
+    batch normalization and relu6 activation.
+
+    # Arguments
+        inputs: Input tensor of shape `(rows, cols, channels)`
+            (with `channels_last` data format) or
+            (channels, rows, cols) (with `channels_first` data format).
+        pointwise_conv_filters: Integer, the dimensionality of the output space
+            (i.e. the number of output filters in the pointwise convolution).
+        alpha: controls the width of the network.
+            - If `alpha` < 1.0, proportionally decreases the number
+                of filters in each layer.
+            - If `alpha` > 1.0, proportionally increases the number
+                of filters in each layer.
+            - If `alpha` = 1, default number of filters from the paper
+                 are used at each layer.
+        depth_multiplier: The number of depthwise convolution output channels
+            for each input channel.
+            The total number of depthwise convolution output
+            channels will be equal to `filters_in * depth_multiplier`.
+        strides: An integer or tuple/list of 2 integers,
+            specifying the strides of the convolution
+            along the width and height.
+            Can be a single integer to specify the same value for
+            all spatial dimensions.
+            Specifying any stride value != 1 is incompatible with specifying
+            any `dilation_rate` value != 1.
+        block_id: Integer, a unique identification designating
+            the block number.
+
+    # Input shape
+        4D tensor with shape:
+        `(batch, channels, rows, cols)` if data_format='channels_first'
+        or 4D tensor with shape:
+        `(batch, rows, cols, channels)` if data_format='channels_last'.
+
+    # Output shape
+        4D tensor with shape:
+        `(batch, filters, new_rows, new_cols)`
+        if data_format='channels_first'
+        or 4D tensor with shape:
+        `(batch, new_rows, new_cols, filters)`
+        if data_format='channels_last'.
+        `rows` and `cols` values might have changed due to stride.
+
+    # Returns
+        Output tensor of block.
+    """
+    channel_axis = 1 if k.backend.image_data_format() == 'channels_first' else -1
+    pointwise_conv_filters = int(pointwise_conv_filters * alpha)
+
+    if strides == (1, 1):
+        x = inputs
+    else:
+        x = kl.ZeroPadding2D(((0, 1), (0, 1)),
+                             name='conv_pad_%d' % block_id)(inputs)
+    x = kl.DepthwiseConv2D((3, 3),
+                           padding='same' if strides == (1, 1) else 'valid',
+                           depth_multiplier=depth_multiplier,
+                           strides=strides,
+                           use_bias=False,
+                           name='conv_dw_%d' % block_id)(x)
+    x = kl.BatchNormalization(
+        axis=channel_axis, name='conv_dw_%d_bn' % block_id)(x)
+    x = kl.ReLU(6., name='conv_dw_%d_relu' % block_id)(x)
+
+    x = kl.Conv2D(pointwise_conv_filters, (1, 1),
+                  padding='same',
+                  use_bias=False,
+                  strides=(1, 1),
+                  name='conv_pw_%d' % block_id)(x)
+    x = kl.BatchNormalization(axis=channel_axis,
+                              name='conv_pw_%d_bn' % block_id)(x)
+    return kl.ReLU(6., name='conv_pw_%d_relu' % block_id)(x)
+
+
+def mbv1_facerec_k210(input_shape: list, class_num: int,
+                      embedding_size: int, depth_multiplier: float = 1.0,
+                      loss='amsoftmax') -> [k.Model, k.Model]:
+    """ mobilenet v1 face recognition model for Additve Margin Softmax loss
+
+    Parameters
+    ----------
+    input_shape : list
+
+    class_num : int
+
+        all class num
+
+    embedding_size : int
+
+    depth_multiplier : float, optional
+
+        by default 1.0
+
+    loss : str
+
+        loss in ['softmax','amsoftmax','triplet']
+
+    Returns
+    -------
+
+    [k.Model, k.Model]
+
+       encoder,train_model
+
+    """
+    loss_list = ['softmax', 'asoftmax', 'amsoftmax', 'triplet']
+    if loss not in loss_list:
+        raise ValueError(f"loss not valid! must in {' '.join(loss_list)}")
+
+    inputs = k.Input(input_shape)
+    base_model = MobileNet(input_tensor=inputs, input_shape=input_shape,
+                           include_top=False, weights='imagenet', alpha=depth_multiplier)  # type: k.Model
+
+    finally_shape = base_model.outputs[0].shape.as_list()[1:3]
+    assert embedding_size % np.prod(finally_shape) == 0, f'embedding_size must be a multiple of {finally_shape[0]}*{finally_shape[1]}'
+    finally_filters = embedding_size // np.prod(finally_shape)
+
+    x = _depthwise_conv_block(base_model.outputs[0], 512, depth_multiplier, block_id=14)
+    x = _depthwise_conv_block(x, 256, depth_multiplier, block_id=15)
+    x = _depthwise_conv_block(x, 128, depth_multiplier, block_id=16)
+    embedds = compose(
+        kl.DepthwiseConv2D((3, 3), padding='same',
+                           depth_multiplier=1, strides=(1, 1), use_bias=False),
+        kl.BatchNormalization(),
+        kl.ReLU(6.),
+        kl.Conv2D(finally_filters, (3, 3), padding='same',
+                  use_bias=False, strides=(1, 1)),
+        kl.Flatten())(x)
+
+    if 'softmax' in loss:
+        if loss in ['amsoftmax', 'asoftmax']:
+            # normalize Classification vector len = 1
+            embedds = kl.Lambda(lambda x: tf.math.l2_normalize(x, 1))(embedds)
+            outputs = kl.Dense(class_num, use_bias=False,
+                               # normalize Classification Matrix len = 1
+                               # f·W = (f·W)/(‖f‖×‖W‖) = (f·W)/(1×1) = cos(θ)
+                               kernel_constraint=k.constraints.unit_norm())(embedds)
+        elif loss in ['softmax']:
+            outputs = kl.Dense(class_num, use_bias=False)(embedds)
+        infer_model = k.Model(inputs, embedds)  # encoder to infer
+        train_model = k.Model(inputs, outputs)    # full model to train
+        
+    elif 'triplet' in loss:
+        infer_model = k.Model(inputs, embedds)  # encoder to infer
+        in_a = k.Input(input_shape)
+        in_p = k.Input(input_shape)
+        in_n = k.Input(input_shape)
+        embedd_a = infer_model(in_a)
+        embedd_p = infer_model(in_p)
+        embedd_n = infer_model(in_n)
+        embedd_merge = kl.Concatenate()([embedd_a, embedd_p, embedd_n])
+        # full model to train
+        train_model = k.Model([in_a, in_p, in_n], embedd_merge)
+
+    input_a = k.Input(input_shape)
+    input_b = k.Input(input_shape)
+    val_model = k.Model([input_a, input_b], [infer_model(input_a), infer_model(input_b)])
+
+    return infer_model, val_model, train_model
