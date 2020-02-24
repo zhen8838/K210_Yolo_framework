@@ -499,3 +499,27 @@ def mbv2_imgnet(input_shape: list, class_num: int, depth_multiplier: float = 1.0
                         alpha=depth_multiplier, classes=class_num)  # type: keras.Model
 
     return model, model
+
+
+def dcasetask5basemodel(input_shape, nclasses, softmax=False) -> k.Model:
+    model = k.Sequential([
+        kl.Conv2D(64, (7, 1), padding='same', input_shape=input_shape),
+        kl.BatchNormalization(),
+        kl.LeakyReLU(),
+        kl.MaxPool2D((4, 1)),
+        kl.Dropout(0.2),
+
+        kl.Conv2D(128, (10, 1)),
+        kl.BatchNormalization(),
+        kl.LeakyReLU(),
+
+        kl.Conv2D(256, (1, 7), padding='same'),
+        kl.BatchNormalization(),
+        kl.LeakyReLU(),
+
+        kl.GlobalMaxPool2D(),
+        kl.Dropout(0.5),
+        kl.Dense(128),
+        kl.Dense(nclasses, k.activations.softmax if softmax else None)
+    ])
+    return model, model, model

@@ -919,8 +919,8 @@ class YOLOHelper(BaseHelper):
             xyxybox = ann[:, 1:]
             for i, a in enumerate(xyxybox):
                 classes = int(p[i])
-                r_top = tuple(a[0:2].astype(int))
-                l_bottom = tuple(a[2:].astype(int))
+                r_top = tuple(np.maximum(np.minimum(a[0:2], img.shape[1::-1]), 0).astype(int))
+                l_bottom = tuple(np.maximum(np.minimum(a[2:], img.shape[1::-1]), 0).astype(int))
                 r_bottom = (r_top[0], l_bottom[1])
                 org = (np.maximum(np.minimum(r_bottom[0], img.shape[1] - 12), 0),
                        np.maximum(np.minimum(r_bottom[1], img.shape[0] - 12), 0))

@@ -223,6 +223,10 @@ class SignalStopping(Callback):
         if self.signal_received:
             self.model.stop_training = True
 
+    def on_epoch_end(self, epoch, logs=None):
+        if self.signal_received:
+            self.model.stop_training = True
+
 
 class StepLR(Callback):
     def __init__(self, rates: list, steps: list):

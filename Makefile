@@ -10,6 +10,9 @@ all:
 jit_train:
 	export TF_XLA_FLAGS="--tf_xla_auto_jit=2 --tf_xla_cpu_global_jit" && python3 ./keras_train.py --config ${CFG}
 
+jit_eager_train:
+	export TF_XLA_FLAGS="--tf_xla_auto_jit=2 --tf_xla_cpu_global_jit" && python3 ./eager_train.py --config ${CFG}
+
 train:
 	python3 ./keras_train.py --config ${CFG}
 

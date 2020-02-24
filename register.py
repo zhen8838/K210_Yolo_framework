@@ -1,6 +1,6 @@
 from models.networks import mbv1_facerec, mbv2_ctdet, yolo, tiny_yolo, pfld,\
     shuffle_ctdet, yolo3_nano, yolo_mbv1, mbv1_imgnet, mbv2_imgnet,\
-    retinafacenet, retinaface_slim, retinaface_rfb, ullfd_slim
+    retinafacenet, retinaface_slim, retinaface_rfb, ullfd_slim, dcasetask5basemodel
 from models.receptivefieldnet import rffacedetnet
 from models.audionet import dualmbv2net
 from models.networks4k210 import yolo_mbv1_k210, yolo_mbv2_k210, yolo2_mbv1_k210,\
@@ -21,6 +21,8 @@ from tools.tinyimgnet import TinyImgnetHelper
 from tools.imgnet import ImgnetHelper, ClassifyLoss
 from tools.facerec import FcaeRecHelper, TripletLoss, Sparse_SoftmaxLoss, Sparse_AmsoftmaxLoss, Sparse_AsoftmaxLoss, FacerecValidation, facerec_eval
 from tools.dcasetask2 import DCASETask2Helper, SemiBCELoss, LwlrapValidation
+from tools.dcasetask5 import DCASETask5Helper, Task5SupervisedLoop
+from tools.training_engine import BaseTrainingLoop
 from yaml import safe_dump
 
 
@@ -46,6 +48,15 @@ class dict2obj(object):
                         setattr(self, name, dict2obj(value))
                     else:
                         setattr(self, name, value)
+
+    def keys(self):
+        return self.__dict__.keys()
+
+    def items(self):
+        return self.__dict__.items()
+
+    def values(self):
+        return self.__dict__.values()
 
 
 ArgDict = {
@@ -168,6 +179,7 @@ helper_register = {
     'ImgnetHelper': ImgnetHelper,
     'RetinaFaceHelper': RetinaFaceHelper,
     'DCASETask2Helper': DCASETask2Helper,
+    'DCASETask5Helper': DCASETask5Helper,
     'SSDHelper': SSDHelper,
 }
 
@@ -204,7 +216,8 @@ network_register = {
     'ullfd_k210_v1': ullfd_k210_v1,
     'ullfd_k210_v2': ullfd_k210_v2,
     'ullfd_k210_v3': ullfd_k210_v3,
-    'dualmbv2net': dualmbv2net
+    'dualmbv2net': dualmbv2net,
+    'dcasetask5basemodel': dcasetask5basemodel
 }
 
 loss_register = {
@@ -257,6 +270,11 @@ infer_register = {
 eval_register = {
     'yolo_eval': yolo_eval,
     'facerec_eval': facerec_eval
+}
+
+trainloop_register = {
+    'BaseTrainingLoop': BaseTrainingLoop,
+    'Task5SupervisedLoop': Task5SupervisedLoop
 }
 
 if __name__ == "__main__":

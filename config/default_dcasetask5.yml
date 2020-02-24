@@ -1,23 +1,21 @@
 mode: train
 model:
-  name: semiaudio
-  helper: DCASETask2Helper
+  name: supervisedaudio
+  helper: DCASETask5Helper
   helper_kwarg:
-    image_ann: data/dcasetask5_img_ann.npy
+    image_ann: data/dcasetask5_ann_list.npy
     in_hw:
-      - 128
-      - 512
-    fold: 0
-  network: dualmbv2net
+      - 40
+      - 501
+    nclasses: 9
+  network: dcasetask5basemodel
   network_kwarg:
     input_shape:
-      - 128
-      - 512
+      - 40
+      - 501
       - 1
-    class_num: 80
-    depth_multiplier: 1.0
-  loss: SemiBCELoss
-  loss_kwarg: null
+    nclasses: 9
+    softmax: false
 train:
   graph_optimizer: true
   graph_optimizer_kwarg: 
@@ -31,57 +29,39 @@ train:
     layout_optimizer: true
   augmenter: true
   batch_size: 32
-  pre_ckpt: null
+  pre_ckpt: log/default_dcasetask5_exp/auto_train_19.h5
   rand_seed: 10101
-  epochs: 150
+  epochs: 50
+  steps_per_run: 30
   log_dir: log
   sub_log_dir: default_dcasetask5_exp
-  debug: false
-  verbose: 1
-  vali_step_factor: 0.3
+  trainloop: Task5SupervisedLoop
   optimizer: Adam
   optimizer_kwarg:
     learning_rate: 0.001
     beta_1: 0.9
     beta_2: 0.999
     amsgrad: false
-  Lookahead: false
-  Lookahead_kwarg:
-    k: 5
-    alpha: 0.5
   callbacks:
     - name: EarlyStopping
       kwarg:
-        monitor: val_lwlrap
+        monitor: val/acc
         min_delta: 0
-        patience: 30
+        patience: 5
         verbose: 0
         mode: max
         baseline: null
         restore_best_weights: false
     - name: ModelCheckpoint
       kwarg:
-        monitor: val_lwlrap
+        monitor: val/acc
         verbose: 0
         save_best_only: true
         save_weights_only: false
         mode: max
         save_freq: epoch
         load_weights_on_restart: false
-    - name: LwlrapValidation
-      kwarg: null
     - name: StepLR
       kwarg:
-        steps: [ 50  ,  80    ,  120   ]
-        rates: [0.0001, 0.0004,  0.0001]
-
-prune:
-  is_prune: false
-  init_sparsity: 0.5
-  final_sparsity: 0.9
-  end_epoch: 5
-  frequency: 100
-inference:
-  infer_fn: null
-evaluate:
-  eval_fn: null
+        steps: [ 10  ,  20    ,  30   ]
+        rates: [0.0001, 0.0004,  0.0005]
