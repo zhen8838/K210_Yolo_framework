@@ -35,6 +35,9 @@ model:
     bbox_weight: 2
     noobj_weight: 1
     cls_weight: 1
+    use_focalloss: true
+    focal_gamma: 2.0
+    focal_alpha: 0.25
     iou_method: ciou
 train:
   graph_optimizer: true

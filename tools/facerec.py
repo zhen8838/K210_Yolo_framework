@@ -139,9 +139,8 @@ class FcaeRecHelper(BaseHelper):
                 # Note y_true shape will be [batch,3]
                 return (imgs[0], imgs[1], imgs[2]), (labels[:3])
             ds = (tf.data.Dataset.from_tensor_slices(image_ann_list)
-                  .interleave(lambda x: tf.data.TFRecordDataset(x)
-                              .shuffle(100)
-                              .repeat(), block_length=2, num_parallel_calls=-1)
+                  .interleave(lambda x: tf.data.TFRecordDataset(x).shuffle(100).repeat(),
+                              block_length=2, num_parallel_calls=-1)
                   .map(parser, -1)
                   .batch(4, True)
                   .map(pair_parser, -1)
@@ -424,7 +423,7 @@ class FacerecValidation(k.callbacks.Callback):
                 tpr = tf.math.divide_no_nan(tp, tp + fn)
                 fpr = tf.math.divide_no_nan(fp, fp + tn)
                 return (tp + tn) / tf.cast(tf.shape(dist)[0], tf.float32)
-            
+
             k.backend.set_value(self.acc_var, tf.reduce_mean(tf.map_fn(fn, tf.range(self.val_step), tf.float32)))
 
 

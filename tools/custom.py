@@ -223,6 +223,10 @@ class SignalStopping(Callback):
         if self.signal_received:
             self.model.stop_training = True
 
+    def on_epoch_end(self, epoch, logs=None):
+        if self.signal_received:
+            self.model.stop_training = True
+
 
 class StepLR(Callback):
     def __init__(self, rates: list, steps: list):
@@ -301,3 +305,13 @@ class CosineLR(Callback):
     def on_epoch_end(self, epoch, logs=None):
         logs = logs or {}
         logs['lr'] = K.get_value(self.model.optimizer.lr)
+
+
+def focal_sigmoid_cross_entropy_with_logits(labels: tf.Tensor, logits: tf.Tensor,
+                                            gamma: float = 2.0,
+                                            alpha: float = 0.25):
+    pred_sigmoid = tf.nn.sigmoid(logits)
+    pt = (1 - pred_sigmoid) * labels + pred_sigmoid * (1 - labels)
+    focal_weight = (alpha * labels + (1 - alpha) * (1 - labels)) * tf.math.pow(pt, gamma)
+    loss = tf.nn.sigmoid_cross_entropy_with_logits(labels, logits) * focal_weight
+    return loss

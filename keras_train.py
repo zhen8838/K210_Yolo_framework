@@ -131,7 +131,7 @@ def main(config_file, new_cfg, mode, model, train, prune):
     if train.pre_ckpt != None and train.pre_ckpt != 'None' and train.pre_ckpt != '':
         if 'h5' in train.pre_ckpt:
             initial_epoch = int(Path(train.pre_ckpt).stem.split('_')[-1]) + 1
-            train_model.load_weights(str(train.pre_ckpt))
+            train_model.load_weights(str(train.pre_ckpt), by_name=True, skip_mismatch=True)
             print(INFO, f' Load CKPT {str(train.pre_ckpt)}')
         else:
             print(ERROR, ' Pre CKPT path is unvalid')
