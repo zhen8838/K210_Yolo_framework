@@ -24,7 +24,7 @@ model:
     loss: triplet
   loss: TripletLoss
   loss_kwarg:
-    target_distance: 3.9
+    target_distance: 2.5
     distance_fn: l2
 train:
   graph_optimizer: true
@@ -39,7 +39,7 @@ train:
     layout_optimizer: true
   augmenter: true
   batch_size: *BATCH_SIZE_REF
-  pre_ckpt: log/default_facerec_amsoftmax_k210_exp/auto_train_1.h5
+  pre_ckpt: null
   rand_seed: 10101
   epochs: 100
   log_dir: log
