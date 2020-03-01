@@ -80,7 +80,7 @@ train:
       kwarg:
         batch_size: *BATCH_SIZE_REF
         distance_fn: l2
-        threshold: 0.1
+        threshold: 1.5
     - name: StepLR
       kwarg:
         steps: [ 50  ,  80    ,  120   ]

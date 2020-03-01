@@ -1,13 +1,25 @@
+UPDATE_AUGMENTER_STATE: &UPDATE_AUGMENTER_STATE true
+
 mode: train
 model:
-  name: supervisedaudio
-  helper: DCASETask5Helper
+  name: fixmatchaudio
+  helper: DCASETask5FixMatchSSLHelper
   helper_kwarg:
     data_ann: data/dcasetask5_ann_list.npy
     in_hw:
       - 40
       - 501
     nclasses: 9
+    unlabel_dataset_ratio: 3 # Unlabeled batch size ratio.
+    augment_kwargs:
+      name: ctaugment
+      kwarg: 
+        num_layers: 2
+        confidence_threshold: 0.85
+        decay: 0.99
+        epsilon: 0.001
+        prob_to_apply: null
+        num_levels: 10
   network: dcasetask5basemodel
   network_kwarg:
     input_shape:
@@ -28,15 +40,20 @@ train:
     scoped_allocator_optimization: true
     layout_optimizer: true
   augmenter: true
-  batch_size: 48
-  pre_ckpt: log/default_dcasetask5_exp/auto_train_19.h5
+  batch_size: 16
+  pre_ckpt: null
   rand_seed: 10101
   epochs: 50
   steps_per_run: 30
   log_dir: log
-  sub_log_dir: default_dcasetask5_exp
-  trainloop: Task5SupervisedLoop
-  trainloop_kwarg: null
+  sub_log_dir: default_dcasetask5_fixmatch_ctaug_exp
+  trainloop: Task5FixMatchSslLoop
+  trainloop_kwarg:
+    update_augmenter_state: *UPDATE_AUGMENTER_STATE
+    hparams: 
+      fixmatch: 
+        wu: 1.0 # Pseudo label loss weight
+        confidence: 0.7 # Confidence threshold.
   optimizer: Adam
   optimizer_kwarg:
     learning_rate: 0.001
@@ -62,6 +79,13 @@ train:
         mode: max
         save_freq: epoch
         load_weights_on_restart: false
+    # - name: StepLR
+    #   kwarg:
+    #     steps: [ 10  ,  20    ,  30   ]
+    #     rates: [0.0001, 0.0004,  0.0005]
+    - name: AugmenterStateSync
+      kwarg: 
+        update_augmenter_state: *UPDATE_AUGMENTER_STATE
     - name: ScheduleLR    
       kwarg:
        base_lr: 0.001
@@ -69,4 +93,5 @@ train:
        warmup_epochs: 10
        decay_rate: 0.5
        decay_epochs: 10
+        
     

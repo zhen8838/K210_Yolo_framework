@@ -9,7 +9,7 @@ from models.networks4k210 import yolo_mbv1_k210, yolo_mbv2_k210, yolo2_mbv1_k210
     retinafacenet_k210_v1, retinafacenet_k210_v2, retinafacenet_k210_v3,\
     ullfd_k210, ullfd_k210_v1, ullfd_k210_v2, ullfd_k210_v3, mbv1_facerec_k210
 import tensorflow as tf
-from tools.custom import StepLR, CosineLR
+from tools.custom import StepLR, CosineLR, ScheduleLR
 from tools.yolo import YOLOHelper, YOLOLoss, yolo_infer, yolo_eval, MultiScaleTrain, YOLOIouLoss, YOLOMap
 from tools.yoloalign import YOLOAlignHelper, YOLOAlignLoss, yoloalgin_infer
 from tools.pfld import PFLDHelper, PFLDLoss, pfld_infer
@@ -21,14 +21,15 @@ from tools.tinyimgnet import TinyImgnetHelper
 from tools.imgnet import ImgnetHelper, ClassifyLoss
 from tools.facerec import FcaeRecHelper, TripletLoss, Sparse_SoftmaxLoss, Sparse_AmsoftmaxLoss, Sparse_AsoftmaxLoss, FacerecValidation, facerec_eval
 from tools.dcasetask2 import DCASETask2Helper, SemiBCELoss, LwlrapValidation
-from tools.dcasetask5 import DCASETask5Helper, Task5SupervisedLoop
+from tools.dcasetask5 import DCASETask5Helper, Task5SupervisedLoop, DCASETask5FixMatchSSLHelper, Task5FixMatchSslLoop, AugmenterStateSync
 from tools.training_engine import BaseTrainingLoop
 from yaml import safe_dump
 
 
 class dict2obj(object):
-    def __init__(self, dicts):
-        """ convert dict to object , NOTE the `**kwargs` will not be convert 
+
+  def __init__(self, dicts):
+    """ convert dict to object , NOTE the `**kwargs` will not be convert 
 
         Parameters
         ----------
@@ -37,26 +38,27 @@ class dict2obj(object):
         dicts : dict
             dict
         """
-        for name, value in dicts.items():
-            if isinstance(value, (list, tuple)):
-                setattr(self, name, [dict2obj(x) if isinstance(x, dict) else x for x in value])
-            else:
-                if 'kwarg' in name:
-                    setattr(self, name, value if value else dict())
-                else:
-                    if isinstance(value, dict):
-                        setattr(self, name, dict2obj(value))
-                    else:
-                        setattr(self, name, value)
+    for name, value in dicts.items():
+      if isinstance(value, (list, tuple)):
+        setattr(self, name,
+                [dict2obj(x) if isinstance(x, dict) else x for x in value])
+      else:
+        if 'kwarg' in name:
+          setattr(self, name, value if value else dict())
+        else:
+          if isinstance(value, dict):
+            setattr(self, name, dict2obj(value))
+          else:
+            setattr(self, name, value)
 
-    def keys(self):
-        return self.__dict__.keys()
+  def keys(self):
+    return self.__dict__.keys()
 
-    def items(self):
-        return self.__dict__.items()
+  def items(self):
+    return self.__dict__.items()
 
-    def values(self):
-        return self.__dict__.values()
+  def values(self):
+    return self.__dict__.values()
 
 
 ArgDict = {
@@ -65,7 +67,6 @@ ArgDict = {
     # MODEL
     'model': {
         'name': 'yolo',
-
         'helper': 'YOLOHelper',
         'helper_kwarg': {
             'image_ann': 'data/voc_img_ann.npy',
@@ -75,7 +76,6 @@ ArgDict = {
             'out_hw': [[7, 10], [14, 20]],
             'validation_split': 0.3,  # vaildation_split
         },
-
         'network': 'yolo_mbv2_k210',
         'network_kwarg': {
             'input_shape': [224, 320, 3],
@@ -83,8 +83,6 @@ ArgDict = {
             'class_num': 20,
             'alpha': 0.75  # depth_multiplier
         },
-
-
         'loss': 'YOLOLoss',
         'loss_kwarg': {
             'obj_thresh': 0.7,
@@ -94,7 +92,6 @@ ArgDict = {
             'wh_weight': 1,
         }
     },
-
     'train': {
         'jit': True,
         'augmenter': False,
@@ -141,7 +138,6 @@ ArgDict = {
             'load_weights_on_restart': False,
         },
     },
-
     'prune': {
         'is_prune': False,
         'init_sparsity': 0.5,  # prune initial sparsity range = [0 ~ 1]
@@ -149,7 +145,6 @@ ArgDict = {
         'end_epoch': 5,  # prune epochs NOTE: must < train epochs
         'frequency': 100,  # how many steps for prune once
     },
-
     'inference': {
         'infer_fn': 'yolo_infer',
         'infer_fn_kwarg': {
@@ -167,7 +162,6 @@ ArgDict = {
     }
 }
 
-
 helper_register = {
     'YOLOHelper': YOLOHelper,
     'YOLOAlignHelper': YOLOAlignHelper,
@@ -181,8 +175,8 @@ helper_register = {
     'DCASETask2Helper': DCASETask2Helper,
     'DCASETask5Helper': DCASETask5Helper,
     'SSDHelper': SSDHelper,
+    'DCASETask5FixMatchSSLHelper': DCASETask5FixMatchSSLHelper
 }
-
 
 network_register = {
     'mbv1_facerec': mbv1_facerec,
@@ -245,8 +239,10 @@ callback_register = {
     'YOLOMap': YOLOMap,
     'StepLR': StepLR,
     'CosineLR': CosineLR,
+    'ScheduleLR': ScheduleLR,
     'FacerecValidation': FacerecValidation,
-    'LwlrapValidation': LwlrapValidation
+    'LwlrapValidation': LwlrapValidation,
+    'AugmenterStateSync': AugmenterStateSync
 }
 
 optimizer_register = {
@@ -267,16 +263,14 @@ infer_register = {
     'ssd_infer': ssd_infer
 }
 
-eval_register = {
-    'yolo_eval': yolo_eval,
-    'facerec_eval': facerec_eval
-}
+eval_register = {'yolo_eval': yolo_eval, 'facerec_eval': facerec_eval}
 
 trainloop_register = {
     'BaseTrainingLoop': BaseTrainingLoop,
-    'Task5SupervisedLoop': Task5SupervisedLoop
+    'Task5SupervisedLoop': Task5SupervisedLoop,
+    'Task5FixMatchSslLoop': Task5FixMatchSslLoop,
 }
 
 if __name__ == "__main__":
-    with open('config/default.yml', 'w') as f:
-        safe_dump(ArgDict, f, sort_keys=False)
+  with open('config/default.yml', 'w') as f:
+    safe_dump(ArgDict, f, sort_keys=False)
