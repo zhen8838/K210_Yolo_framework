@@ -39,16 +39,118 @@ class EasyDict(object):
     return self.__dict__.values()
 
 
+class EmaHelper(object):
+  """ Helper class for exponential moving average. """
+
+  @staticmethod
+  def initial_ema_vars(ema_variables: dict, initial_values: dict):
+    """ Assign EMA variables from initial values.
+    
+    Args:
+        ema_variables (dict): ema model variables
+        initial_values (dict): training model variables
+    """
+
+    def _assign_one_var_fn(ema_var, value):
+      ema_var.assign(value)
+
+    def _assign_all_in_cross_replica_context_fn(strategy, ema_vars, values):
+      for ema_var, value in zip(ema_vars, values):
+        value = strategy.extended.reduce_to(tf.distribute.ReduceOp.MEAN, value,
+                                            ema_var)
+        if ema_var.trainable:
+          strategy.extended.update(ema_var, _assign_one_var_fn, args=(value,))
+        else:
+          _assign_one_var_fn(ema_var, value)
+
+    replica_context = tf.distribute.get_replica_context()
+    if replica_context:
+      replica_context.merge_call(
+          _assign_all_in_cross_replica_context_fn,
+          args=(ema_variables, initial_values))
+    else:
+      if tf.distribute.in_cross_replica_context():
+        _assign_all_in_cross_replica_context_fn(tf.distribute.get_strategy(),
+                                                ema_variables, initial_values)
+      else:
+        for ema_var, value in zip(ema_variables, initial_values):
+          _assign_one_var_fn(ema_var, value)
+
+  @staticmethod
+  def update_ema_vars(ema_variables: dict, new_values: dict, ema_decay: float):
+    """ Updates EMA variables. 
+      
+      Update rule is following:
+        ema_var := ema_var * ema_decay + var * (1 - ema_decay)
+      which is equivalent to:
+        ema_var -= (1 - ema_decay) * (ema_var - var)
+        
+    Args:
+        ema_variables (dict): ema model variables
+        new_values (dict):  training model variables
+        ema_decay (float): ema decay rate
+    """
+
+    one_minus_decay = 1.0 - ema_decay
+
+    def _update_one_var_fn(ema_var, value):
+      ema_var.assign_sub((ema_var-value) * one_minus_decay)
+
+    def _update_all_in_cross_replica_context_fn(strategy, ema_vars, values):
+      for ema_var, value in zip(ema_vars, values):
+        value = strategy.extended.reduce_to(tf.distribute.ReduceOp.MEAN, value,
+                                            ema_var)
+        if ema_var.trainable:
+          strategy.extended.update(ema_var, _update_one_var_fn, args=(value,))
+        else:
+          _update_one_var_fn(ema_var, value)
+
+    replica_context = tf.distribute.get_replica_context()
+    if replica_context:
+      replica_context.merge_call(
+          _update_all_in_cross_replica_context_fn,
+          args=(ema_variables, new_values))
+    else:
+      if tf.distribute.in_cross_replica_context():
+        _update_all_in_cross_replica_context_fn(tf.distribute.get_strategy(),
+                                                ema_variables, new_values)
+      else:
+        for ema_var, value in zip(ema_variables, new_values):
+          _update_one_var_fn(ema_var, value)
+
+
 class BaseTrainingLoop():
 
-  def __init__(self, train_model: k.Model, val_model: k.Model, **kwargs):
+  def __init__(self, train_model: k.Model, val_model: k.Model, **kwargs: dict):
+    """ Training Loop initial
+      
+      if use kwargs, must contain `hparams`, NOTE hparams contain all extra features.
+      
+      1.  exponential moving average:
+          
+          ema training model variable to validation model.
+          NOTE if enable ema, must upate ema in `each train step function`
+          Args:
+            ema : {
+              enable (bool): true or false
+              decay (float): ema decay rate, recommend 0.999
+            }
+    Args:
+        train_model (k.Model): training model
+        val_model (k.Model): validation model
+    """
     self.train_model = train_model
     self.val_model = val_model
     self.optimizer: k.optimizers.Optimizer = train_model.optimizer
     assert self.optimizer is not None, 'train_model must have optimizer!'
     self.metrics = EasyDict(self.set_metrics_dict())
     if kwargs:
+      assert 'hparams' in kwargs.keys(), 'if use kwargs, must contain hparams !'
+      # NOTE hparams contain all extra features
       self.hparams = EasyDict(kwargs['hparams'])
+      if self.hparams.ema.enable:
+        EmaHelper.initial_ema_vars(self.val_model.variables,
+                                   self.train_model.variables)
 
   @abc.abstractmethod
   def train_step(self, iterator, num_steps_to_run, metrics: EasyDict):
@@ -132,7 +234,7 @@ class BaseTrainingLoop():
       probar.update(
           seen + 1,
           probar._make_logs_value(self.metrics.train) +
-          probar._make_logs_value(self.metrics.val, 'val_'))
+          probar._make_logs_value(self.metrics.val, 'val/'))
       """ Epoch Callbacks """
       val_logs.update(train_logs)
       self.callback_list.on_epoch_end(cur_ep, val_logs)

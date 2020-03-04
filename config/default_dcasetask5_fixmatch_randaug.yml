@@ -23,6 +23,9 @@ model:
       - 1
     nclasses: 9
     softmax: false
+    weight_decay: 0.0003
+    bn_decay: 0.9
+    bn_epsilon: 0.00001
 train:
   graph_optimizer: true
   graph_optimizer_kwarg: 
@@ -42,13 +45,26 @@ train:
   steps_per_run: 30
   log_dir: log
   sub_log_dir: default_dcasetask5_fixmatch_randaug_exp
+  mixed_precision:
+    enable: false 
+    dtype: float32
   trainloop: Task5FixMatchSslLoop
   trainloop_kwarg:
-    update_augmenter_state: false
     hparams: 
+      update_augmenter_state: false
       fixmatch: 
         wu: 1.0 # Pseudo label loss weight
         confidence: 0.7 # Confidence threshold.
+      ema:
+        enable: true
+        decay: 0.999
+  variablecheckpoint_kwarg: 
+    variable_dict:
+      model: train_model
+      model_ema: val_model
+      optimizer: optimizer
+    monitor: val/acc
+    mode: max
   optimizer: Adam
   optimizer_kwarg:
     learning_rate: 0.001
@@ -65,19 +81,6 @@ train:
         mode: max
         baseline: null
         restore_best_weights: false
-    - name: ModelCheckpoint
-      kwarg:
-        monitor: val/acc
-        verbose: 0
-        save_best_only: true
-        save_weights_only: false
-        mode: max
-        save_freq: epoch
-        load_weights_on_restart: false
-    # - name: StepLR
-    #   kwarg:
-    #     steps: [ 10  ,  20    ,  30   ]
-    #     rates: [0.0001, 0.0004,  0.0005]
     - name: ScheduleLR    
       kwarg:
        base_lr: 0.001

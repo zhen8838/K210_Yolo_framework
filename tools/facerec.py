@@ -168,8 +168,7 @@ class FcaeRecHelper(BaseHelper):
           fname, label)).shuffle(100).repeat()
 
       ds = tf.data.Dataset.from_tensor_slices((fnames, labels)).interleave(
-          ds_trans, cycle_length=nclass,
-          block_length=2).batch(2, True).shuffle(batch_size * 400).batch(
+          ds_trans, cycle_length=nclass, block_length=2).batch(2, True).shuffle(batch_size * 400).batch(
               2, True).map(parser, -1).batch(batch_size, True).prefetch(-1)
 
     return ds

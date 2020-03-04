@@ -7,10 +7,11 @@ keras = tf.keras
 Callback = tf.keras.callbacks.Callback
 K = tf.keras.backend
 import signal
-from tools.base import NOTE, colored, ERROR
+from tools.base import NOTE, colored, ERROR, INFO
 from toolz import reduce
 import numpy as np
 from tensorflow.python.ops.resource_variable_ops import ResourceVariable
+import os
 
 
 class DummyMetric(MeanMetricWrapper):
@@ -50,79 +51,6 @@ class DummyOnceMetric(Metric):
 
   def reset_states(self):
     self.var.assign(0.)
-
-
-# NOTE from https://github.com/bojone/keras_lookahead
-
-
-class Lookahead(object):
-  """Add the [Lookahead Optimizer](https://arxiv.org/abs/1907.08610)
-     functionality for [keras](https://keras.io/).
-    """
-
-  def __init__(self, k=5, alpha=0.5):
-    self.k = k
-    self.alpha = alpha
-    self.count = 0
-
-  def inject(self, model: keras.Model):
-    has_recompiled = model._recompile_weights_loss_and_weighted_metrics()
-    model._check_trainable_weights_consistency()
-    if isinstance(model.optimizer, list):
-      raise ValueError('The `optimizer` in `compile` should be a single '
-                       'optimizer.')
-    # If we have re-compiled the loss/weighted metric sub-graphs then create
-    # train function even if one exists already. This is because
-    # `_feed_sample_weights` list has been updated on re-copmpile.
-    if getattr(model, 'train_function', None) is None or has_recompiled:
-      current_trainable_state = model._get_trainable_state()
-      model._set_trainable_state(model._compiled_trainable_state)
-
-      inputs = (
-          model._feed_inputs + model._feed_targets + model._feed_sample_weights)
-      if not isinstance(K.symbolic_learning_phase(), int):
-        inputs += [K.symbolic_learning_phase()]
-
-      with K.get_graph().as_default():
-        with K.name_scope('training'):
-          # Training updates
-          fast_params = model._collected_trainable_weights
-          training_updates = model.optimizer.get_updates(
-              params=fast_params, loss=model.total_loss)
-          slow_params = [K.variable(p) for p in fast_params]
-
-          fast_updates = (
-              training_updates + model.get_updates_for(None) +
-              model.get_updates_for(model.inputs))
-        metrics = model._get_training_eval_metrics()
-        metrics_tensors = [
-            m._call_result for m in metrics if hasattr(m, '_call_result')  # pylint: disable=protected-access
-        ]
-
-      with K.name_scope('training'):
-        slow_updates, copy_updates = [], []
-        for p, q in zip(fast_params, slow_params):
-          slow_updates.append(K.update(q, q + self.alpha * (p-q)))
-          copy_updates.append(K.update(p, q))
-
-        # Gets loss and metrics. Updates weights at each call.
-        fast_train_function = K.function(
-            inputs, [model.total_loss] + metrics_tensors,
-            updates=fast_updates,
-            name='fast_train_function',
-            **model._function_kwargs)
-
-        def F(inputs):
-          self.count += 1
-          R = fast_train_function(inputs)
-          if self.count % self.k == 0:
-            K.batch_get_value(slow_updates)
-            K.batch_get_value(copy_updates)
-          return R
-
-        setattr(model, 'train_function', F)
-      # Restore the current trainable state
-      model._set_trainable_state(current_trainable_state)
 
 
 class PFLDMetric(Metric):
@@ -381,6 +309,75 @@ class ScheduleLR(Callback):
     else:
       lr = self.lr_schedule_no_warmup(epoch)
     K.set_value(self.model.optimizer.lr, lr)
+
+
+class VariableCheckpoint(Callback):
+
+  def __init__(self,
+               log_dir: str,
+               variable_dict: dict,
+               monitor='val_loss',
+               mode='auto'):
+    super().__init__()
+    self.log_dir = str(log_dir)
+    self.auto_save_dirs = os.path.join(self.log_dir, 'auto_save/checkpoint')
+    self.final_save_dirs = os.path.join(self.log_dir, 'final_save/checkpoint')
+    self.saver = tf.train.Checkpoint(**variable_dict)
+    self.monitor = monitor
+    self.save_best_only = True
+
+    if mode not in ['auto', 'min', 'max']:
+      raise ValueError(
+          'ModelCheckpoint mode %s is unknown, '
+          'fallback to auto mode.', mode)
+      mode = 'auto'
+
+    if mode == 'min':
+      self.monitor_op = np.less
+      self.best = np.Inf
+    elif mode == 'max':
+      self.monitor_op = np.greater
+      self.best = -np.Inf
+    else:
+      if 'acc' in self.monitor or self.monitor.startswith('fmeasure'):
+        self.monitor_op = np.greater
+        self.best = -np.Inf
+      else:
+        self.monitor_op = np.less
+        self.best = np.Inf
+
+  def load_checkpoint(self, pre_checkpoint: str):
+    if pre_checkpoint:
+      self.saver.restore(pre_checkpoint)
+      print(INFO, f' Load Checkpoint From {pre_checkpoint}')
+      return
+    else:
+      latest_checkpoint = (
+          tf.train.latest_checkpoint(self.auto_save_dirs) or
+          tf.train.latest_checkpoint(self.final_save_dirs))
+      if latest_checkpoint:
+        # checkpoint.restore must be within a strategy.scope() so that optimizer
+        # slot variables are mirrored.
+        self.saver.restore(latest_checkpoint)
+        print(INFO, f' Load Checkpoint From {latest_checkpoint}')
+        return
+    print(INFO, f' No pre Checkpoint Load ')
+
+  def _save_variable(self, logs: dict):
+    current = logs.get(self.monitor)
+    if current is None:
+      print('Can save best model only with %s available, '
+            'skipping.', self.monitor)
+    else:
+      if self.monitor_op(current, self.best):
+        self.best = current
+        self.saver.save(self.auto_save_dirs)
+
+  def on_epoch_end(self, epoch, logs=None):
+    self._save_variable(logs)
+
+  def on_train_end(self, logs=None):
+    self.saver.save(self.final_save_dirs)
 
 
 def focal_sigmoid_cross_entropy_with_logits(labels: tf.Tensor,
