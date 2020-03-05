@@ -148,9 +148,10 @@ class BaseTrainingLoop():
       assert 'hparams' in kwargs.keys(), 'if use kwargs, must contain hparams !'
       # NOTE hparams contain all extra features
       self.hparams = EasyDict(kwargs['hparams'])
-      if self.hparams.ema.enable:
-        EmaHelper.initial_ema_vars(self.val_model.variables,
-                                   self.train_model.variables)
+      if 'ema' in self.hparams.keys():
+        if self.hparams.ema.enable:
+          EmaHelper.initial_ema_vars(self.val_model.variables,
+                                     self.train_model.variables)
 
   @abc.abstractmethod
   def train_step(self, iterator, num_steps_to_run, metrics: EasyDict):

@@ -615,14 +615,13 @@ def dcasetask5basemodel(input_shape,
       use_bias=False,
       kernel_initializer='he_normal',
       kernel_regularizer=k.regularizers.l2(weight_decay))
-  
+
   bn_kwargs = dict(momentum=bn_decay, epsilon=bn_epsilon)
-  
+
   dense_kwargs = dict(
       kernel_initializer=k.initializers.RandomNormal(stddev=0.01),
       kernel_regularizer=k.regularizers.l2(weight_decay),
       bias_regularizer=k.regularizers.l2(weight_decay))
-
 
   inputs = k.Input(input_shape)
   outputs = compose(
@@ -647,3 +646,56 @@ def dcasetask5basemodel(input_shape,
   infer_model = val_model = k.Model(inputs, outputs, name='dcasetask5basemodel')
   train_model = k.Model(inputs, outputs, name='dcasetask5basemodel')
   return infer_model, val_model, train_model
+
+
+def dcasetask5infomax(
+    input_shape,
+    nclasses,
+    softmax=False,
+    z_dim=256,  # 隐变量维度
+    alpha=0.5,  # 全局互信息的loss比重
+    beta=1.5,  # 局部互信息的loss比重
+    gamma=0.01,  # 先验分布的loss比重
+    weight_decay=1e-4,
+    bn_decay=0.9,
+    bn_epsilon=1e-5) -> k.Model:
+  conv_kwargs = dict(
+      use_bias=False,
+      kernel_initializer='he_normal',
+      kernel_regularizer=k.regularizers.l2(weight_decay))
+
+  bn_kwargs = dict(momentum=bn_decay, epsilon=bn_epsilon)
+
+  dense_kwargs = dict(
+      kernel_initializer=k.initializers.RandomNormal(stddev=0.01),
+      kernel_regularizer=k.regularizers.l2(weight_decay),
+      bias_regularizer=k.regularizers.l2(weight_decay))
+
+  x_in = k.Input(input_shape)
+  feature_map = compose(
+      kl.Conv2D(64, (7, 1), padding='same', **conv_kwargs),
+      kl.BatchNormalization(**bn_kwargs),
+      kl.LeakyReLU(),
+      kl.MaxPool2D((4, 1)),
+      kl.Dropout(0.2),
+      kl.Conv2D(128, (10, 1), **conv_kwargs),
+      kl.BatchNormalization(**bn_kwargs),
+      kl.LeakyReLU(),
+      kl.Conv2D(256, (1, 7), padding='same', **conv_kwargs),
+      kl.BatchNormalization(**bn_kwargs),
+  )(
+      x_in)
+
+  feature_map_encoder = k.Model(x_in, feature_map)
+  
+
+  #         kl.GlobalMaxPool2D(),
+  #   kl.Dropout(0.5),
+  #   kl.Dense(128, **dense_kwargs),
+  #   kl.Dense(nclasses, k.activations.softmax if softmax else None,
+  #            **dense_kwargs)
+  # infer_model = val_model = k.Model(inputs, outputs, name='dcasetask5basemodel')
+  # train_model = k.Model(inputs, outputs, name='dcasetask5basemodel')
+  # return infer_model, val_model, train_model
+
+

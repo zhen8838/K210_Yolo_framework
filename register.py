@@ -1,13 +1,42 @@
-from models.networks import mbv1_facerec, mbv2_ctdet, yolo, tiny_yolo, pfld,\
-    shuffle_ctdet, yolo3_nano, yolo_mbv1, mbv1_imgnet, mbv2_imgnet,\
-    retinafacenet, retinaface_slim, retinaface_rfb, ullfd_slim, dcasetask5basemodel
+from models.networks import (
+    mbv1_facerec,
+    mbv2_ctdet,
+    yolo,
+    tiny_yolo,
+    pfld,
+    shuffle_ctdet,
+    yolo3_nano,
+    yolo_mbv1,
+    mbv1_imgnet,
+    mbv2_imgnet,
+    retinafacenet,
+    retinaface_slim,
+    retinaface_rfb,
+    ullfd_slim,
+    dcasetask5basemodel,
+)
 from models.receptivefieldnet import rffacedetnet
 from models.audionet import dualmbv2net
-from models.networks4k210 import yolo_mbv1_k210, yolo_mbv2_k210, yolo2_mbv1_k210,\
-    yolov2algin_mbv1_k210, pfld_k210, mbv1_imgnet_k210, \
-    mbv2_imgnet_k210, yoloalgin_mbv1_k210, retinafacenet_k210,\
-    retinafacenet_k210_v1, retinafacenet_k210_v2, retinafacenet_k210_v3,\
-    ullfd_k210, ullfd_k210_v1, ullfd_k210_v2, ullfd_k210_v3, mbv1_facerec_k210
+from models.networks4k210 import (
+    yolo_mbv1_k210,
+    yolo_mbv2_k210,
+    yolo2_mbv1_k210,
+    yolov2algin_mbv1_k210,
+    pfld_k210,
+    mbv1_imgnet_k210,
+    mbv2_imgnet_k210,
+    yoloalgin_mbv1_k210,
+    retinafacenet_k210,
+    retinafacenet_k210_v1,
+    retinafacenet_k210_v2,
+    retinafacenet_k210_v3,
+    ullfd_k210,
+    ullfd_k210_v1,
+    ullfd_k210_v2,
+    ullfd_k210_v3,
+    mbv1_facerec_k210,
+    mbv1_facerec_k210_eager,
+)
 import tensorflow as tf
 from tools.custom import StepLR, CosineLR, ScheduleLR
 from tools.yolo import YOLOHelper, YOLOLoss, yolo_infer, yolo_eval, MultiScaleTrain, YOLOIouLoss, YOLOMap
@@ -19,7 +48,7 @@ from tools.ssd import SSDHelper, SSDLoss, ssd_infer
 from tools.retinaface import RetinaFaceHelper, RetinaFaceLoss, retinaface_infer
 from tools.tinyimgnet import TinyImgnetHelper
 from tools.imgnet import ImgnetHelper, ClassifyLoss
-from tools.facerec import FcaeRecHelper, TripletLoss, Sparse_SoftmaxLoss, Sparse_AmsoftmaxLoss, Sparse_AsoftmaxLoss, FacerecValidation, facerec_eval
+from tools.facerec import FcaeRecHelper, TripletLoss, Sparse_SoftmaxLoss, Sparse_AmsoftmaxLoss, Sparse_AsoftmaxLoss, FacerecValidation, facerec_eval, FaceTripletTrainingLoop
 from tools.dcasetask2 import DCASETask2Helper, SemiBCELoss, LwlrapValidation
 from tools.dcasetask5 import DCASETask5Helper, Task5SupervisedLoop, DCASETask5FixMatchSSLHelper, Task5FixMatchSslLoop, AugmenterStateSync
 from tools.training_engine import BaseTrainingLoop
@@ -181,6 +210,7 @@ helper_register = {
 network_register = {
     'mbv1_facerec': mbv1_facerec,
     'mbv1_facerec_k210': mbv1_facerec_k210,
+    'mbv1_facerec_k210_eager': mbv1_facerec_k210_eager,
     'mbv2_ctdet': mbv2_ctdet,
     'mbv1_imgnet': mbv1_imgnet,
     'mbv2_imgnet': mbv2_imgnet,
@@ -268,6 +298,7 @@ eval_register = {'yolo_eval': yolo_eval, 'facerec_eval': facerec_eval}
 trainloop_register = {
     'BaseTrainingLoop': BaseTrainingLoop,
     'Task5SupervisedLoop': Task5SupervisedLoop,
+    'FaceTripletTrainingLoop': FaceTripletTrainingLoop,
     'Task5FixMatchSslLoop': Task5FixMatchSslLoop,
 }
 

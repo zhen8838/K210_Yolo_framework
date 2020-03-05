@@ -19,7 +19,7 @@ def main(ckpt_path: Path, argmap: dict2obj):
     infer_model = network(**model.network_kwarg)[0]
 
     print(INFO, f'Load CKPT from {str(ckpt_path)}')
-    infer_model.load_weights(str(ckpt_path))
+    infer_model.load_weights(str(ckpt_path), by_name=True)
 
     eval_fn = eval_register[evaluate.eval_fn]
     eval_fn(infer_model, h, **evaluate.eval_fn_kwarg)

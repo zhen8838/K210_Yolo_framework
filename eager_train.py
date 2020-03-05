@@ -80,8 +80,8 @@ def main(config_file, new_cfg, mode, model, train):
   # NOTE use eval captrue local variables
   variable_str_dict = train.variablecheckpoint_kwarg.pop('variable_dict')
   variable_dict = {}
-  for (k, v) in variable_str_dict.items():
-    variable_dict.setdefault(k, eval(v))
+  for (key, v) in variable_str_dict.items():
+    variable_dict.setdefault(key, eval(v))
   # NOTE get other variables which need to save
   if 'need_saved_variable_dict' in vars().keys():
     variable_dict.update(need_saved_variable_dict)
@@ -89,43 +89,37 @@ def main(config_file, new_cfg, mode, model, train):
         ' '.join(variable_dict.keys()))
   variablecheckpoint = VariableCheckpoint(log_dir, variable_dict,
                                           **train.variablecheckpoint_kwarg)
-  variablecheckpoint.load_checkpoint(train.pre_ckpt)
+  if '.h5' in train.pre_ckpt:
+    train_model.load_weights(
+        str(train.pre_ckpt), by_name=True, skip_mismatch=True)
+    print(INFO, f' Load CKPT {str(train.pre_ckpt)}')
+  else:
+    variablecheckpoint.load_checkpoint(train.pre_ckpt)
   cbs.append(variablecheckpoint)
 
   loop.set_callbacks(cbs)
   loop.set_summary_writer(
       tf.summary.create_file_writer(
           str(log_dir / datetime.strftime(datetime.now(), r'%Y%m%d-%H%M%S'))))
-  initial_epoch = optimizer.iterations.numpy() // train_epoch_step
+  initial_epoch = int(optimizer.iterations.numpy() / train_epoch_step)
 
   loop.train_and_eval(
       epochs=train.epochs + initial_epoch,
       initial_epoch=initial_epoch,
       steps_per_run=train.steps_per_run)
   """ Finish Training """
-  # model_name = f'train_model_{initial_epoch+int(train_model.optimizer.iterations / train_epoch_step)}.h5'
-  # ckpt = log_dir / model_name
+  model_name = f'train_model_{initial_epoch+int(optimizer.iterations.numpy() / train_epoch_step)}.h5'
+  ckpt = log_dir / model_name
 
-  # k.models.save_model(train_model, str(ckpt))
-  # print()
-  # print(INFO, f' Save Train Model as {str(ckpt)}')
+  k.models.save_model(train_model, str(ckpt))
+  print()
+  print(INFO, f' Save Train Model as {str(ckpt)}')
 
-  # infer_model_name = f'infer_model_{initial_epoch+int(train_model.optimizer.iterations / train_epoch_step)}.h5'
-  # infer_ckpt = log_dir / infer_model_name
-  # k.models.save_model(infer_model, str(infer_ckpt))
-  # print(INFO, f' Save Infer Model as {str(infer_ckpt)}')
-
-  # # find best auto saved model, and save best infer model
-  # auto_saved_list = list(log_dir.glob('auto_train_*.h5'))  # type:List[Path]
-  # # use `int value`  for sort ~
-  # auto_saved_list = list(
-  #     zip(auto_saved_list, [int(p.stem.split('_')[-1]) for p in auto_saved_list]))
-  # if len(auto_saved_list) > 0:
-  #   auto_saved_list.sort(key=lambda x: x[1])
-  #   train_model.load_weights(str(auto_saved_list[-1][0]), by_name=True)
-  #   infer_ckpt = str(auto_saved_list[-1][0]).replace('train', 'infer')
-  #   k.models.save_model(infer_model, infer_ckpt)
-  # print(INFO, f' Save Best Infer Model as {infer_ckpt}')
+  infer_model_name = f'infer_model_{initial_epoch+int(optimizer.iterations.numpy() / train_epoch_step)}.h5'
+  infer_ckpt = log_dir / infer_model_name
+  k.models.save_model(infer_model, str(infer_ckpt))
+  print(INFO, f' Save Infer Model as {str(infer_ckpt)}')
+  return
 
 
 if __name__ == "__main__":
