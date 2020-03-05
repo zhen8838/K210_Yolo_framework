@@ -38,6 +38,9 @@ class EasyDict(object):
   def values(self):
     return self.__dict__.values()
 
+  def dicts(self):
+    return self.__dict__
+
 
 class EmaHelper(object):
   """ Helper class for exponential moving average. """

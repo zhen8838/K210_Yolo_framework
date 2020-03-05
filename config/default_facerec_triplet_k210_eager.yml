@@ -33,12 +33,13 @@ train:
     constant_folding: true
     function_optimization: true
     scoped_allocator_optimization: true
-    layout_optimizer: true
   augmenter: true
   batch_size: *BATCH_SIZE_REF
   pre_ckpt: log/default_facerec_triplet_k210_exp_backup/auto_train_58.h5
   rand_seed: 10101
   epochs: 100
+  train_epoch_step: 2000
+  vali_epoch_step: null
   steps_per_run: 30
   log_dir: log
   sub_log_dir: default_facerec_triplet_k210_eager_exp

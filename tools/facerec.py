@@ -498,6 +498,67 @@ class FacerecValidation(k.callbacks.Callback):
           tf.reduce_mean(tf.map_fn(fn, tf.range(self.val_step), tf.float32)))
 
 
+class FaceSoftmaxTrainingLoop(BaseTrainingLoop):
+
+  def __init__(self, train_model, val_model, **kwargs):
+    """ 
+    
+    1.  loss hparams:
+    
+        Args:
+          loss:
+            name (str) : Sparse_SoftmaxLoss,Sparse_AmsoftmaxLoss,Sparse_AsoftmaxLoss
+            kwarg (dict) : 
+              batch_size (int) : NOTE Sparse_SoftmaxLoss not have `batch_size`
+              scale (float) :  30
+              margin (float) :  0.35 NOTE Sparse_SoftmaxLoss not have `margin`
+              
+    """
+    super().__init__(train_model, val_model, **kwargs)
+    loss_dict = {
+        'Sparse_SoftmaxLoss': Sparse_SoftmaxLoss,
+        'Sparse_AmsoftmaxLoss': Sparse_AmsoftmaxLoss,
+        'Sparse_AsoftmaxLoss': Sparse_AsoftmaxLoss
+    }
+    self.loss_fn: Sparse_AmsoftmaxLoss = loss_dict[self.hparams.loss.name](
+        **self.hparams.loss.kwarg.dicts())
+
+  def set_metrics_dict(self):
+    d = {
+        'train': {
+            'loss':
+                k.metrics.Mean('train_loss', dtype=tf.float32),
+            'acc':
+                k.metrics.SparseCategoricalAccuracy(
+                    'train_acc', dtype=tf.float32)
+        },
+        'val': {}
+    }
+    return d
+
+  @tf.function
+  def train_step(self, iterator, num_steps_to_run, metrics):
+
+    def step_fn(inputs):
+      """Per-Replica training step function."""
+      imgs, y_true = inputs
+      with tf.GradientTape() as tape:
+        y_pred = self.train_model(imgs, training=True)
+        loss = self.loss_fn.call(tf.expand_dims(y_true, -1), y_pred)
+        loss_wd = tf.reduce_sum(self.train_model.losses)
+        total_loss = loss + loss_wd
+
+      grads = tape.gradient(total_loss, self.train_model.trainable_variables)
+      self.optimizer.apply_gradients(
+          zip(grads, self.train_model.trainable_variables))
+
+      metrics.loss.update_state(loss)
+      metrics.acc.update_state(y_true, y_pred)
+
+    for _ in tf.range(num_steps_to_run):
+      step_fn(next(iterator))
+
+
 class FaceTripletTrainingLoop(BaseTrainingLoop):
 
   def __init__(self, train_model, val_model, **kwargs):

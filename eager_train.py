@@ -38,8 +38,13 @@ def main(config_file, new_cfg, mode, model, train):
 
   train_ds = h.train_dataset
   validation_ds = h.val_dataset
-  train_epoch_step = int(h.train_epoch_step)
-  vali_epoch_step = int(h.val_epoch_step)
+
+  train_epoch_step = train.train_epoch_step if train.train_epoch_step else int(
+      h.train_epoch_step)
+
+  vali_epoch_step = train.vali_epoch_step if train.vali_epoch_step else int(
+      h.val_epoch_step)
+      
   """ mixed precision policy
    Args:
      mixed_precision : {
@@ -119,7 +124,7 @@ def main(config_file, new_cfg, mode, model, train):
   infer_ckpt = log_dir / infer_model_name
   k.models.save_model(infer_model, str(infer_ckpt))
   print(INFO, f' Save Infer Model as {str(infer_ckpt)}')
-  return
+  k.backend.clear_session()
 
 
 if __name__ == "__main__":

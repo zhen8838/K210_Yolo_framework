@@ -36,12 +36,13 @@ train:
     constant_folding: true
     function_optimization: true
     scoped_allocator_optimization: true
-    layout_optimizer: true
   augmenter: true
   batch_size: 16
   pre_ckpt: null
   rand_seed: 10101
   epochs: 50
+  train_epoch_step: null
+  vali_epoch_step: null
   steps_per_run: 30
   log_dir: log
   sub_log_dir: default_dcasetask5_fixmatch_randaug_exp

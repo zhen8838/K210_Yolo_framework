@@ -35,6 +35,8 @@ train:
   pre_ckpt: null
   rand_seed: 10101
   epochs: 50
+  train_epoch_step: null
+  vali_epoch_step: null
   steps_per_run: 30
   log_dir: log
   sub_log_dir: default_dcasetask5_exp

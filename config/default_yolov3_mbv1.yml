@@ -50,7 +50,6 @@ train:
     constant_folding: true
     function_optimization: true
     scoped_allocator_optimization: true
-    layout_optimizer: true
   augmenter: true
   batch_size: 16
   pre_ckpt: null

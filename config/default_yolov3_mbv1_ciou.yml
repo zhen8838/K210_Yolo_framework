@@ -49,7 +49,6 @@ train:
     constant_folding: true
     function_optimization: true
     scoped_allocator_optimization: true
-    layout_optimizer: true
   augmenter: true
   batch_size: 16
   pre_ckpt: log/default_yolov3_mbv1/train_model_158.h5
