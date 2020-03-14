@@ -2,7 +2,8 @@ import tensorflow as tf
 from models.networks import (mbv1_facerec, mbv2_ctdet, yolo, tiny_yolo, pfld,
                              shuffle_ctdet, yolo3_nano, yolo_mbv1, mbv1_imgnet,
                              mbv2_imgnet, retinafacenet, retinaface_slim,
-                             retinaface_rfb, ullfd_slim, dcasetask5basemodel)
+                             retinaface_rfb, ullfd_slim, dcasetask5basemodel,
+                             FMobileFaceNet_eager)
 from models.receptivefieldnet import rffacedetnet
 from models.audionet import dualmbv2net
 from models.networks4k210 import (
@@ -190,6 +191,7 @@ network_register = {
     'mbv1_facerec': mbv1_facerec,
     'mbv1_facerec_k210': mbv1_facerec_k210,
     'mbv1_facerec_k210_eager': mbv1_facerec_k210_eager,
+    'FMobileFaceNet_eager': FMobileFaceNet_eager,
     'mbv2_ctdet': mbv2_ctdet,
     'mbv1_imgnet': mbv1_imgnet,
     'mbv2_imgnet': mbv2_imgnet,

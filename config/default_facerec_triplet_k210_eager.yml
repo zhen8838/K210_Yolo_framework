@@ -38,7 +38,7 @@ train:
   pre_ckpt: log/default_facerec_triplet_k210_exp_backup/auto_train_58.h5
   rand_seed: 10101
   epochs: 100
-  train_epoch_step: 2000
+  train_epoch_step: 5000
   vali_epoch_step: null
   steps_per_run: 30
   log_dir: log
@@ -69,12 +69,12 @@ train:
       kwarg:
         monitor: val/acc
         min_delta: 0
-        patience: 4
+        patience: 10
         verbose: 0
         mode: max
         baseline: null
         restore_best_weights: false
     - name: StepLR
       kwarg:
-        steps: [ 50  ,  80    ,  120   ]
-        rates: [0.0004, 0.0004,  0.0001]
+        steps: [ 5  ,  80    ,  120   ]
+        rates: [0.0002, 0.0004,  0.0001]

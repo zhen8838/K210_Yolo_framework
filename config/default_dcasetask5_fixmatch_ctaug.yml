@@ -13,12 +13,12 @@ model:
     unlabel_dataset_ratio: 3 # Unlabeled batch size ratio.
     augment_kwargs:
       name: ctaugment
-      kwarg: 
+      kwarg:
         num_layers: 2
-        confidence_threshold: 0.85
+        confidence_threshold: 0.9
         decay: 0.99
         epsilon: 0.001
-        prob_to_apply: 0.3
+        prob_to_apply: 0.5
         num_levels: 10
   network: dcasetask5basemodel
   network_kwarg:
@@ -33,7 +33,7 @@ model:
     bn_epsilon: 0.00001
 train:
   graph_optimizer: true
-  graph_optimizer_kwarg: 
+  graph_optimizer_kwarg:
     layout_optimizer: true
     remapping: true
     shape_optimization: true
@@ -45,26 +45,26 @@ train:
   batch_size: 16
   pre_ckpt: null
   rand_seed: 10101
-  epochs: 50
+  epochs: 100
   train_epoch_step: null
   vali_epoch_step: null
   steps_per_run: 30
   log_dir: log
   sub_log_dir: default_dcasetask5_fixmatch_ctaug_exp
   mixed_precision:
-    enable: false 
+    enable: false
     dtype: float32
   trainloop: Task5FixMatchSslLoop
   trainloop_kwarg:
-    hparams: 
+    hparams:
       update_augmenter_state: *UPDATE_AUGMENTER_STATE
-      fixmatch: 
+      fixmatch:
         wu: 1.0 # Pseudo label loss weight
         confidence: 0.7 # Confidence threshold.
       ema:
         enable: true
         decay: 0.999
-  variablecheckpoint_kwarg: 
+  variablecheckpoint_kwarg:
     variable_dict:
       model: train_model
       model_ema: val_model
@@ -87,20 +87,18 @@ train:
       kwarg:
         monitor: val/acc
         min_delta: 0
-        patience: 5
+        patience: 50
         verbose: 0
         mode: max
         baseline: null
         restore_best_weights: false
     - name: AugmenterStateSync
-      kwarg: 
-        update_augmenter_state: *UPDATE_AUGMENTER_STATE
-    - name: ScheduleLR    
       kwarg:
-       base_lr: 0.001
-       use_warmup: true
-       warmup_epochs: 10
-       decay_rate: 0.5
-       decay_epochs: 10
-        
-    
+        update_augmenter_state: *UPDATE_AUGMENTER_STATE
+    - name: ScheduleLR
+      kwarg:
+        base_lr: 0.001
+        use_warmup: true
+        warmup_epochs: 20
+        decay_rate: 0.7
+        decay_epochs: 5

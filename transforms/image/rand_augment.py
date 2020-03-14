@@ -1,5 +1,5 @@
 import tensorflow as tf
-import transforms.image.transform as ops
+import transforms.data.transform as ops
 import inspect
 NAME_TO_FUNC = {
     'Identity': tf.identity,
@@ -27,7 +27,7 @@ NAME_TO_FUNC = {
 }
 
 # Reference for Imagenet:
-# https://cs.corp.google.com/piper///depot/google3/learning/brain/research/meta_architect/image/image_processing.py?rcl=275474938&l=2950
+# https://cs.corp.google.com/piper///depot/google3/learning/brain/research/meta_architect/data/data_processing.py?rcl=275474938&l=2950
 
 IMAGENET_AUG_OPS = [
     'AutoContrast',
@@ -169,19 +169,19 @@ class RandAugment(object):
           shape=[], maxval=self.num_levels + 1, dtype=tf.int32)
       return tf.cast(level, tf.float32) / self.num_levels
 
-  def _apply_one_layer(self, image):
-    """Applies one level of augmentation to the image."""
+  def _apply_one_layer(self, data):
+    """Applies one level of augmentation to the data."""
     level = self._get_level()
     branch_fns = []
     for augment_op_name in IMAGENET_AUG_OPS:
       augment_fn = NAME_TO_FUNC[augment_op_name]
       level_to_args_fn = LEVEL_TO_ARG[augment_op_name]
 
-      def _branch_fn(image=image,
+      def _branch_fn(data=data,
                      augment_fn=augment_fn,
                      level_to_args_fn=level_to_args_fn):
 
-        args = [image] + list(level_to_args_fn(level))
+        args = [data] + list(level_to_args_fn(level))
         fuc_args = inspect.getfullargspec(augment_fn).args
         if 'replace' in fuc_args and 'replace' == fuc_args[-1]:
           # Make sure replace is the final argument
@@ -192,16 +192,24 @@ class RandAugment(object):
 
     branch_index = tf.random.uniform(
         shape=[], maxval=len(branch_fns), dtype=tf.int32)
-    aug_image = tf.switch_case(branch_index, branch_fns, default=lambda: image)
+    aug_data = tf.switch_case(branch_index, branch_fns, default=lambda: data)
     if self.prob_to_apply is not None:
       return tf.cond(
           tf.random.uniform(shape=[], dtype=tf.float32) <
-          self.prob_to_apply, lambda: aug_image, lambda: image)
+          self.prob_to_apply, lambda: aug_data, lambda: data)
     else:
-      return aug_image
+      return aug_data
 
-  def __call__(self, image):
-    aug_image = image
-    for _ in range(self.num_layers):
-      aug_image = self._apply_one_layer(aug_image)
-    return aug_image
+  def __call__(self, data, aug_key='data'):
+    output_dict = {}
+
+    if aug_key is not None:
+      aug_data = data
+      for _ in range(self.num_layers):
+        aug_data = self._apply_one_layer(aug_data)
+      output_dict[aug_key] = aug_data
+
+    if aug_key != 'data':
+      output_dict['data'] = data
+
+    return output_dict

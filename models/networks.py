@@ -10,7 +10,7 @@ from models.darknet import DarknetConv2D, darknet_body, DarknetConv2D_BN_Leaky, 
 from models.shufflenet import conv_bn_relu, shufflenet_block, deconv_bn_relu
 from models.yolo_nano import yolo3_nano
 from models.retinanet import retinafacenet, retinaface_rfb, retinaface_slim, ullfd_slim
-from models.facenet import mbv1_facerec
+from models.facenet import mbv1_facerec,FMobileFaceNet_eager
 
 
 def pfld(input_shape: list, landmark_num: int, alpha=1.,
@@ -688,14 +688,4 @@ def dcasetask5infomax(
 
   feature_map_encoder = k.Model(x_in, feature_map)
   
-
-  #         kl.GlobalMaxPool2D(),
-  #   kl.Dropout(0.5),
-  #   kl.Dense(128, **dense_kwargs),
-  #   kl.Dense(nclasses, k.activations.softmax if softmax else None,
-  #            **dense_kwargs)
-  # infer_model = val_model = k.Model(inputs, outputs, name='dcasetask5basemodel')
-  # train_model = k.Model(inputs, outputs, name='dcasetask5basemodel')
-  # return infer_model, val_model, train_model
-
 

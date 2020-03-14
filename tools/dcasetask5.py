@@ -58,10 +58,9 @@ class DCASETask5Helper(BaseHelper):
       mel = tf.expand_dims(mel, -1)
       return {'data': mel, 'label': label}
 
-    ds = tf.data.TFRecordDataset(
-        [self.train_list], num_parallel_reads=2).shuffle(
-            batch_size * 300).repeat().map(_pipe, -1).batch(
-                batch_size, drop_remainder=True).prefetch(-1)
+    ds = tf.data.TFRecordDataset([self.train_list], num_parallel_reads=2).shuffle(
+        batch_size * 300).repeat().map(_pipe, -1).batch(
+            batch_size, drop_remainder=True).prefetch(-1)
 
     return ds
 
@@ -268,10 +267,14 @@ class DCASETask5FixMatchSSLHelper(DCASETask5Helper, FixMatchSSLHelper):
 
 class AugmenterStateSync(tf.keras.callbacks.Callback):
 
-  def __init__(self, augmenter: CTAugment, update_augmenter_state: bool):
+  def __init__(self,
+               augmenter: CTAugment,
+               update_augmenter_state: bool,
+               verbose: bool = False):
     super().__init__()
     self.augmenter = augmenter
     self.update_augmenter_state = update_augmenter_state
+    self.verbose = verbose
 
   def on_epoch_begin(self, epoch, logs=None):
     self.augmenter.sync_state()
@@ -279,7 +282,8 @@ class AugmenterStateSync(tf.keras.callbacks.Callback):
     augmenter_state = [
         f'{k}: {v.numpy()}\n' for (k, v) in augmenter_state.items()
     ]
-    print('Augmenter state:\n', '\n'.join(augmenter_state))
+    if self.verbose:
+      print('Augmenter state:\n', '\n'.join(augmenter_state))
 
 
 class Task5FixMatchSslLoop(BaseTrainingLoop):

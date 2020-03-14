@@ -542,9 +542,10 @@ class FaceSoftmaxTrainingLoop(BaseTrainingLoop):
     def step_fn(inputs):
       """Per-Replica training step function."""
       imgs, y_true = inputs
+      y_true = tf.expand_dims(y_true, -1)
       with tf.GradientTape() as tape:
         y_pred = self.train_model(imgs, training=True)
-        loss = self.loss_fn.call(tf.expand_dims(y_true, -1), y_pred)
+        loss = self.loss_fn.call(y_true, y_pred)
         loss_wd = tf.reduce_sum(self.train_model.losses)
         total_loss = loss + loss_wd
 

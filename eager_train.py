@@ -44,7 +44,6 @@ def main(config_file, new_cfg, mode, model, train):
 
   vali_epoch_step = train.vali_epoch_step if train.vali_epoch_step else int(
       h.val_epoch_step)
-      
   """ mixed precision policy
    Args:
      mixed_precision : {
@@ -94,7 +93,7 @@ def main(config_file, new_cfg, mode, model, train):
         ' '.join(variable_dict.keys()))
   variablecheckpoint = VariableCheckpoint(log_dir, variable_dict,
                                           **train.variablecheckpoint_kwarg)
-  if '.h5' in train.pre_ckpt:
+  if train.pre_ckpt and '.h5' in train.pre_ckpt:
     train_model.load_weights(
         str(train.pre_ckpt), by_name=True, skip_mismatch=True)
     print(INFO, f' Load CKPT {str(train.pre_ckpt)}')
