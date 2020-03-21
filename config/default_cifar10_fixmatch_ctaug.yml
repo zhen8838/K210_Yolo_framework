@@ -1,0 +1,98 @@
+UPDATE_AUGMENTER_STATE: &UPDATE_AUGMENTER_STATE true
+
+mode: train
+model:
+  name: fixmatchcifar10
+  helper: KerasDatasetHelper
+  helper_kwarg:
+    dataset: "cifar10"
+    label_ratio: 0.05
+    unlabel_dataset_ratio: 7 # Unlabeled batch size ratio.
+    augment_kwargs:
+      name: ctaugment
+      kwarg:
+        num_layers: 2
+        confidence_threshold: 0.85
+        decay: 0.99
+        epsilon: 0.001
+        prob_to_apply: 0.5
+        num_levels: 10
+  network: imageclassifierCNN13
+  network_kwarg:
+    input_shape:
+      - 32
+      - 32
+      - 3
+    nclasses: 10
+    filters: 32
+train:
+  graph_optimizer: true
+  graph_optimizer_kwarg:
+    layout_optimizer: true
+    remapping: true
+    shape_optimization: true
+    loop_optimization: true
+    constant_folding: true
+    function_optimization: true
+    scoped_allocator_optimization: true
+  augmenter: true
+  batch_size: 64
+  pre_ckpt: null
+  rand_seed: 10101
+  epochs: 100
+  train_epoch_step: 1024
+  vali_epoch_step: null
+  steps_per_run: 30
+  log_dir: log
+  sub_log_dir: default_cifar10_fixmatch_ctaug_exp
+  mixed_precision:
+    enable: false
+    dtype: float32
+  trainloop: Task5FixMatchSslLoop
+  trainloop_kwarg:
+    hparams:
+      update_augmenter_state: *UPDATE_AUGMENTER_STATE
+      fixmatch:
+        wu: 1.0 # Pseudo label loss weight
+        confidence: 0.95 # Confidence threshold.
+      ema:
+        enable: true
+        decay: 0.999
+  variablecheckpoint_kwarg:
+    variable_dict:
+      model: train_model
+      model_ema: val_model
+      optimizer: optimizer
+    monitor: val/acc
+    mode: max
+  # optimizer: Adam
+  # optimizer_kwarg:
+  #   learning_rate: 0.001
+  #   beta_1: 0.9
+  #   beta_2: 0.999
+  #   amsgrad: false
+  optimizer: SGD
+  optimizer_kwarg:
+    learning_rate: 0.001
+    momentum: 0.9
+    nesterov: True
+  callbacks:
+    - name: EarlyStopping
+      kwarg:
+        monitor: val/acc
+        min_delta: 0
+        patience: 50
+        verbose: 0
+        mode: max
+        baseline: null
+        restore_best_weights: false
+    - name: AugmenterStateSync
+      kwarg:
+        update_augmenter_state: *UPDATE_AUGMENTER_STATE
+    - name: ScheduleLR
+      kwarg:
+        base_lr: 0.001
+        use_warmup: true
+        warmup_epochs: 20
+        decay_rate: 0.7
+        decay_epochs: 5

@@ -1,5 +1,6 @@
 import tensorflow as tf
-import transforms.data.transform as ops
+from transforms.image import ops
+import inspect
 
 NAME_TO_FUNC = {
     'Identity': tf.identity,
@@ -27,43 +28,43 @@ NAME_TO_FUNC = {
 }
 
 
-def _ignore_level_to_arg(level):
+def _ignore_level_to_arg(level, **kwargs):
   del level
   return ()
 
 
-def _identity_level_to_arg(level):
+def _identity_level_to_arg(level, **kwargs):
   return (level,)
 
 
-def _enhance_level_to_arg(level):
+def _enhance_level_to_arg(level, **kwargs):
   return (level*1.9 + 0.1,)
 
 
-def _posterize_level_to_arg(level):
-  return (1 + int(level * 7.999),)
+def _posterize_level_to_arg(level, **kwargs):
+  return (tf.cast(1 + int(level * 7.999), tf.uint8),)
 
 
-def _rotate_level_to_arg(level):
+def _rotate_level_to_arg(level, **kwargs):
   angle_in_degrees = (2*level - 1) * 45
   return (angle_in_degrees,)
 
 
-def _shear_level_to_arg(level):
+def _shear_level_to_arg(level, **kwargs):
   shear = (2*level - 1) * 0.3
   return (shear,)
 
 
-def _solarize_level_to_arg(level):
+def _solarize_level_to_arg(level, **kwargs):
   return (int(level * 256),)
 
 
-def _solarize_add_level_to_arg(level):
+def _solarize_add_level_to_arg(level, **kwargs):
   return (int(level * 110),)
 
 
-def _translate_level_to_arg(level):
-  shift_pixels = (2*level - 1) * 100
+def _translate_level_to_arg(level, **kwargs):
+  shift_pixels = (2*level - 1) * 0.3 * kwargs['image_size']
   return (shift_pixels,)
 
 
@@ -150,7 +151,8 @@ class CTAugment(object):
                decay=0.99,
                epsilon=0.001,
                prob_to_apply=None,
-               num_levels=10):
+               num_levels=10,
+               replace=[128, 128, 128]):
     """Initialize CT Augment.
 
     Args:
@@ -193,6 +195,7 @@ class CTAugment(object):
         synchronization=tf.VariableSynchronization.ON_WRITE)
     # list of log probs variables for each data pipeline
     self.log_probs = []
+    self.replace = replace
 
   def update(self, tensor_dict, probe_probs):
     """Update augmenter state to classification of probe datas."""
@@ -248,12 +251,12 @@ class CTAugment(object):
     probs = probs / tf.reduce_sum(probs, axis=1, keepdims=True)
     self.probs.assign(probs)
 
-  def sync_state_to_data_pipeline(self):
+  def sync_state(self):
     log_prob_value = tf.math.log(self.probs)
     for v in self.log_probs:
       v.assign(log_prob_value)
 
-  def get_augmenter_state(self):
+  def get_state(self):
     """Returns augmenter state to save in checkpoint or for debugging."""
     return {
         'ct_augment_rates': self.rates,
@@ -281,8 +284,34 @@ class CTAugment(object):
 
   def _apply_ops(self, data, op_indices, op_args, prob_to_apply=None):
     for idx in range(self.num_layers):
-      data = apply_augmentation_op(data, op_indices[idx], op_args[idx],
-                                    prob_to_apply)
+      op_index, op_level = op_indices[idx], op_args[idx]
+      """Applies one augmentation op to the data."""
+      branch_fns = []
+      for augment_op_name in IMAGENET_AUG_OPS:
+        augment_fn = NAME_TO_FUNC[augment_op_name]
+        level_to_args_fn = LEVEL_TO_ARG[augment_op_name]
+
+        def _branch_fn(data=data,
+                       augment_fn=augment_fn,
+                       level_to_args_fn=level_to_args_fn):
+          # Add image shape kwargs for translate augment
+          args = [data] + list(
+              level_to_args_fn(op_level, image_size=data.shape[0]))
+          fuc_args = inspect.getfullargspec(augment_fn).args
+          if 'replace' in fuc_args and 'replace' == fuc_args[-1]:
+            # Make sure replace is the final argument
+            args.append(self.replace)
+          return augment_fn(*args)
+
+        branch_fns.append(_branch_fn)
+      aug_data = tf.switch_case(op_index, branch_fns, default=lambda: data)
+      if prob_to_apply is not None:
+        data = tf.cond(
+            tf.random.uniform(shape=[], dtype=tf.float32) <
+            prob_to_apply, lambda: aug_data, lambda: data)
+      else:
+        data = aug_data
+
     return data
 
   def __call__(self, data, probe=True, aug_key='data'):

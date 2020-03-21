@@ -3,7 +3,7 @@ from models.networks import (mbv1_facerec, mbv2_ctdet, yolo, tiny_yolo, pfld,
                              shuffle_ctdet, yolo3_nano, yolo_mbv1, mbv1_imgnet,
                              mbv2_imgnet, retinafacenet, retinaface_slim,
                              retinaface_rfb, ullfd_slim, dcasetask5basemodel,
-                             FMobileFaceNet_eager)
+                             FMobileFaceNet_eager, imageclassifierCNN13)
 from models.receptivefieldnet import rffacedetnet
 from models.audionet import dualmbv2net
 from models.networks4k210 import (
@@ -31,6 +31,7 @@ from tools.dcasetask2 import DCASETask2Helper, SemiBCELoss, LwlrapValidation
 from tools.dcasetask5 import (DCASETask5Helper, Task5SupervisedLoop,
                               DCASETask5FixMatchSSLHelper, Task5FixMatchSslLoop,
                               AugmenterStateSync)
+from tools.kerasdataset import KerasDatasetHelper
 from tools.training_engine import BaseTrainingLoop
 from yaml import safe_dump
 
@@ -184,7 +185,8 @@ helper_register = {
     'DCASETask2Helper': DCASETask2Helper,
     'DCASETask5Helper': DCASETask5Helper,
     'SSDHelper': SSDHelper,
-    'DCASETask5FixMatchSSLHelper': DCASETask5FixMatchSSLHelper
+    'DCASETask5FixMatchSSLHelper': DCASETask5FixMatchSSLHelper,
+    'KerasDatasetHelper': KerasDatasetHelper
 }
 
 network_register = {
@@ -222,7 +224,8 @@ network_register = {
     'ullfd_k210_v2': ullfd_k210_v2,
     'ullfd_k210_v3': ullfd_k210_v3,
     'dualmbv2net': dualmbv2net,
-    'dcasetask5basemodel': dcasetask5basemodel
+    'dcasetask5basemodel': dcasetask5basemodel,
+    'imageclassifierCNN13': imageclassifierCNN13
 }
 
 loss_register = {

@@ -1,5 +1,5 @@
 import tensorflow as tf
-import transforms.data.transform as ops
+from transforms.image import ops
 import inspect
 NAME_TO_FUNC = {
     'Identity': tf.identity,

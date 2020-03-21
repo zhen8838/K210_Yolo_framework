@@ -10,7 +10,7 @@ from models.darknet import DarknetConv2D, darknet_body, DarknetConv2D_BN_Leaky, 
 from models.shufflenet import conv_bn_relu, shufflenet_block, deconv_bn_relu
 from models.yolo_nano import yolo3_nano
 from models.retinanet import retinafacenet, retinaface_rfb, retinaface_slim, ullfd_slim
-from models.facenet import mbv1_facerec,FMobileFaceNet_eager
+from models.facenet import mbv1_facerec, FMobileFaceNet_eager
 
 
 def pfld(input_shape: list, landmark_num: int, alpha=1.,
@@ -648,6 +648,62 @@ def dcasetask5basemodel(input_shape,
   return infer_model, val_model, train_model
 
 
+def imageclassifierCNN13(input_shape, nclasses, filters=32, weight_decay=0.0005):
+  """ image classifier CNN13 for fixmatch """
+  conv_args = dict(
+      kernel_size=3,
+      padding='same',
+      kernel_regularizer=k.regularizers.l2(weight_decay))
+  dense_kwargs = dict(
+      kernel_initializer=k.initializers.RandomNormal(stddev=0.01),
+      kernel_regularizer=k.regularizers.l2(weight_decay),
+      bias_regularizer=k.regularizers.l2(weight_decay))
+  bn_args = dict(momentum=0.999)
+  x = k.Input(input_shape)
+
+  logits = compose(
+      kl.Lambda(lambda data: (tf.cast(data, tf.float32) - 127.5) / 127.5),
+      kl.Conv2D(filters, **conv_args),
+      kl.LeakyReLU(),
+      kl.BatchNormalization(**bn_args),
+      kl.Conv2D(filters, **conv_args),
+      kl.LeakyReLU(),
+      kl.BatchNormalization(**bn_args),
+      kl.Conv2D(filters, **conv_args),
+      kl.LeakyReLU(),
+      kl.BatchNormalization(**bn_args),
+      kl.MaxPool2D(2, 2),
+      kl.Conv2D(2 * filters, **conv_args),
+      kl.LeakyReLU(),
+      kl.BatchNormalization(**bn_args),
+      kl.Conv2D(2 * filters, **conv_args),
+      kl.LeakyReLU(),
+      kl.BatchNormalization(**bn_args),
+      kl.Conv2D(2 * filters, **conv_args),
+      kl.LeakyReLU(),
+      kl.BatchNormalization(**bn_args),
+      kl.MaxPool2D(2, 2),
+      kl.Conv2D(4 * filters, kernel_size=3, padding='valid'),
+      kl.LeakyReLU(),
+      kl.BatchNormalization(**bn_args),
+      kl.Conv2D(2 * filters, kernel_size=1, padding='same'),
+      kl.LeakyReLU(),
+      kl.BatchNormalization(**bn_args),
+      kl.Conv2D(1 * filters, kernel_size=1, padding='same'),
+      kl.LeakyReLU(),
+      kl.BatchNormalization(**bn_args),
+      # (b, 6, 6, 128) -> (b, 128)
+      kl.Lambda(lambda data: tf.reduce_mean(data, [1, 2])),
+      kl.Dense(nclasses, **dense_kwargs),
+  )(
+      x)
+
+  train_model = k.Model(x, logits)
+  val_model = k.Model(x, logits)
+  infer_model = val_model
+  return infer_model, val_model, train_model
+
+
 def dcasetask5infomax(
     input_shape,
     nclasses,
@@ -687,5 +743,3 @@ def dcasetask5infomax(
       x_in)
 
   feature_map_encoder = k.Model(x_in, feature_map)
-  
-

@@ -3,3 +3,6 @@ conda activate tf2
 conda install tensorflow-gpu jupyter opencv tqdm toolz PyYAML -y
 conda install librosa imgaug -c conda-forge -y
 pip install tensorflow_probability tensorflow_addons more_itertools
+# pip install tensorflow-gpu==2.1.0 tensorflow_probability tensorflow_addons more_itertools
+# conda install jupyter opencv tqdm toolz PyYAML -y
+# conda install librosa imgaug -c conda-forge -y

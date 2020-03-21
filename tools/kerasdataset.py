@@ -1,13 +1,14 @@
 import tensorflow as tf
 import numpy as np
-from tools.base import BaseHelper
+from tools.base import BaseHelper, INFO
 from typing import Tuple
 from tools.dcasetask5 import FixMatchSSLHelper
 from transforms.image.rand_augment import RandAugment
 from transforms.image.ct_augment import CTAugment
+import transforms.image.ops as image_ops
 
 
-class KerasDatasetHelper(BaseHelper, FixMatchSSLHelper):
+class KerasDatasetHelper(FixMatchSSLHelper, BaseHelper):
 
   def __init__(self, dataset: str, label_ratio: float, unlabel_dataset_ratio: int,
                augment_kwargs: dict):
@@ -33,7 +34,9 @@ class KerasDatasetHelper(BaseHelper, FixMatchSSLHelper):
       assert dataset in dataset_dict.keys(), 'dataset is invalid!'
       (x_train, y_train), (x_test, y_test) = dataset_dict[dataset].load_data()
       # NOTE can use dict set trian and test dataset
-      label_set = set(y_train.ravel())
+      y_train = y_train.ravel().astype('int32')
+      y_test = y_test.ravel().astype('int32')
+      label_set = set(y_train)
       label_idxs = []
       unlabel_idxs = []
       for l in label_set:
@@ -59,8 +62,14 @@ class KerasDatasetHelper(BaseHelper, FixMatchSSLHelper):
     self.unlabel_dataset_ratio = unlabel_dataset_ratio
     tmp = self.create_augmenter(**augment_kwargs)
     self.augmenter: CTAugment = tmp[0]
-    self.sup_aug_fn = tmp[1]
-    self.unsup_aug_fn = tmp[2]
+    self.sup_aug_fn: callable = tmp[1]
+    self.unsup_aug_fn: callable = tmp[2]
+
+  @staticmethod
+  def weak_aug_fn(data):
+    """Augmentation which does random left-right flip of the image."""
+    data = tf.image.random_flip_left_right(data)
+    return data
 
   @staticmethod
   def create_augmenter(name: str, kwarg: dict):
@@ -78,9 +87,12 @@ class KerasDatasetHelper(BaseHelper, FixMatchSSLHelper):
               lambda x: base_augmenter(x, probe=False, aug_key='aug_data'))
     else:
       raise ValueError('Invalid augmentation type {0}'.format(name))
+    print(INFO, f'Use {name}')
 
-  def build_train_datapipe(self, batch_size: int,
-                           is_augment: bool) -> tf.data.Dataset:
+  def build_train_datapipe(self,
+                           batch_size: int,
+                           is_augment: bool,
+                           is_normalize: bool = True) -> tf.data.Dataset:
 
     def label_pipe(img: tf.Tensor, label: tf.Tensor):
       img.set_shape(self.in_hw)
@@ -88,6 +100,11 @@ class KerasDatasetHelper(BaseHelper, FixMatchSSLHelper):
         data_dict = self.sup_aug_fn(img)
       else:
         data_dict = {'data': img}
+      # normalize image
+      if is_normalize:
+        data_dict = dict(
+            map(lambda kv: (kv[0], image_ops.normalize(kv[1])),
+                data_dict.items()))
 
       data_dict['label'] = label
       return data_dict
@@ -96,8 +113,14 @@ class KerasDatasetHelper(BaseHelper, FixMatchSSLHelper):
       img.set_shape(self.in_hw)
       if is_augment:
         data_dict = self.unsup_aug_fn(img)
+        data_dict['data'] = self.weak_aug_fn(data_dict['data'])
       else:
         data_dict = {'data': img}
+      # normalize image
+      if is_normalize:
+        data_dict = dict(
+            map(lambda kv: (kv[0], image_ops.normalize(kv[1])),
+                data_dict.items()))
 
       data_dict['label'] = label
       return data_dict
@@ -118,20 +141,30 @@ class KerasDatasetHelper(BaseHelper, FixMatchSSLHelper):
     ds = ds.with_options(options)
     return ds
 
-  def build_val_datapipe(self, batch_size: int) -> tf.data.Dataset:
+  def build_val_datapipe(self, batch_size: int,
+                         is_normalize: bool = True) -> tf.data.Dataset:
 
     def _pipe(img: tf.Tensor, label: tf.Tensor):
       img.set_shape(self.in_hw)
-      return {'data': img, 'label': label}
+      data_dict = {'data': img}
+      # normalize image
+      if is_normalize:
+        data_dict = dict(
+            map(lambda kv: (kv[0], image_ops.normalize(kv[1])),
+                data_dict.items()))
+
+      data_dict['label'] = label
+      return data_dict
 
     ds: tf.data.Dataset = (
         tf.data.Dataset.from_tensor_slices(self.val_list).map(
             _pipe, num_parallel_calls=-1).batch(batch_size).prefetch(None))
     return ds
 
-  def set_dataset(self, batch_size, is_augment):
+  def set_dataset(self, batch_size, is_augment, is_normalize: bool = False):
     self.batch_size = batch_size
-    self.train_dataset = self.build_train_datapipe(batch_size, is_augment)
-    self.val_dataset = self.build_val_datapipe(batch_size)
+    self.train_dataset = self.build_train_datapipe(batch_size, is_augment,
+                                                   is_normalize)
+    self.val_dataset = self.build_val_datapipe(batch_size, is_normalize)
     self.train_epoch_step = self.train_total_data // self.batch_size
     self.val_epoch_step = self.val_total_data // self.batch_size

@@ -1,7 +1,7 @@
 """ dcase2018 task5 helper functions """
 from tools.base import BaseHelper
 import tensorflow as tf
-from transforms.audio.transform import freq_mask
+from transforms.audio.ops import freq_mask
 from transforms.audio.rand_augment import RandAugment
 from transforms.audio.ct_augment import CTAugment
 from tools.training_engine import BaseTrainingLoop, EmaHelper
@@ -321,6 +321,11 @@ class Task5FixMatchSslLoop(BaseTrainingLoop):
       unsup_data = inputs['unsup_data']
       unsup_aug_data = inputs['unsup_aug_data']
       with tf.GradientTape() as tape:
+        # batch = tf.shape(sup_label)[0]
+        # logits = self.train_model(
+        #     tf.concat([sup_data, unsup_data, unsup_aug_data], 0), training=True)
+        # logit_sup = logits[:batch]
+        # logit_unsup, logit_aug_unsup = tf.split(logits[batch:], 2)
         logit_sup = self.train_model(sup_data, training=True)
         logit_unsup = self.train_model(unsup_data, training=True)
         logit_aug_unsup = self.train_model(unsup_aug_data, training=True)
