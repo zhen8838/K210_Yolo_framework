@@ -188,6 +188,7 @@ class BaseTrainingLoop():
             write_graph=write_graph,
             profile_batch=profile_batch,
             is_tracing=False,
+            global_seen=0,
         ))
     assert self.summary.profile_batch > 1, 'NOTE: summary.profile_batch > 1'
     self.summary_graph()
@@ -219,7 +220,10 @@ class BaseTrainingLoop():
           name='profile_batch', step=step, profiler_outdir=self.summary.write_dir)
     self.summary.is_tracing = False
 
-  def save_metrics(self, metrics: dict):
+  def summary_update_seen(self):
+    self.summary.global_seen += 1
+
+  def summary_save_metrics(self, metrics: dict):
     """Saves metrics to event file."""
     step = self.get_current_train_step()
     with self.summary.writer.as_default():
@@ -277,17 +281,18 @@ class BaseTrainingLoop():
         if self.summary.is_tracing:
           self.summary_save_trace()
         elif (not self.summary.is_tracing and
-              seen == self.summary.profile_batch - 1):
+              self.summary.global_seen == self.summary.profile_batch - 1):
           self.summary_enable_trace()
 
         train_logs = self._make_logs('train', self.metrics.train)
         train_logs['train/lr'] = self.optimizer.learning_rate.numpy()
-        self.save_metrics(train_logs)
+        self.summary_save_metrics(train_logs)
+        self.summary_update_seen()
         probar.update(seen, probar._make_logs_value(self.metrics.train))
       """ Start Validation """
       self.val_step(self.val_dataset, self.metrics.val)
       val_logs = self._make_logs('val', self.metrics.val)
-      self.save_metrics(val_logs)
+      self.summary_save_metrics(val_logs)
       probar.update(
           seen + 1,
           probar._make_logs_value(self.metrics.train) +
