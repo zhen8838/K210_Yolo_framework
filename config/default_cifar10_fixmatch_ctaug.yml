@@ -6,16 +6,16 @@ model:
   helper: KerasDatasetHelper
   helper_kwarg:
     dataset: "cifar10"
-    label_ratio: 0.05
+    label_ratio: 0.05 # Unlabeled sample ratio.
     unlabel_dataset_ratio: 7 # Unlabeled batch size ratio.
     augment_kwargs:
       name: ctaugment
       kwarg:
-        num_layers: 2
-        confidence_threshold: 0.85
+        num_layers: 3
+        confidence_threshold: 0.8
         decay: 0.99
         epsilon: 0.001
-        prob_to_apply: 0.5
+        prob_to_apply: null
         num_levels: 10
   network: imageclassifierCNN13
   network_kwarg:
@@ -94,5 +94,5 @@ train:
         base_lr: 0.001
         use_warmup: true
         warmup_epochs: 20
-        decay_rate: 0.7
-        decay_epochs: 5
+        decay_rate: 0.9
+        decay_epochs: 20

@@ -656,8 +656,7 @@ def imageclassifierCNN13(input_shape, nclasses, filters=32, weight_decay=0.0005)
       kernel_regularizer=k.regularizers.l2(weight_decay))
   dense_kwargs = dict(
       kernel_initializer=k.initializers.RandomNormal(stddev=0.01),
-      kernel_regularizer=k.regularizers.l2(weight_decay),
-      bias_regularizer=k.regularizers.l2(weight_decay))
+      kernel_regularizer=k.regularizers.l2(weight_decay))
   bn_args = dict(momentum=0.999)
   x = k.Input(input_shape)
 

@@ -361,7 +361,7 @@ class VariableCheckpoint(Callback):
         self.saver.restore(latest_checkpoint)
         print(INFO, f' Load Checkpoint From {latest_checkpoint}')
         return
-    print(INFO, f' No pre Checkpoint Load ')
+    print(INFO, f' No pre-Checkpoint Load')
 
   def _save_variable(self, logs: dict):
     current = logs.get(self.monitor)

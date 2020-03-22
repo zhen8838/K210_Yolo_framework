@@ -6,6 +6,10 @@ from tqdm import tqdm
 import abc
 from tensorflow.python.keras.callbacks import CallbackList
 from tensorflow.python.keras.utils.generic_utils import Progbar
+from tensorflow.python.ops import summary_ops_v2
+from tensorflow.python.keras.backend import get_graph
+
+import os
 import time
 import numpy as np
 import sys
@@ -170,13 +174,55 @@ class BaseTrainingLoop():
     """Returns current training step."""
     return self.optimizer.iterations.numpy()
 
-  def set_summary_writer(self, summary_writer):
-    self.summary_writer = summary_writer
+  def set_summary_writer(self,
+                         write_dir: str,
+                         sub_dir: str = None,
+                         write_graph=True,
+                         profile_batch=2):
+
+    full_write_dir = os.path.join(write_dir, sub_dir)
+    self.summary = EasyDict(
+        dict(
+            writer=tf.summary.create_file_writer(full_write_dir),
+            write_dir=full_write_dir,
+            write_graph=write_graph,
+            profile_batch=profile_batch,
+            is_tracing=False,
+        ))
+    assert self.summary.profile_batch > 1, 'NOTE: summary.profile_batch > 1'
+    self.summary_graph()
+
+  def summary_graph(self):
+    """Sets Keras model and writes graph if specified."""
+    if self.train_model and self.summary.write_graph:
+      with self.summary.writer.as_default(), \
+          summary_ops_v2.always_record_summaries():
+        if not self.train_model.run_eagerly:
+          summary_ops_v2.graph(get_graph(), step=0)
+
+        summary_writable = (
+            self.train_model._is_graph_network or  # pylint: disable=protected-access
+            self.train_model.__class__.__name__ == 'Sequential')  # pylint: disable=protected-access
+        if summary_writable:
+          summary_ops_v2.keras_model('keras', self.train_model, step=0)
+
+  def summary_enable_trace(self):
+    tf.summary.trace_on(graph=True, profiler=True)
+    self.summary.is_tracing = True
+
+  def summary_save_trace(self):
+    """Saves tensorboard profile to event file."""
+    step = self.get_current_train_step()
+    with self.summary.writer.as_default(), \
+        summary_ops_v2.always_record_summaries():
+      tf.summary.trace_export(
+          name='profile_batch', step=step, profiler_outdir=self.summary.write_dir)
+    self.summary.is_tracing = False
 
   def save_metrics(self, metrics: dict):
     """Saves metrics to event file."""
     step = self.get_current_train_step()
-    with self.summary_writer.as_default():
+    with self.summary.writer.as_default():
       for k, v in metrics.items():
         tf.summary.scalar(k, v, step=step)
 
@@ -227,6 +273,13 @@ class BaseTrainingLoop():
       for seen in range(1, train_target_steps + 1):
         self.train_step(self.train_iter, tf.constant(steps_per_run),
                         self.metrics.train)
+        # write something to tensorboard
+        if self.summary.is_tracing:
+          self.summary_save_trace()
+        elif (not self.summary.is_tracing and
+              seen == self.summary.profile_batch - 1):
+          self.summary_enable_trace()
+
         train_logs = self._make_logs('train', self.metrics.train)
         train_logs['train/lr'] = self.optimizer.learning_rate.numpy()
         self.save_metrics(train_logs)
@@ -246,6 +299,7 @@ class BaseTrainingLoop():
       [v.reset_states() for v in self.metrics.train.values()]
       [v.reset_states() for v in self.metrics.val.values()]
     self.callback_list.on_train_end(val_logs)
+    self.summary.writer.close()
 
 
 class MProgbar(Progbar):

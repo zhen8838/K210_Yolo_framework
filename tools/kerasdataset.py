@@ -67,8 +67,11 @@ class KerasDatasetHelper(FixMatchSSLHelper, BaseHelper):
 
   @staticmethod
   def weak_aug_fn(data):
-    """Augmentation which does random left-right flip of the image."""
+    """Augmentation which does random left-right flip and random shift of the image."""
+    w = 4
     data = tf.image.random_flip_left_right(data)
+    data_pad = tf.pad(data, [[w, w], [w, w], [0, 0]], mode='REFLECT')
+    data = tf.image.random_crop(data_pad, tf.shape(data))
     return data
 
   @staticmethod
