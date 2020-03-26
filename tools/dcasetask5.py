@@ -156,7 +156,7 @@ class Task5SupervisedLoop(BaseTrainingLoop):
       step_fn(inputs)
 
 
-class FixMatchSSLHelper(BaseHelper):
+class FixMatchSSLHelper(object):
 
   @staticmethod
   def create_augmenter(name: str, kwarg: dict):

@@ -150,7 +150,6 @@ class BaseTrainingLoop():
     self.val_model = val_model
     self.optimizer: k.optimizers.Optimizer = train_model.optimizer
     assert self.optimizer is not None, 'train_model must have optimizer!'
-    self.metrics = EasyDict(self.set_metrics_dict())
     if kwargs:
       assert 'hparams' in kwargs.keys(), 'if use kwargs, must contain hparams !'
       # NOTE hparams contain all extra features
@@ -159,6 +158,7 @@ class BaseTrainingLoop():
         if self.hparams.ema.enable:
           EmaHelper.initial_ema_vars(self.val_model.variables,
                                      self.train_model.variables)
+    self.metrics = EasyDict(self.set_metrics_dict())
 
   @abc.abstractmethod
   def train_step(self, iterator, num_steps_to_run, metrics: EasyDict):

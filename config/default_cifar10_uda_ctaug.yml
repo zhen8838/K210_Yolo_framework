@@ -1,0 +1,106 @@
+UPDATE_AUGMENTER_STATE: &UPDATE_AUGMENTER_STATE true
+NCLASSES: &NCLASSES 10
+
+mode: train
+model:
+  name: udacifar10
+  helper: KerasDatasetHelper
+  helper_kwarg:
+    dataset: "cifar10"
+    label_ratio: 0.05 # Unlabeled sample ratio.
+    unlabel_dataset_ratio: 7 # Unlabeled batch size ratio.
+    augment_kwargs:
+      name: ctaugment
+      kwarg:
+        num_layers: 3
+        confidence_threshold: 0.8
+        decay: 0.99
+        epsilon: 0.001
+        prob_to_apply: null
+        num_levels: 10
+  network: imageclassifierCNN13
+  network_kwarg:
+    input_shape:
+      - 32
+      - 32
+      - 3
+    nclasses: *NCLASSES
+    filters: 32
+train:
+  graph_optimizer: true
+  graph_optimizer_kwarg:
+    layout_optimizer: true
+    remapping: true
+    shape_optimization: true
+    loop_optimization: true
+    constant_folding: true
+    function_optimization: true
+    scoped_allocator_optimization: true
+  augmenter: true
+  batch_size: 64
+  pre_ckpt: null
+  rand_seed: 10101
+  epochs: 100
+  train_epoch_step: 1024
+  vali_epoch_step: null
+  steps_per_run: 30
+  log_dir: log
+  sub_log_dir: default_cifar10_uda_ctaug_exp
+  mixed_precision:
+    enable: false
+    dtype: float32
+  trainloop: UDASslLoop
+  trainloop_kwarg:
+    hparams:
+      nclasses: *NCLASSES
+      update_augmenter_state: *UPDATE_AUGMENTER_STATE
+      tsa: # 训练信号退火
+        mode: "no" # Can choice from [linear,exp,log,no]
+        scale: 5 # scale
+        max_epoch: 256 # max update batch
+      uda:
+        temperature: 1 # sharpening by temperature
+        confidence: 0.95 # Ignore predictions < confidence
+        wu: 1 # loss unlabeled weights
+        we: 0 # loss entropy 
+      ema:
+        enable: true
+        decay: 0.999
+  variablecheckpoint_kwarg:
+    variable_dict:
+      model: train_model
+      model_ema: val_model
+      optimizer: optimizer
+    monitor: val/acc
+    mode: max
+  # optimizer: Adam
+  # optimizer_kwarg:
+  #   learning_rate: 0.001
+  #   beta_1: 0.9
+  #   beta_2: 0.999
+  #   amsgrad: false
+  optimizer: SGD
+  optimizer_kwarg:
+    learning_rate: 0.001
+    momentum: 0.9
+    nesterov: True
+  callbacks:
+    - name: EarlyStopping
+      kwarg:
+        monitor: val/acc
+        min_delta: 0
+        patience: 50
+        verbose: 0
+        mode: max
+        baseline: null
+        restore_best_weights: false
+    - name: AugmenterStateSync
+      kwarg:
+        update_augmenter_state: *UPDATE_AUGMENTER_STATE
+    - name: ScheduleLR
+      kwarg:
+        base_lr: 0.03
+        use_warmup: true
+        warmup_epochs: 20
+        decay_rate: 0.7
+        decay_epochs: 20
