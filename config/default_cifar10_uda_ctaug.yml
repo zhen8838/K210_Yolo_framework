@@ -1,36 +1,31 @@
 UPDATE_AUGMENTER_STATE: &UPDATE_AUGMENTER_STATE true
+NCLASSES: &NCLASSES 10
 
 mode: train
 model:
-  name: fixmatchaudio
-  helper: DCASETask5FixMatchSSLHelper
+  name: udacifar10
+  helper: KerasDatasetHelper
   helper_kwarg:
-    data_ann: data/dcasetask5_ann_list.npy
-    in_hw:
-      - 40
-      - 501
-    nclasses: 9
-    unlabel_dataset_ratio: 3 # Unlabeled batch size ratio.
+    dataset: "cifar10"
+    label_ratio: 0.05 # Unlabeled sample ratio.
+    unlabel_dataset_ratio: 7 # Unlabeled batch size ratio.
     augment_kwargs:
       name: ctaugment
       kwarg:
-        num_layers: 2
-        confidence_threshold: 0.9
+        num_layers: 3
+        confidence_threshold: 0.8
         decay: 0.99
         epsilon: 0.001
-        prob_to_apply: 0.5
+        prob_to_apply: null
         num_levels: 10
-  network: dcasetask5basemodel
+  network: imageclassifierCNN13
   network_kwarg:
     input_shape:
-      - 40
-      - 501
-      - 1
-    nclasses: 9
-    softmax: false
-    weight_decay: 0.0003
-    bn_decay: 0.9
-    bn_epsilon: 0.00001
+      - 32
+      - 32
+      - 3
+    nclasses: *NCLASSES
+    filters: 32
 train:
   graph_optimizer: true
   graph_optimizer_kwarg:
@@ -42,25 +37,32 @@ train:
     function_optimization: true
     scoped_allocator_optimization: true
   augmenter: true
-  batch_size: 16
+  batch_size: 64
   pre_ckpt: null
   rand_seed: 10101
   epochs: 100
-  train_epoch_step: null
+  train_epoch_step: 1024
   vali_epoch_step: null
   steps_per_run: 30
   log_dir: log
-  sub_log_dir: default_dcasetask5_fixmatch_ctaug_exp
+  sub_log_dir: default_cifar10_uda_ctaug_exp
   mixed_precision:
     enable: false
     dtype: float32
-  trainloop: Task5FixMatchSslLoop
+  trainloop: UDASslLoop
   trainloop_kwarg:
     hparams:
+      nclasses: *NCLASSES
       update_augmenter_state: *UPDATE_AUGMENTER_STATE
-      fixmatch:
-        wu: 1.0 # Pseudo label loss weight
-        confidence: 0.7 # Confidence threshold.
+      tsa: # 训练信号退火
+        mode: "no" # Can choice from [linear,exp,log,no]
+        scale: 5 # scale
+        max_epoch: 256 # max update batch
+      uda:
+        temperature: 1 # sharpening by temperature
+        confidence: 0.95 # Ignore predictions < confidence
+        wu: 1 # loss unlabeled weights
+        we: 0 # loss entropy 
       ema:
         enable: true
         decay: 0.999
@@ -97,8 +99,8 @@ train:
         update_augmenter_state: *UPDATE_AUGMENTER_STATE
     - name: ScheduleLR
       kwarg:
-        base_lr: 0.001
+        base_lr: 0.03
         use_warmup: true
         warmup_epochs: 20
         decay_rate: 0.7
-        decay_epochs: 5
+        decay_epochs: 20

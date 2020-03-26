@@ -1,4 +1,4 @@
-import transforms.image.transform as ops
+from transforms.image import ops
 import inspect
 from easydict import EasyDict
 import tensorflow as tf

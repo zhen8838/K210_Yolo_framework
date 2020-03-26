@@ -1,5 +1,5 @@
 import tensorflow as tf
-import transforms.audio.transform as ops
+from transforms.audio import ops
 
 NAME_TO_FUNC = {
     'Identity': tf.identity,

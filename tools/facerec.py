@@ -162,7 +162,7 @@ class FcaeRecHelper(BaseHelper):
         imgs2.set_shape(img_shape)
         label.set_shape([3])
         # Note y_true shape will be [batch,3]
-        return (raw_imgs0, raw_imgs1, raw_imgs2), (label)
+        return (imgs0, imgs1, imgs2), (label)
 
       ds_trans = lambda fname, label: tf.data.Dataset.from_tensor_slices((
           fname, label)).shuffle(100).repeat()
@@ -205,7 +205,7 @@ class FcaeRecHelper(BaseHelper):
       return (img_a, img_b), (label)
 
     if is_training:
-      ds_trans = lambda x: tf.data.TFRecordDataset(x).repeat()
+      ds_trans = lambda x: tf.data.TFRecordDataset(x)
       ds = (
           tf.data.Dataset.from_tensor_slices(image_ann_list).interleave(
               ds_trans).map(parser, -1).batch(batch_size, True).prefetch(-1))
@@ -498,16 +498,82 @@ class FacerecValidation(k.callbacks.Callback):
           tf.reduce_mean(tf.map_fn(fn, tf.range(self.val_step), tf.float32)))
 
 
+class FaceSoftmaxTrainingLoop(BaseTrainingLoop):
+
+  def __init__(self, train_model, val_model, **kwargs):
+    """ 
+    
+    1.  loss hparams:
+    
+        Args:
+          loss:
+            name (str) : Sparse_SoftmaxLoss,Sparse_AmsoftmaxLoss,Sparse_AsoftmaxLoss
+            kwarg (dict) : 
+              batch_size (int) : NOTE Sparse_SoftmaxLoss not have `batch_size`
+              scale (float) :  30
+              margin (float) :  0.35 NOTE Sparse_SoftmaxLoss not have `margin`
+              
+    """
+    super().__init__(train_model, val_model, **kwargs)
+    loss_dict = {
+        'Sparse_SoftmaxLoss': Sparse_SoftmaxLoss,
+        'Sparse_AmsoftmaxLoss': Sparse_AmsoftmaxLoss,
+        'Sparse_AsoftmaxLoss': Sparse_AsoftmaxLoss
+    }
+    self.loss_fn: Sparse_AmsoftmaxLoss = loss_dict[self.hparams.loss.name](
+        **self.hparams.loss.kwarg.dicts())
+
+  def set_metrics_dict(self):
+    d = {
+        'train': {
+            'loss':
+                k.metrics.Mean('train_loss', dtype=tf.float32),
+            'acc':
+                k.metrics.SparseCategoricalAccuracy(
+                    'train_acc', dtype=tf.float32)
+        },
+        'val': {}
+    }
+    return d
+
+  @tf.function
+  def train_step(self, iterator, num_steps_to_run, metrics):
+
+    def step_fn(inputs):
+      """Per-Replica training step function."""
+      imgs, y_true = inputs
+      y_true = tf.expand_dims(y_true, -1)
+      with tf.GradientTape() as tape:
+        y_pred = self.train_model(imgs, training=True)
+        loss = self.loss_fn.call(y_true, y_pred)
+        loss_wd = tf.reduce_sum(self.train_model.losses)
+        total_loss = loss + loss_wd
+
+      grads = tape.gradient(total_loss, self.train_model.trainable_variables)
+      self.optimizer.apply_gradients(
+          zip(grads, self.train_model.trainable_variables))
+
+      metrics.loss.update_state(loss)
+      metrics.acc.update_state(y_true, y_pred)
+
+    for _ in tf.range(num_steps_to_run):
+      step_fn(next(iterator))
+
+
 class FaceTripletTrainingLoop(BaseTrainingLoop):
 
-  def __init__(self,
-               train_model,
-               val_model,
-               target_distance: float,
-               distance_fn: str = 'l2'):
-    super().__init__(train_model, val_model)
-    self.target_distance = target_distance
-    self.distance_fn: l2distance = distance_register[distance_fn]
+  def __init__(self, train_model, val_model, **kwargs):
+    """ 
+    
+    1.  triplet loss hparams:
+    
+        Args:
+          loss:
+            target_distance (float): 0 ~ 4
+            distance_fn (str): 'l2'
+          
+    """
+    super().__init__(train_model, val_model, **kwargs)
 
   def set_metrics_dict(self):
     d = {
@@ -516,7 +582,8 @@ class FaceTripletTrainingLoop(BaseTrainingLoop):
             'acc': k.metrics.Mean('train_acc', dtype=tf.float32)
         },
         'val': {
-            'acc': k.metrics.Accuracy('val_acc', dtype=tf.float32)
+            'acc': k.metrics.Mean('val_acc', dtype=tf.float32),
+            'thresh': k.metrics.Mean('val_best_thresh', dtype=tf.float32)
         }
     }
     return d
@@ -526,44 +593,53 @@ class FaceTripletTrainingLoop(BaseTrainingLoop):
 
     def step_fn(inputs):
       """Per-Replica training step function."""
-      images, labels = inputs
+      (img_a, img_p, img_n), labels = inputs
+      imgs = tf.concat([img_a, img_p, img_n], 0)
       with tf.GradientTape() as tape:
-        y_pred = self.train_model(images, training=True)
-        a, p, n = tf.split(y_pred, 3, axis=-1)
-        ap = self.distance_fn(a, p, is_norm=True)  # [batch]
-        an = self.distance_fn(a, n, is_norm=True)  # [batch]
-        loss_tp = tf.reduce_mean(tf.nn.relu(ap - an + self.target_distance))
+        y_pred = self.train_model(imgs, training=True)
+        if self.hparams.loss.distance_fn == 'l2':
+          y_pred = tf.math.l2_normalize(y_pred, -1)
+          a, p, n = tf.split(y_pred, 3, axis=0)
+          ap = tf.reduce_sum(tf.square(a - p), -1)
+          an = tf.reduce_sum(tf.square(a - n), -1)
+          loss = tf.reduce_mean(
+              tf.nn.relu(ap - an + self.hparams.loss.target_distance))
         loss_wd = tf.reduce_sum(self.train_model.losses)
-        loss = loss_tp + loss_wd
+        total_loss = loss + loss_wd
 
-      acc = tf.reduce_mean(
-          tf.cast(
-              tf.equal(ap + self.target_distance < an, tf.ones_like(ap, tf.bool)),
-              tf.float32))
-
-      grads = tape.gradient(loss, self.train_model.trainable_variables)
+      grads = tape.gradient(total_loss, self.train_model.trainable_variables)
       self.optimizer.apply_gradients(
           zip(grads, self.train_model.trainable_variables))
 
+      acc = tf.reduce_mean(
+          tf.cast(
+              tf.equal(ap + self.hparams.loss.target_distance < an,
+                       tf.ones_like(ap, tf.bool)), tf.float32))
       metrics.loss.update_state(loss)
       metrics.acc.update_state(acc)
 
     for _ in tf.range(num_steps_to_run):
       step_fn(next(iterator))
 
-    @tf.function
-    def val_step(self, dataset, metrics):
+  def val_step(self, dataset, metrics):
 
-      def step_fn(inputs):
-        """Per-Replica training step function."""
-        images, actual_issame = inputs
-        y_pred: Tuple[tf.Tensor] = self.val_model(images, training=False)
-        dist: tf.Tensor = self.distance_fn(*y_pred, is_norm=True)  # [batch]
-        pred_issame = tf.less(dist, self.threshold)
-        metrics.acc.update_state(actual_issame, pred_issame)
+    embedds_a = []
+    embedds_b = []
+    issame = []
+    for (img_a, img_b), y_true in dataset:
+      embedds_a.append(self.val_model(img_a, training=False))
+      embedds_b.append(self.val_model(img_b, training=False))
+      issame.append(y_true)
 
-      for inputs in dataset:
-        step_fn(inputs)
+    embedds_a = tf.concat(embedds_a, 0)
+    embedds_b = tf.concat(embedds_b, 0)
+    issame = tf.concat(issame, 0)
+
+    (tpr, fpr, accuracy, best_threshold, val, val_std,
+     far) = calculate_evaluate_metric(embedds_a.numpy(), embedds_b.numpy(),
+                                      issame.numpy(), 3, 0)
+    metrics.acc.update_state(accuracy)
+    metrics.thresh.update_state(best_threshold)
 
 
 def calculate_accuracy(threshold: float, dist: np.ndarray, issame: np.ndarray):

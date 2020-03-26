@@ -1,10 +1,10 @@
 """ dcase2018 task5 helper functions """
 from tools.base import BaseHelper
 import tensorflow as tf
-from transforms.audio.transform import freq_mask
+from transforms.audio.ops import freq_mask
 from transforms.audio.rand_augment import RandAugment
 from transforms.audio.ct_augment import CTAugment
-from tools.training_engine import BaseTrainingLoop
+from tools.training_engine import BaseTrainingLoop, EmaHelper
 import numpy as np
 
 
@@ -58,10 +58,9 @@ class DCASETask5Helper(BaseHelper):
       mel = tf.expand_dims(mel, -1)
       return {'data': mel, 'label': label}
 
-    ds = tf.data.TFRecordDataset(
-        [self.train_list, self.unlabel_list], num_parallel_reads=2).shuffle(
-            batch_size * 300).repeat().map(_pipe, -1).batch(
-                batch_size, drop_remainder=True).prefetch(-1)
+    ds = tf.data.TFRecordDataset([self.train_list], num_parallel_reads=2).shuffle(
+        batch_size * 300).repeat().map(_pipe, -1).batch(
+            batch_size, drop_remainder=True).prefetch(-1)
 
     return ds
 
@@ -129,6 +128,10 @@ class Task5SupervisedLoop(BaseTrainingLoop):
       grads = tape.gradient(loss, self.train_model.trainable_variables)
       self.optimizer.apply_gradients(
           zip(grads, self.train_model.trainable_variables))
+      if self.hparams.ema.enable:
+        EmaHelper.update_ema_vars(self.val_model.variables,
+                                  self.train_model.variables,
+                                  self.hparams.ema.decay)
       metrics.loss.update_state(loss)
       metrics.acc.update_state(labels, tf.nn.softmax(logits))
 
@@ -141,10 +144,10 @@ class Task5SupervisedLoop(BaseTrainingLoop):
     def step_fn(inputs):
       """Per-Replica training step function."""
       datas, labels = inputs['data'], inputs['label']
-      logits = self.train_model(datas, training=False)
+      logits = self.val_model(datas, training=False)
       loss_xe = tf.nn.sparse_softmax_cross_entropy_with_logits(labels, logits)
       loss_xe = tf.reduce_mean(loss_xe)
-      loss_wd = tf.reduce_sum(self.train_model.losses)
+      loss_wd = tf.reduce_sum(self.val_model.losses)
       loss = loss_xe + loss_wd
       metrics.loss.update_state(loss)
       metrics.acc.update_state(labels, tf.nn.softmax(logits))
@@ -153,7 +156,7 @@ class Task5SupervisedLoop(BaseTrainingLoop):
       step_fn(inputs)
 
 
-class FixMatchSSLHelper(BaseHelper):
+class FixMatchSSLHelper(object):
 
   @staticmethod
   def create_augmenter(name: str, kwarg: dict):
@@ -264,10 +267,14 @@ class DCASETask5FixMatchSSLHelper(DCASETask5Helper, FixMatchSSLHelper):
 
 class AugmenterStateSync(tf.keras.callbacks.Callback):
 
-  def __init__(self, augmenter: CTAugment, update_augmenter_state: bool):
+  def __init__(self,
+               augmenter: CTAugment,
+               update_augmenter_state: bool,
+               verbose: bool = False):
     super().__init__()
     self.augmenter = augmenter
     self.update_augmenter_state = update_augmenter_state
+    self.verbose = verbose
 
   def on_epoch_begin(self, epoch, logs=None):
     self.augmenter.sync_state()
@@ -275,19 +282,15 @@ class AugmenterStateSync(tf.keras.callbacks.Callback):
     augmenter_state = [
         f'{k}: {v.numpy()}\n' for (k, v) in augmenter_state.items()
     ]
-    print('Augmenter state:\n', '\n'.join(augmenter_state))
+    if self.verbose:
+      print('Augmenter state:\n', '\n'.join(augmenter_state))
 
 
 class Task5FixMatchSslLoop(BaseTrainingLoop):
 
-  def __init__(self, train_model, val_model, **kwargs):
-    super().__init__(train_model, val_model, **kwargs)
-    assert 'update_augmenter_state' in kwargs
-    self.update_augmenter_state: bool = kwargs['update_augmenter_state']
-    self.augmenter: CTAugment = None
-
   def set_augmenter(self, augmenter):
-    self.augmenter: CTAugment = augmenter
+    if self.hparams.update_augmenter_state:
+      self.augmenter: CTAugment = augmenter
 
   def set_metrics_dict(self):
     d = {
@@ -318,6 +321,11 @@ class Task5FixMatchSslLoop(BaseTrainingLoop):
       unsup_data = inputs['unsup_data']
       unsup_aug_data = inputs['unsup_aug_data']
       with tf.GradientTape() as tape:
+        # batch = tf.shape(sup_label)[0]
+        # logits = self.train_model(
+        #     tf.concat([sup_data, unsup_data, unsup_aug_data], 0), training=True)
+        # logit_sup = logits[:batch]
+        # logit_unsup, logit_aug_unsup = tf.split(logits[batch:], 2)
         logit_sup = self.train_model(sup_data, training=True)
         logit_unsup = self.train_model(unsup_data, training=True)
         logit_aug_unsup = self.train_model(unsup_aug_data, training=True)
@@ -345,16 +353,22 @@ class Task5FixMatchSslLoop(BaseTrainingLoop):
       grads = tape.gradient(loss, self.train_model.trainable_variables)
       self.optimizer.apply_gradients(
           zip(grads, self.train_model.trainable_variables))
-      metrics.loss.update_state(loss)
-      metrics.acc.update_state(sup_label, logit_sup)
 
-      if self.update_augmenter_state:
-        # if self.hparams.use_ema and self.hparams.augment.use_ema_probe_data:
-        #   probe_logits = self.model_ema(inputs['probe_data'], training=False)
-        # else:
-        probe_logits = self.train_model(inputs['probe_data'], training=False)
+      if self.hparams.ema.enable:
+        EmaHelper.update_ema_vars(self.val_model.variables,
+                                  self.train_model.variables,
+                                  self.hparams.ema.decay)
+
+      if self.hparams.update_augmenter_state:
+        if self.hparams.ema.enable and self.hparams.update_augmenter_state:
+          probe_logits = self.val_model(inputs['probe_data'], training=False)
+        else:
+          probe_logits = self.train_model(inputs['probe_data'], training=False)
         probe_logits = tf.cast(probe_logits, tf.float32)
         self.augmenter.update(inputs, tf.nn.softmax(probe_logits))
+
+      metrics.loss.update_state(loss)
+      metrics.acc.update_state(sup_label, logit_sup)
 
     for _ in tf.range(num_steps_to_run):
       step_fn(next(iterator))

@@ -16,9 +16,12 @@ model:
       - 1
     nclasses: 9
     softmax: false
+    weight_decay: 0.0003
+    bn_decay: 0.9
+    bn_epsilon: 0.00001
 train:
   graph_optimizer: true
-  graph_optimizer_kwarg: 
+  graph_optimizer_kwarg:
     layout_optimizer: true
     remapping: true
     shape_optimization: true
@@ -29,39 +32,51 @@ train:
     layout_optimizer: true
   augmenter: true
   batch_size: 48
-  pre_ckpt: log/default_dcasetask5_exp/auto_train_19.h5
+  pre_ckpt: null
   rand_seed: 10101
   epochs: 50
+  train_epoch_step: null
+  vali_epoch_step: null
   steps_per_run: 30
   log_dir: log
   sub_log_dir: default_dcasetask5_exp
+  mixed_precision:
+    enable: false 
+    dtype: float32
   trainloop: Task5SupervisedLoop
-  trainloop_kwarg: null
-  optimizer: Adam
+  trainloop_kwarg: 
+    hparams:
+      ema:
+        enable: true
+        decay: 0.999
+  variablecheckpoint_kwarg: 
+    variable_dict:
+      model: train_model
+      model_ema: val_model
+      optimizer: optimizer
+    monitor: val/acc
+    mode: max
+  # optimizer: Adam
+  # optimizer_kwarg:
+  #   learning_rate: 0.001
+  #   beta_1: 0.9
+  #   beta_2: 0.999
+  #   amsgrad: false
+  optimizer: SGD
   optimizer_kwarg:
     learning_rate: 0.001
-    beta_1: 0.9
-    beta_2: 0.999
-    amsgrad: false
+    momentum: 0.9
+    nesterov: True
   callbacks:
     - name: EarlyStopping
       kwarg:
         monitor: val/acc
         min_delta: 0
-        patience: 5
+        patience: 10
         verbose: 0
         mode: max
         baseline: null
         restore_best_weights: false
-    - name: ModelCheckpoint
-      kwarg:
-        monitor: val/acc
-        verbose: 0
-        save_best_only: true
-        save_weights_only: false
-        mode: max
-        save_freq: epoch
-        load_weights_on_restart: false
     - name: ScheduleLR    
       kwarg:
        base_lr: 0.001

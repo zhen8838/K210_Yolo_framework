@@ -1,5 +1,5 @@
 import tensorflow as tf
-import transforms.audio.transform as ops
+from transforms.audio import ops
 
 NAME_TO_FUNC = {
     'Identity': tf.identity,
@@ -21,11 +21,8 @@ def _ignore_level_to_arg(level):
 
 def _mask_level_to_arg(level):
   # level = [0~1]
-  # Note factor loop in [0. ~ 0.2]
-  limit = tf.constant(0.2, tf.float32)
-  factor = tf.math.mod(level, limit)
-  factor = tf.cond(tf.equal(factor, 0.), lambda: limit, lambda: factor)
-  times = tf.cast(tf.math.floordiv(level, limit), tf.int32) + 1
+  factor = level * 0.5
+  times = 1
   return (
       factor,
       times,
@@ -40,11 +37,8 @@ def _rescale_level_to_arg(level):
 
 def _warping_level_to_arg(level):
   # level = [0~1]
-  # Note factor loop in [0. ~ 0.2]
-  factor = tf.math.mod(level, 0.2)
-  factor = tf.cond(tf.equal(factor, 0.), lambda: 0.2, lambda: factor)
-
-  npoints = tf.cast(tf.math.floordiv(level, 0.2), tf.int32) + 1
+  factor = level * 0.5
+  npoints = 1
   return (
       factor,
       npoints,
@@ -149,10 +143,14 @@ class CTAugment(object):
     self.num_levels = int(num_levels)
     self.prob_to_apply = prob_to_apply
     # State of the augmenter is defined by rates.
+    # 增强器的状态由rates定义。
     # To speed up sampling we also keep separate variable for sampling
     # probabilities (log_probs) which are deterministically computed from rates.
+    # 为了加快采样速度，我们还为采样概率(log_probs)保留单独的变量，这些概率是根据rates确定计算的。
     self.state_shape = [len(AUG_OPS), self.num_levels]
+    # NOTE 这些以下的副本更新方式都是用于分布式训练的,在单卡训练无关紧要
     # rates are updated using assign_add and averaged across all replicas.
+    # 使用assign_add更新rates，并对所有更新进行平均。
     self.rates = tf.Variable(
         tf.ones(self.state_shape, dtype=tf.float32),
         trainable=False,
@@ -161,6 +159,7 @@ class CTAugment(object):
         synchronization=tf.VariableSynchronization.ON_WRITE)
     # log_probs is deterministically computed from rates and value should
     # be the same on all replicas, thus we use ONLY_FIRST_REPLICA aggregation
+    # log_probs是根据rates确定计算的，所有副本上的值应该相同，因此我们只使用第一个副本聚合
     self.probs = tf.Variable(
         tf.ones(self.state_shape, dtype=tf.float32) / self.num_levels,
         trainable=False,
@@ -168,6 +167,7 @@ class CTAugment(object):
         aggregation=tf.VariableAggregation.ONLY_FIRST_REPLICA,
         synchronization=tf.VariableSynchronization.ON_WRITE)
     # list of log probs variables for each data pipeline
+    # NOTE 为每个数据管道设置的log probs变量列表
     self.log_probs = []
 
   def update(self, tensor_dict, probe_probs):
@@ -236,7 +236,7 @@ class CTAugment(object):
         'ct_augment_probs': self.probs,
     }
 
-  def _sample_ops_uniformly(self):
+  def _sample_ops_uniformly(self) -> [tf.Tensor, tf.Tensor]:
     """Uniformly samples sequence of augmentation ops."""
     op_indices = tf.random.uniform(
         shape=[self.num_layers], maxval=len(AUG_OPS), dtype=tf.int32)
@@ -265,8 +265,10 @@ class CTAugment(object):
 
   def __call__(self, data: tf.Tensor, probe: bool = True,
                aug_key: str = 'data') -> dict:
-    """When training labeled data, use `probe=True` to update weights
-        When training unlabeled data, use `probe=False aug_key=aug_data` to augment data
+    """
+      When training labeled data, use `probe=True` to update weights
+      
+      When training unlabeled data, use `probe=False aug_key=aug_data` to augment data
     
     Args:
         data (tf.Tensor): 
@@ -286,6 +288,7 @@ class CTAugment(object):
 
     output_dict = {}
     if probe:
+      # 采样 [num_layers] 个 op_indices 和 op_args
       probe_op_indices, probe_op_args = self._sample_ops_uniformly()
       probe_data = self._apply_ops(data, probe_op_indices, probe_op_args)
       output_dict['probe_op_indices'] = probe_op_indices

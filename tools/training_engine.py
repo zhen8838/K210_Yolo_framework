@@ -6,6 +6,10 @@ from tqdm import tqdm
 import abc
 from tensorflow.python.keras.callbacks import CallbackList
 from tensorflow.python.keras.utils.generic_utils import Progbar
+from tensorflow.python.ops import summary_ops_v2
+from tensorflow.python.keras.backend import get_graph
+
+import os
 import time
 import numpy as np
 import sys
@@ -38,17 +42,123 @@ class EasyDict(object):
   def values(self):
     return self.__dict__.values()
 
+  def dicts(self):
+    return self.__dict__
+
+
+class EmaHelper(object):
+  """ Helper class for exponential moving average. """
+
+  @staticmethod
+  def initial_ema_vars(ema_variables: dict, initial_values: dict):
+    """ Assign EMA variables from initial values.
+    
+    Args:
+        ema_variables (dict): ema model variables
+        initial_values (dict): training model variables
+    """
+
+    def _assign_one_var_fn(ema_var, value):
+      ema_var.assign(value)
+
+    def _assign_all_in_cross_replica_context_fn(strategy, ema_vars, values):
+      for ema_var, value in zip(ema_vars, values):
+        value = strategy.extended.reduce_to(tf.distribute.ReduceOp.MEAN, value,
+                                            ema_var)
+        if ema_var.trainable:
+          strategy.extended.update(ema_var, _assign_one_var_fn, args=(value,))
+        else:
+          _assign_one_var_fn(ema_var, value)
+
+    replica_context = tf.distribute.get_replica_context()
+    if replica_context:
+      replica_context.merge_call(
+          _assign_all_in_cross_replica_context_fn,
+          args=(ema_variables, initial_values))
+    else:
+      if tf.distribute.in_cross_replica_context():
+        _assign_all_in_cross_replica_context_fn(tf.distribute.get_strategy(),
+                                                ema_variables, initial_values)
+      else:
+        for ema_var, value in zip(ema_variables, initial_values):
+          _assign_one_var_fn(ema_var, value)
+
+  @staticmethod
+  def update_ema_vars(ema_variables: dict, new_values: dict, ema_decay: float):
+    """ Updates EMA variables. 
+      
+      Update rule is following:
+        ema_var := ema_var * ema_decay + var * (1 - ema_decay)
+      which is equivalent to:
+        ema_var -= (1 - ema_decay) * (ema_var - var)
+        
+    Args:
+        ema_variables (dict): ema model variables
+        new_values (dict):  training model variables
+        ema_decay (float): ema decay rate
+    """
+
+    one_minus_decay = 1.0 - ema_decay
+
+    def _update_one_var_fn(ema_var, value):
+      ema_var.assign_sub((ema_var-value) * one_minus_decay)
+
+    def _update_all_in_cross_replica_context_fn(strategy, ema_vars, values):
+      for ema_var, value in zip(ema_vars, values):
+        value = strategy.extended.reduce_to(tf.distribute.ReduceOp.MEAN, value,
+                                            ema_var)
+        if ema_var.trainable:
+          strategy.extended.update(ema_var, _update_one_var_fn, args=(value,))
+        else:
+          _update_one_var_fn(ema_var, value)
+
+    replica_context = tf.distribute.get_replica_context()
+    if replica_context:
+      replica_context.merge_call(
+          _update_all_in_cross_replica_context_fn,
+          args=(ema_variables, new_values))
+    else:
+      if tf.distribute.in_cross_replica_context():
+        _update_all_in_cross_replica_context_fn(tf.distribute.get_strategy(),
+                                                ema_variables, new_values)
+      else:
+        for ema_var, value in zip(ema_variables, new_values):
+          _update_one_var_fn(ema_var, value)
+
 
 class BaseTrainingLoop():
 
-  def __init__(self, train_model: k.Model, val_model: k.Model, **kwargs):
+  def __init__(self, train_model: k.Model, val_model: k.Model, **kwargs: dict):
+    """ Training Loop initial
+      
+      if use kwargs, must contain `hparams`, NOTE hparams contain all extra features.
+      
+      1.  exponential moving average:
+          
+          ema training model variable to validation model.
+          NOTE if enable ema, must upate ema in `each train step function`
+          Args:
+            ema : {
+              enable (bool): true or false
+              decay (float): ema decay rate, recommend 0.999
+            }
+    Args:
+        train_model (k.Model): training model
+        val_model (k.Model): validation model
+    """
     self.train_model = train_model
     self.val_model = val_model
     self.optimizer: k.optimizers.Optimizer = train_model.optimizer
     assert self.optimizer is not None, 'train_model must have optimizer!'
-    self.metrics = EasyDict(self.set_metrics_dict())
     if kwargs:
+      assert 'hparams' in kwargs.keys(), 'if use kwargs, must contain hparams !'
+      # NOTE hparams contain all extra features
       self.hparams = EasyDict(kwargs['hparams'])
+      if 'ema' in self.hparams.keys():
+        if self.hparams.ema.enable:
+          EmaHelper.initial_ema_vars(self.val_model.variables,
+                                     self.train_model.variables)
+    self.metrics = EasyDict(self.set_metrics_dict())
 
   @abc.abstractmethod
   def train_step(self, iterator, num_steps_to_run, metrics: EasyDict):
@@ -64,13 +174,59 @@ class BaseTrainingLoop():
     """Returns current training step."""
     return self.optimizer.iterations.numpy()
 
-  def set_summary_writer(self, summary_writer):
-    self.summary_writer = summary_writer
+  def set_summary_writer(self,
+                         write_dir: str,
+                         sub_dir: str = None,
+                         write_graph=True,
+                         profile_batch=2):
 
-  def save_metrics(self, metrics: dict):
+    full_write_dir = os.path.join(write_dir, sub_dir)
+    self.summary = EasyDict(
+        dict(
+            writer=tf.summary.create_file_writer(full_write_dir),
+            write_dir=full_write_dir,
+            write_graph=write_graph,
+            profile_batch=profile_batch,
+            is_tracing=False,
+            global_seen=0,
+        ))
+    assert self.summary.profile_batch > 1, 'NOTE: summary.profile_batch > 1'
+    self.summary_graph()
+
+  def summary_graph(self):
+    """Sets Keras model and writes graph if specified."""
+    if self.train_model and self.summary.write_graph:
+      with self.summary.writer.as_default(), \
+          summary_ops_v2.always_record_summaries():
+        if not self.train_model.run_eagerly:
+          summary_ops_v2.graph(get_graph(), step=0)
+
+        summary_writable = (
+            self.train_model._is_graph_network or  # pylint: disable=protected-access
+            self.train_model.__class__.__name__ == 'Sequential')  # pylint: disable=protected-access
+        if summary_writable:
+          summary_ops_v2.keras_model('keras', self.train_model, step=0)
+
+  def summary_enable_trace(self):
+    tf.summary.trace_on(graph=True, profiler=True)
+    self.summary.is_tracing = True
+
+  def summary_save_trace(self):
+    """Saves tensorboard profile to event file."""
+    step = self.get_current_train_step()
+    with self.summary.writer.as_default(), \
+        summary_ops_v2.always_record_summaries():
+      tf.summary.trace_export(
+          name='profile_batch', step=step, profiler_outdir=self.summary.write_dir)
+    self.summary.is_tracing = False
+
+  def summary_update_seen(self):
+    self.summary.global_seen += 1
+
+  def summary_save_metrics(self, metrics: dict):
     """Saves metrics to event file."""
     step = self.get_current_train_step()
-    with self.summary_writer.as_default():
+    with self.summary.writer.as_default():
       for k, v in metrics.items():
         tf.summary.scalar(k, v, step=step)
 
@@ -121,18 +277,26 @@ class BaseTrainingLoop():
       for seen in range(1, train_target_steps + 1):
         self.train_step(self.train_iter, tf.constant(steps_per_run),
                         self.metrics.train)
+        # write something to tensorboard
+        if self.summary.is_tracing:
+          self.summary_save_trace()
+        elif (not self.summary.is_tracing and
+              self.summary.global_seen == self.summary.profile_batch - 1):
+          self.summary_enable_trace()
+
         train_logs = self._make_logs('train', self.metrics.train)
         train_logs['train/lr'] = self.optimizer.learning_rate.numpy()
-        self.save_metrics(train_logs)
+        self.summary_save_metrics(train_logs)
+        self.summary_update_seen()
         probar.update(seen, probar._make_logs_value(self.metrics.train))
       """ Start Validation """
       self.val_step(self.val_dataset, self.metrics.val)
       val_logs = self._make_logs('val', self.metrics.val)
-      self.save_metrics(val_logs)
+      self.summary_save_metrics(val_logs)
       probar.update(
           seen + 1,
           probar._make_logs_value(self.metrics.train) +
-          probar._make_logs_value(self.metrics.val, 'val_'))
+          probar._make_logs_value(self.metrics.val, 'val/'))
       """ Epoch Callbacks """
       val_logs.update(train_logs)
       self.callback_list.on_epoch_end(cur_ep, val_logs)
@@ -140,6 +304,7 @@ class BaseTrainingLoop():
       [v.reset_states() for v in self.metrics.train.values()]
       [v.reset_states() for v in self.metrics.val.values()]
     self.callback_list.on_train_end(val_logs)
+    self.summary.writer.close()
 
 
 class MProgbar(Progbar):
