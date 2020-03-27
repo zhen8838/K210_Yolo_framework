@@ -1,15 +1,16 @@
 UPDATE_AUGMENTER_STATE: &UPDATE_AUGMENTER_STATE true
 NCLASSES: &NCLASSES 10
+UNLABEL_DATASET_RATIO: &UNLABEL_DATASET_RATIO 2
 MIXED_PRECISION_DTYPE: &MIXED_PRECISION_DTYPE float32
 
 mode: train
 model:
-  name: udacifar10
+  name: mixmatchscifar10
   helper: KerasDatasetHelper
   helper_kwarg:
-    dataset: "cifar10"
+    dataset: cifar10
     label_ratio: 0.05 # Unlabeled sample ratio.
-    unlabel_dataset_ratio: 7 # Unlabeled batch size ratio.
+    unlabel_dataset_ratio: *UNLABEL_DATASET_RATIO # Unlabeled batch size ratio.
     mixed_precision_dtype: *MIXED_PRECISION_DTYPE
     augment_kwargs:
       name: ctaugment
@@ -20,6 +21,7 @@ model:
         epsilon: 0.001
         prob_to_apply: null
         num_levels: 10
+    augment_mode: k_augment
   network: imageclassifierCNN13
   network_kwarg:
     input_shape:
@@ -50,24 +52,22 @@ train:
   vali_epoch_step: null
   steps_per_run: 30
   log_dir: log
-  sub_log_dir: default_cifar10_uda_ctaug_exp
+  sub_log_dir: default_cifar10_mixmatch_ctaug_exp
   mixed_precision:
     enable: false
     dtype: *MIXED_PRECISION_DTYPE
-  trainloop: UDASslLoop
+  trainloop: MixMatchSslLoop
   trainloop_kwarg:
     hparams:
       nclasses: *NCLASSES
       update_augmenter_state: *UPDATE_AUGMENTER_STATE
-      tsa: # 训练信号退火
-        mode: "no" # Can choice from [linear,exp,log,no]
-        scale: 5 # scale
-        max_epoch: 256 # max update batch
-      uda:
-        temperature: 1 # sharpening by temperature
-        confidence: 0.95 # Ignore predictions < confidence
-        wu: 1 # loss unlabeled weights
-        we: 0 # loss entropy 
+      mixmatch:
+        beta: 0.5 # Mixup beta distribution.
+        w_match: 100 # Weight for distribution matching loss.
+        nu: *UNLABEL_DATASET_RATIO # augment num
+        mixmode: "xxy.yxy" # the mix mode
+        dbuf: 128 # label distribution moving average buffer size
+        T: 0.5 # sharping tempeture
       ema:
         enable: true
         decay: 0.999

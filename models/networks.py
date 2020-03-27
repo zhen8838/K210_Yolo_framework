@@ -661,7 +661,6 @@ def imageclassifierCNN13(input_shape, nclasses, filters=32, weight_decay=0.0005)
   x = k.Input(input_shape)
 
   logits = compose(
-      kl.Lambda(lambda data: (tf.cast(data, tf.float32) - 127.5) / 127.5),
       kl.Conv2D(filters, **conv_args),
       kl.LeakyReLU(),
       kl.BatchNormalization(**bn_args),
