@@ -34,7 +34,8 @@ class KerasDatasetHelper(FixMatchSSLHelper, BaseHelper):
                label_ratio: float,
                unlabel_dataset_ratio: int,
                augment_kwargs: dict,
-               augment_mode='augment_anchor'):
+               augment_mode='augment_anchor',
+               mixed_precision_dtype='float32'):
     self.train_dataset: tf.data.Dataset = None
     self.val_dataset: tf.data.Dataset = None
     self.test_dataset: tf.data.Dataset = None
@@ -83,6 +84,7 @@ class KerasDatasetHelper(FixMatchSSLHelper, BaseHelper):
     self.in_hw: list = list(x_train.shape[1:])
     self.nclasses = len(label_set)
     self.unlabel_dataset_ratio = unlabel_dataset_ratio
+    self.mixed_precision_dtype = mixed_precision_dtype
     assert augment_mode in ['augment_anchor', 'k_augment']
     self.augment_mode = augment_mode
     tmp = self.create_augmenter(**augment_kwargs)
@@ -116,7 +118,16 @@ class KerasDatasetHelper(FixMatchSSLHelper, BaseHelper):
     else:
       raise ValueError('Invalid augmentation type {0}'.format(name))
     print(INFO, f'Use {name}')
-
+    
+  def normlize(self,data_dict:dict):
+    for key, v in data_dict.items():
+      if key.endswith('data'):
+        v = tf.cast(v, self.mixed_precision_dtype)
+        v = image_ops.normalize(
+            v, tf.constant(127.5, self.mixed_precision_dtype),
+            tf.constant(127.5, self.mixed_precision_dtype))
+        data_dict[key] = v
+    
   def build_augment_anchor_train_datapipe(self,
                                           batch_size: int,
                                           is_augment: bool,
@@ -142,9 +153,7 @@ class KerasDatasetHelper(FixMatchSSLHelper, BaseHelper):
         data_dict = {'data': img}
       # normalize image
       if is_normalize:
-        data_dict = dict(
-            map(lambda kv: (kv[0], image_ops.normalize(kv[1])),
-                data_dict.items()))
+        self.normlize(data_dict)
 
       data_dict['label'] = label
       return data_dict
@@ -158,9 +167,7 @@ class KerasDatasetHelper(FixMatchSSLHelper, BaseHelper):
         data_dict = {'data': img}
       # normalize image
       if is_normalize:
-        data_dict = dict(
-            map(lambda kv: (kv[0], image_ops.normalize(kv[1])),
-                data_dict.items()))
+        self.normlize(data_dict)
 
       data_dict['label'] = label
       return data_dict
@@ -206,9 +213,7 @@ class KerasDatasetHelper(FixMatchSSLHelper, BaseHelper):
         data_dict = {'data': img}
       # normalize image
       if is_normalize:
-        data_dict = dict(
-            map(lambda kv: (kv[0], image_ops.normalize(kv[1])),
-                data_dict.items()))
+        self.normlize(data_dict)
 
       data_dict['label'] = label
       return data_dict
@@ -231,9 +236,7 @@ class KerasDatasetHelper(FixMatchSSLHelper, BaseHelper):
 
       # normalize image
       if is_normalize:
-        data_dict = dict(
-            map(lambda kv: (kv[0], image_ops.normalize(kv[1])),
-                data_dict.items()))
+        self.normlize(data_dict)
 
       data_dict['label'] = label
       return data_dict
@@ -262,9 +265,7 @@ class KerasDatasetHelper(FixMatchSSLHelper, BaseHelper):
       data_dict = {'data': img}
       # normalize image
       if is_normalize:
-        data_dict = dict(
-            map(lambda kv: (kv[0], image_ops.normalize(kv[1])),
-                data_dict.items()))
+        self.normlize(data_dict)
 
       data_dict['label'] = label
       return data_dict
@@ -274,7 +275,7 @@ class KerasDatasetHelper(FixMatchSSLHelper, BaseHelper):
             _pipe, num_parallel_calls=-1).batch(batch_size).prefetch(None))
     return ds
 
-  def set_dataset(self, batch_size, is_augment, is_normalize: bool = False):
+  def set_dataset(self, batch_size, is_augment, is_normalize: bool = True):
     self.batch_size = batch_size
     if self.augment_mode == 'k_augment':
       self.train_dataset = self.build_k_augment_train_datapipe(
@@ -430,8 +431,11 @@ class UDASslLoop(BaseTrainingLoop):
         # Model weights regularization
         loss_wd = tf.reduce_sum(self.train_model.losses)
         loss = loss_xe + loss_xeu * self.hparams.uda.wu + loss_ent * self.hparams.uda.we + loss_wd
-
-      grads = tape.gradient(loss, self.train_model.trainable_variables)
+        if self.strategy:
+          scaled_loss = loss / self.strategy.num_replicas_in_sync
+        else:
+          scaled_loss = loss
+      grads = tape.gradient(scaled_loss, self.train_model.trainable_variables)
       self.optimizer.apply_gradients(
           zip(grads, self.train_model.trainable_variables))
 
@@ -452,7 +456,10 @@ class UDASslLoop(BaseTrainingLoop):
       metrics.acc.update_state(sup_label, logit_sup)
 
     for _ in tf.range(num_steps_to_run):
-      step_fn(next(iterator))
+      if self.strategy:
+        self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))
+      else:
+        step_fn(next(iterator),)
 
   @tf.function
   def val_step(self, dataset, metrics):
@@ -469,7 +476,10 @@ class UDASslLoop(BaseTrainingLoop):
       metrics.acc.update_state(labels, logits)
 
     for inputs in dataset:
-      step_fn(inputs)
+      if self.strategy:
+        self.strategy.experimental_run_v2(step_fn, args=(inputs,))
+      else:
+        step_fn(inputs,)
 
 
 class PMovingAverage(object):
@@ -718,8 +728,11 @@ class MixMatchSslLoop(BaseTrainingLoop):
         loss_wd = tf.reduce_mean(self.train_model.losses)
 
         loss = loss_xe + loss_l2u * self.hparams.mixmatch.w_match + loss_wd
-
-      grads = tape.gradient(loss, self.train_model.trainable_variables)
+        if self.strategy:
+          scaled_loss = loss / self.strategy.num_replicas_in_sync
+        else:
+          scaled_loss = loss
+      grads = tape.gradient(scaled_loss, self.train_model.trainable_variables)
       self.optimizer.apply_gradients(
           zip(grads, self.train_model.trainable_variables))
 
@@ -740,7 +753,10 @@ class MixMatchSslLoop(BaseTrainingLoop):
       metrics.acc.update_state(lx, tf.nn.softmax(logits_x))
 
     for _ in tf.range(num_steps_to_run):
-      step_fn(next(iterator))
+      if self.strategy:
+        self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))
+      else:
+        step_fn(next(iterator),)
 
   @tf.function
   def val_step(self, dataset, metrics):
@@ -757,4 +773,7 @@ class MixMatchSslLoop(BaseTrainingLoop):
       metrics.acc.update_state(labels, logits)
 
     for inputs in dataset:
-      step_fn(inputs)
+      if self.strategy:
+        self.strategy.experimental_run_v2(step_fn, args=(inputs,))
+      else:
+        step_fn(inputs,)

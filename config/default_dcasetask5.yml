@@ -22,7 +22,6 @@ model:
 train:
   graph_optimizer: true
   graph_optimizer_kwarg:
-    layout_optimizer: true
     remapping: true
     shape_optimization: true
     loop_optimization: true
@@ -30,6 +29,9 @@ train:
     function_optimization: true
     scoped_allocator_optimization: true
     layout_optimizer: true
+  distributionstrategy_kwarg:
+    tpu: null
+    strategy: Mirrored
   augmenter: true
   batch_size: 48
   pre_ckpt: null

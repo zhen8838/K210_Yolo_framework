@@ -169,7 +169,28 @@ class SignalStopping(Callback):
       self.model.stop_training = True
 
 
-class StepLR(Callback):
+class LRCallback(Callback):
+  """ LRCallback for compat keras callback and custom training callback """
+
+  def set_optimizer(self, optimizer):
+    if isinstance(optimizer, tf.optimizers.Optimizer):
+      self.optimizer = optimizer
+
+  def set_lr(self, new_lr):
+    if self.model.optimizer:
+      K.set_value(self.model.optimizer.lr, new_lr)
+    else:
+      K.set_value(self.optimizer.lr, new_lr)
+
+  def get_lr(self):
+    if self.model.optimizer:
+      lr = K.get_value(self.model.optimizer.lr)
+    else:
+      lr = K.get_value(self.optimizer.lr)
+    return lr
+
+
+class StepLR(LRCallback):
 
   def __init__(self, rates: list, steps: list):
     """ Step learning rate setup callback
@@ -198,16 +219,16 @@ class StepLR(Callback):
 
   def on_epoch_begin(self, epoch, logs=None):
     if epoch < len(self.rates):
-      K.set_value(self.model.optimizer.lr, self.rates[epoch])
+      self.set_lr(self.rates[epoch])
     else:
-      K.set_value(self.model.optimizer.lr, self.rates[-1])
+      self.set_lr(self.rates[-1])
 
   def on_epoch_end(self, epoch, logs=None):
     logs = logs or {}
-    logs['lr'] = K.get_value(self.model.optimizer.lr)
+    logs['lr'] = self.get_lr()
 
 
-class CosineLR(Callback):
+class CosineLR(LRCallback):
 
   def __init__(self, init_lr: float, decay_steps: int, lowest_lr: float):
     """ 
@@ -244,21 +265,22 @@ class CosineLR(Callback):
     return self.init_lr * decayed
 
   def on_epoch_begin(self, epoch, logs=None):
-    K.set_value(self.model.optimizer.lr, self.decayed_learning_rate(epoch))
+    self.set_lr(self.decayed_learning_rate(epoch))
 
   def on_epoch_end(self, epoch, logs=None):
     logs = logs or {}
-    logs['lr'] = K.get_value(self.model.optimizer.lr)
+    logs['lr'] = self.get_lr()
 
 
-class ScheduleLR(Callback):
+class ScheduleLR(LRCallback):
   """Configurable learning rate schedule."""
 
   def __init__(self, base_lr: float, use_warmup: bool, warmup_epochs: int,
                decay_rate: float, decay_epochs: int):
     """ Schedule lr
 
-      When warmup is used, LR will increase linearly from 0 to the peak value of warmup epochs. After that, LR is reduced once per decade according to the decade rate.
+      When warmup is used, LR will increase linearly from 0 to the peak value of warmup epochs. 
+      After that, LR is reduced once per decade according to the decade rate.
       
       eg. ScheduleLR(
             base_lr=0.1,
@@ -308,7 +330,7 @@ class ScheduleLR(Callback):
           warmup_epochs * self.base_lr, lambda: self.lr_schedule_no_warmup(epoch))
     else:
       lr = self.lr_schedule_no_warmup(epoch)
-    K.set_value(self.model.optimizer.lr, lr)
+    self.set_lr(lr)
 
 
 class VariableCheckpoint(Callback):

@@ -8,7 +8,7 @@ from tensorflow.python.keras.callbacks import CallbackList
 from tensorflow.python.keras.utils.generic_utils import Progbar
 from tensorflow.python.ops import summary_ops_v2
 from tensorflow.python.keras.backend import get_graph
-
+from tools.base import INFO
 import os
 import time
 import numpy as np
@@ -126,9 +126,45 @@ class EmaHelper(object):
           _update_one_var_fn(ema_var, value)
 
 
+class DistributionStrategyHelper(object):
+
+  def __init__(self, tpu=None, strategy='Mirrored'):
+    """Creates distribution strategy.
+
+    Returns:
+      distribution strategy.
+
+    If flag --tpu is set then TPU distribution strategy will be created,
+    otherwise mirrored strategy running on local GPUs will be created.
+    """
+    if tpu:
+      print(INFO, 'Use TPU at %s', tpu)
+      resolver = tf.distribute.cluster_resolver.TPUClusterResolver(tpu=tpu)
+      tf.config.experimental_connect_to_cluster(resolver)
+      tf.tpu.experimental.initialize_tpu_system(resolver)
+      distribution_strategy = tf.distribute.experimental.TPUStrategy(resolver)
+    else:
+      if strategy:
+        assert strategy in [
+            'Mirrored',
+            'MultiWorkerMirrored',
+            'CentralStorage',
+            'ParameterServer',
+            'OneDevice',
+        ]
+        print(INFO, f'Using {strategy}Strategy on local devices.')
+        distribution_strategy = eval(f'tf.distribute.{strategy}Strategy()')
+      else:
+        print(INFO, 'Don\'t Using DistributionStrategy on local devices.')
+        distribution_strategy = None
+    self.strategy: tf.distribute.MirroredStrategy = distribution_strategy
+
+
 class BaseTrainingLoop():
 
-  def __init__(self, train_model: k.Model, val_model: k.Model, **kwargs: dict):
+  def __init__(self, train_model: k.Model, val_model: k.Model,
+               optimizer: k.optimizers.Optimizer,
+               strategy: tf.distribute.Strategy, **kwargs: dict):
     """ Training Loop initial
       
       if use kwargs, must contain `hparams`, NOTE hparams contain all extra features.
@@ -148,8 +184,8 @@ class BaseTrainingLoop():
     """
     self.train_model = train_model
     self.val_model = val_model
-    self.optimizer: k.optimizers.Optimizer = train_model.optimizer
-    assert self.optimizer is not None, 'train_model must have optimizer!'
+    self.optimizer = optimizer
+    self.strategy = strategy
     if kwargs:
       assert 'hparams' in kwargs.keys(), 'if use kwargs, must contain hparams !'
       # NOTE hparams contain all extra features

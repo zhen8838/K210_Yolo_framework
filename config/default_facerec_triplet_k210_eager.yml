@@ -33,6 +33,9 @@ train:
     constant_folding: true
     function_optimization: true
     scoped_allocator_optimization: true
+  distributionstrategy_kwarg:
+    tpu: null
+    strategy: Mirrored
   augmenter: true
   batch_size: *BATCH_SIZE_REF
   pre_ckpt: log/default_facerec_triplet_k210_exp_backup/auto_train_58.h5
