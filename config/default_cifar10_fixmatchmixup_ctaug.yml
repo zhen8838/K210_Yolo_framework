@@ -1,10 +1,10 @@
 UPDATE_AUGMENTER_STATE: &UPDATE_AUGMENTER_STATE true
-NCLASSES: &NCLASSES 10
 MIXED_PRECISION_DTYPE: &MIXED_PRECISION_DTYPE float32
+NCLASSES: &NCLASSES 10
 
 mode: train
 model:
-  name: fixmatchcifar10
+  name: fixmatchmixupcifar10
   helper: KerasDatasetHelper
   helper_kwarg:
     dataset: "cifar10"
@@ -50,17 +50,19 @@ train:
   vali_epoch_step: null
   steps_per_run: 30
   log_dir: log
-  sub_log_dir: default_cifar10_fixmatch_ctaug_exp
+  sub_log_dir: default_cifar10_fixmatchmixup_ctaug_exp
   mixed_precision:
     enable: false
     dtype: *MIXED_PRECISION_DTYPE
-  trainloop: Task5FixMatchSslLoop
+  trainloop: FixMatchMixUpSslLoop
   trainloop_kwarg:
     hparams:
       update_augmenter_state: *UPDATE_AUGMENTER_STATE
-      fixmatch:
-        wu: 1.0 # Pseudo label loss weight
-        confidence: 0.95 # Confidence threshold.
+      nclasses: *NCLASSES
+      fixmatchmixup:
+        confidence: 0.95 # 伪标签样本损失置信度过滤阈值
+        wu: 1.0 # 无标签样本伪标签损失权重
+        wmu: 1.0 # 无标签样本mixup后伪标签损失权重
       ema:
         enable: true
         decay: 0.999
@@ -97,7 +99,7 @@ train:
         update_augmenter_state: *UPDATE_AUGMENTER_STATE
     - name: ScheduleLR
       kwarg:
-        base_lr: 0.001
+        base_lr: 0.01
         use_warmup: true
         warmup_epochs: 20
         decay_rate: 0.9
