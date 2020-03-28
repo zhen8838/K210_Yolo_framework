@@ -4,5 +4,6 @@ conda install tensorflow-gpu tensorflow-probability jupyter opencv tqdm toolz Py
 conda install librosa imgaug -c conda-forge -y
 pip install tensorflow_addons more_itertools
 # pip install tensorflow-gpu==2.1.0 tensorflow_probability tensorflow_addons more_itertools
+# conda install cudatoolkit=10.1.243 cudnn=7.6.5 cupti=10.1.168 -y
 # conda install jupyter opencv tqdm toolz PyYAML -y
 # conda install librosa imgaug -c conda-forge -y

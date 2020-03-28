@@ -31,7 +31,7 @@ from tools.dcasetask2 import DCASETask2Helper, SemiBCELoss, LwlrapValidation
 from tools.dcasetask5 import (DCASETask5Helper, Task5SupervisedLoop,
                               DCASETask5FixMatchSSLHelper, Task5FixMatchSslLoop,
                               AugmenterStateSync)
-from tools.kerasdataset import KerasDatasetHelper, UDASslLoop, MixMatchSslLoop
+from tools.kerasdataset import KerasDatasetHelper, UDASslLoop, MixMatchSslLoop, FixMatchMixUpSslLoop
 from tools.training_engine import BaseTrainingLoop
 from yaml import safe_dump
 
@@ -287,6 +287,7 @@ trainloop_register = {
     'Task5FixMatchSslLoop': Task5FixMatchSslLoop,
     'UDASslLoop': UDASslLoop,
     'MixMatchSslLoop': MixMatchSslLoop,
+    'FixMatchMixUpSslLoop': FixMatchMixUpSslLoop,
 }
 
 if __name__ == "__main__":

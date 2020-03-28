@@ -118,16 +118,15 @@ class KerasDatasetHelper(FixMatchSSLHelper, BaseHelper):
     else:
       raise ValueError('Invalid augmentation type {0}'.format(name))
     print(INFO, f'Use {name}')
-    
-  def normlize(self,data_dict:dict):
+
+  def normlize(self, data_dict: dict):
     for key, v in data_dict.items():
       if key.endswith('data'):
         v = tf.cast(v, self.mixed_precision_dtype)
-        v = image_ops.normalize(
-            v, tf.constant(127.5, self.mixed_precision_dtype),
-            tf.constant(127.5, self.mixed_precision_dtype))
+        v = image_ops.normalize(v, tf.constant(127.5, self.mixed_precision_dtype),
+                                tf.constant(127.5, self.mixed_precision_dtype))
         data_dict[key] = v
-    
+
   def build_augment_anchor_train_datapipe(self,
                                           batch_size: int,
                                           is_augment: bool,
@@ -287,6 +286,175 @@ class KerasDatasetHelper(FixMatchSSLHelper, BaseHelper):
     self.val_dataset = self.build_val_datapipe(batch_size, is_normalize)
     self.train_epoch_step = self.train_total_data // self.batch_size
     self.val_epoch_step = self.val_total_data // self.batch_size
+
+
+class FixMatchMixUpSslLoop(BaseTrainingLoop):
+  """ FixMatch中用类似ICT中的方式给伪标签实施MixUp
+  
+  hparams:
+    nclasses: 10
+    fixmatchmixup:
+      confidence: 0.95 # 伪标签样本损失置信度过滤阈值
+      wu: 1.0 # 无标签样本伪标签损失权重
+      wmu: 1.0 # 无标签样本mixup后伪标签损失权重
+  """
+
+  def set_augmenter(self, augmenter):
+    if self.hparams.update_augmenter_state:
+      self.augmenter: CTAugment = augmenter
+
+  def set_metrics_dict(self):
+    d = {
+        'train': {
+            'loss':
+                tf.keras.metrics.Mean('train_loss', dtype=tf.float32),
+            'acc':
+                tf.keras.metrics.SparseCategoricalAccuracy(
+                    'train_acc', dtype=tf.float32)
+        },
+        'val': {
+            'loss':
+                tf.keras.metrics.Mean('val_loss', dtype=tf.float32),
+            'acc':
+                tf.keras.metrics.SparseCategoricalAccuracy(
+                    'val_acc', dtype=tf.float32)
+        }
+    }
+    return d
+
+  @staticmethod
+  def array_shuflle(n: int, beta: float) -> [tf.Tensor, tf.Tensor]:
+    """ get shuffle array
+    
+    Args:
+        n (int): lens
+        beta (float): beta
+    
+    Returns:
+        mix (tf.Tensor): shape [len]
+        index (tf.Tensor): shape [len]
+    """
+    mix = tfp.distributions.Beta(beta, beta).sample([n])
+    mix = tf.expand_dims(tf.maximum(mix, 1 - mix), -1)
+    index = tf.random.shuffle(tf.range(n))
+    return mix, index
+
+  @staticmethod
+  def apply_mixup_one(a: tf.Tensor, b: tf.Tensor, mix: tf.Tensor,
+                      index: tf.Tensor) -> tf.Tensor:
+    bs = tf.gather(b, index)
+    # reshape mix for broadcast
+    mix = tf.reshape(mix, [-1] + [1] * (len(a.shape.as_list()) - 1))
+    mixed = a*mix + bs * (1-mix)
+    return mixed
+
+  @staticmethod
+  def apply_mixup(x0: tf.Tensor, x1: tf.Tensor, l0: tf.Tensor, l1: tf.Tensor,
+                  mix: tf.Tensor, index: tf.Tensor) -> [tf.Tensor, tf.Tensor]:
+    xmix = FixMatchMixUpSslLoop.apply_mixup_one(x0, x1, mix, index)
+    lmix = FixMatchMixUpSslLoop.apply_mixup_one(l0, l1, mix, index)
+    return xmix, lmix
+
+  @tf.function
+  def train_step(self, iterator, num_steps_to_run, metrics):
+
+    def step_fn(inputs: dict):
+      """Per-Replica training step function."""
+      sup_data = inputs['data']
+      sup_label = inputs['label']
+      unsup_data = inputs['unsup_data']
+      unsup_aug_data = inputs['unsup_aug_data']
+      unsup_batch = tf.shape(unsup_data)[0]
+      with tf.GradientTape() as tape:
+        logit_sup = self.train_model(sup_data, training=True)
+        logit_unsup = self.train_model(unsup_data, training=True)
+        logit_aug_unsup = self.train_model(unsup_aug_data, training=True)
+
+        # Supervised loss
+        loss_xe = tf.nn.sparse_softmax_cross_entropy_with_logits(
+            labels=sup_label, logits=logit_sup)
+        loss_xe = tf.reduce_mean(loss_xe)
+
+        # Pseudo-label cross entropy for unlabeled data
+        pseudo_labels = tf.stop_gradient(tf.nn.softmax(logit_unsup))
+        loss_xeu = tf.nn.sparse_softmax_cross_entropy_with_logits(
+            labels=tf.argmax(pseudo_labels, axis=1), logits=logit_aug_unsup)
+        pseudo_mask = (
+            tf.reduce_max(pseudo_labels, axis=1) >=
+            self.hparams.fixmatchmixup.confidence)
+        pseudo_mask = tf.cast(pseudo_mask, tf.float32)
+        loss_xeu = tf.reduce_mean(loss_xeu * pseudo_mask)
+
+        # Pseudo-label MixUped cross entropy for unlabeled data
+        # NOTE 当使用augment anchor时，unsup_data对应着unsup_aug_data
+        mix, index = self.array_shuflle(unsup_batch, 0.5)
+        mix_pseudo_labels = tf.argmax(pseudo_labels, axis=1)
+        mix_pseudo_labels = tf.one_hot(mix_pseudo_labels, self.hparams.nclasses)
+        mix_pseudo_labels = self.apply_mixup_one(mix_pseudo_labels,
+                                                 mix_pseudo_labels, mix, index)
+        mix_unsup_aug_data = self.apply_mixup_one(unsup_aug_data, unsup_aug_data,
+                                                  mix, index)
+        mix_logit_aug_unsup = self.train_model(unsup_aug_data, training=True)
+        loss_xeu_mix = tf.nn.softmax_cross_entropy_with_logits(
+            labels=mix_pseudo_labels, logits=mix_logit_aug_unsup)
+        loss_xeu_mix = tf.reduce_mean(loss_xeu_mix)
+
+        # Model weights regularization
+        loss_wd = tf.reduce_sum(self.train_model.losses)
+
+        loss = (
+            loss_xe + self.hparams.fixmatchmixup.wu * loss_xeu +
+            self.hparams.fixmatchmixup.wmu * loss_xeu_mix + loss_wd)
+
+        if self.strategy:
+          scaled_loss = loss / self.strategy.num_replicas_in_sync
+        else:
+          scaled_loss = loss
+      grads = tape.gradient(scaled_loss, self.train_model.trainable_variables)
+      self.optimizer.apply_gradients(
+          zip(grads, self.train_model.trainable_variables))
+
+      if self.hparams.ema.enable:
+        EmaHelper.update_ema_vars(self.val_model.variables,
+                                  self.train_model.variables,
+                                  self.hparams.ema.decay)
+
+      if self.hparams.update_augmenter_state:
+        if self.hparams.ema.enable and self.hparams.update_augmenter_state:
+          probe_logits = self.val_model(inputs['probe_data'], training=False)
+        else:
+          probe_logits = self.train_model(inputs['probe_data'], training=False)
+        probe_logits = tf.cast(probe_logits, tf.float32)
+        self.augmenter.update(inputs, tf.nn.softmax(probe_logits))
+
+      metrics.loss.update_state(loss)
+      metrics.acc.update_state(sup_label, logit_sup)
+
+    for _ in tf.range(num_steps_to_run):
+      if self.strategy:
+        self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))
+      else:
+        step_fn(next(iterator),)
+
+  @tf.function
+  def val_step(self, dataset, metrics):
+
+    def step_fn(inputs: dict):
+      """Per-Replica training step function."""
+      datas, labels = inputs['data'], inputs['label']
+      logits = self.val_model(datas, training=False)
+      loss_xe = tf.nn.sparse_softmax_cross_entropy_with_logits(labels, logits)
+      loss_xe = tf.reduce_mean(loss_xe)
+      loss_wd = tf.reduce_sum(self.val_model.losses)
+      loss = loss_xe + loss_wd
+      metrics.loss.update_state(loss)
+      metrics.acc.update_state(labels, logits)
+
+    for inputs in dataset:
+      if self.strategy:
+        self.strategy.experimental_run_v2(step_fn, args=(inputs,))
+      else:
+        step_fn(inputs,)
 
 
 class UDASslLoop(BaseTrainingLoop):
