@@ -1,0 +1,98 @@
+MIXED_PRECISION_DTYPE: &MIXED_PRECISION_DTYPE float32
+NOISE_DIM: &NOISE_DIM 100
+
+mode: train
+model:
+  name: mnistdcgan
+  helper: KerasDatasetGanHelper
+  helper_kwarg:
+    dataset: mnist
+    mixed_precision_dtype: *MIXED_PRECISION_DTYPE
+    hparams:
+      noise_dim: *NOISE_DIM # when use dcgan, input noise shape
+  network: dcgan_mnist
+  network_kwarg:
+    image_shape:
+      - 28
+      - 28
+      - 1
+    noise_dim: *NOISE_DIM
+train:
+  graph_optimizer: true
+  graph_optimizer_kwarg:
+    layout_optimizer: true
+    remapping: true
+    shape_optimization: true
+    loop_optimization: true
+    constant_folding: true
+    function_optimization: true
+    scoped_allocator_optimization: true
+  distributionstrategy_kwarg:
+    tpu: null
+    strategy: Mirrored
+  augmenter: true
+  batch_size: 128
+  pre_ckpt: null
+  rand_seed: 10101
+  epochs: 100
+  train_epoch_step: 1024
+  vali_epoch_step: null
+  steps_per_run: 30
+  log_dir: log
+  sub_log_dir: default_mnist_dcgan_exp
+  mixed_precision:
+    enable: false
+    dtype: *MIXED_PRECISION_DTYPE
+  trainloop: DCGanLoop
+  trainloop_kwarg:
+    hparams:
+      noise_dim: *NOISE_DIM
+      # ema:
+      #   enable: true
+      #   decay: 0.999
+  variablecheckpoint_kwarg:
+    variable_dict:
+      g_model: generator_model
+      d_model: discriminator_optimizer
+      g_optimizer: generator_optimizer
+      d_optimizer: discriminator_optimizer
+    monitor: train/g_loss
+    mode: min
+  generator_optimizer: Adam
+  generator_optimizer_kwarg:
+    learning_rate: 0.0005
+    beta_1: 0.9
+    beta_2: 0.999
+    amsgrad: false
+  discriminator_optimizer: Adam
+  discriminator_optimizer_kwarg:
+    learning_rate: 0.0005
+    beta_1: 0.9
+    beta_2: 0.999
+    amsgrad: false
+  callbacks:
+    - name: EarlyStopping
+      kwarg:
+        monitor: train/g_loss
+        min_delta: 0
+        patience: 50
+        verbose: 0
+        mode: min
+        baseline: null
+        restore_best_weights: false
+    # - name: ScheduleLR
+    #   kwarg:
+    #     base_lr: 0.03
+    #     use_warmup: true
+    #     warmup_epochs: 20
+    #     decay_rate: 0.7
+    #     decay_epochs: 20
+    #     outside_optimizer: generator_optimizer
+    # - name: ScheduleLR
+    #   kwarg:
+    #     base_lr: 0.03
+    #     use_warmup: true
+    #     warmup_epochs: 20
+    #     decay_rate: 0.7
+    #     decay_epochs: 20
+    #     outside_optimizer: discriminator_optimizer

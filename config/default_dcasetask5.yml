@@ -86,4 +86,5 @@ train:
        warmup_epochs: 10
        decay_rate: 0.5
        decay_epochs: 10
+       outside_optimizer: optimizer
     

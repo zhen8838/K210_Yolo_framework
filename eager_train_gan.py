@@ -19,7 +19,8 @@ def main(config_file, new_cfg, mode, model, train):
   assert len(physical_devices) > 0, "Not enough GPU hardware devices available"
   tf.config.experimental.set_memory_growth(physical_devices[0], True)
   if train.graph_optimizer is True:
-    tf.config.optimizer.set_experimental_options(train.graph_optimizer_kwarg)
+    tf.config.optimizer.set_experimental_options(
+        train.graph_optimizer_kwarg)
   """ Set Golbal Paramter """
   tf.random.set_seed(train.rand_seed)
   np.random.seed(train.rand_seed)
@@ -61,14 +62,17 @@ def main(config_file, new_cfg, mode, model, train):
         tf.keras.mixed_precision.experimental.set_policy(policy)
 
       network = network_register[model.network]
-      infer_model, val_model, train_model = network(**model.network_kwarg)
+      generator_model, discriminator_model, val_model = network(
+          **model.network_kwarg)
 
-      optimizer: tf.keras.optimizers.Optimizer = optimizer_register[
-          train.optimizer](**train.optimizer_kwarg)
+      generator_optimizer: tf.keras.optimizers.Optimizer = optimizer_register[
+          train.generator_optimizer](**train.generator_optimizer_kwarg)
+      discriminator_optimizer: tf.keras.optimizers.Optimizer = optimizer_register[
+          train.discriminator_optimizer](**train.discriminator_optimizer_kwarg)
 
       loop: BaseTrainingLoop = trainloop_register[train.trainloop](
-          train_model, val_model, optimizer, distribution.strategy,
-          **train.trainloop_kwarg)
+          generator_model, discriminator_model, val_model, generator_optimizer,
+          discriminator_optimizer, distribution.strategy, **train.trainloop_kwarg)
       loop.set_dataset(train_ds, validation_ds, train_epoch_step, vali_epoch_step)
 
       cbs = [
@@ -101,7 +105,7 @@ def main(config_file, new_cfg, mode, model, train):
       variablecheckpoint = VariableCheckpoint(log_dir, variable_dict,
                                               **train.variablecheckpoint_kwarg)
       if train.pre_ckpt and '.h5' in train.pre_ckpt:
-        train_model.load_weights(
+        generator_model.load_weights(
             str(train.pre_ckpt), by_name=True, skip_mismatch=True)
         print(INFO, f' Load CKPT {str(train.pre_ckpt)}')
       else:
@@ -111,24 +115,23 @@ def main(config_file, new_cfg, mode, model, train):
       loop.set_callbacks(cbs)
       loop.set_summary_writer(
           str(log_dir), datetime.strftime(datetime.now(), r'%Y%m%d-%H%M%S'))
-      initial_epoch = int(optimizer.iterations.numpy() / train_epoch_step)
+      initial_epoch = int(generator_optimizer.iterations.numpy() /
+                          train_epoch_step)
 
       loop.train_and_eval(
           epochs=train.epochs + initial_epoch,
           initial_epoch=initial_epoch,
           steps_per_run=train.steps_per_run)
       """ Finish Training """
-      model_name = f'train_model_{initial_epoch+int(optimizer.iterations.numpy() / train_epoch_step)}.h5'
+      model_name = f'g_model_{initial_epoch+int(generator_optimizer.iterations.numpy() / train_epoch_step)}.h5'
       ckpt = log_dir / model_name
+      k.models.save_model(generator_model, str(ckpt))
+      print(INFO, f' Save Generator Model as {str(ckpt)}')
+      model_name = f'd_model_{initial_epoch+int(generator_optimizer.iterations.numpy() / train_epoch_step)}.h5'
+      ckpt = log_dir / model_name
+      k.models.save_model(discriminator_model, str(ckpt))
+      print(INFO, f' Save Discriminator Model as {str(ckpt)}')
 
-      k.models.save_model(train_model, str(ckpt))
-      print()
-      print(INFO, f' Save Train Model as {str(ckpt)}')
-
-      infer_model_name = f'infer_model_{initial_epoch+int(optimizer.iterations.numpy() / train_epoch_step)}.h5'
-      infer_ckpt = log_dir / infer_model_name
-      k.models.save_model(infer_model, str(infer_ckpt))
-      print(INFO, f' Save Infer Model as {str(infer_ckpt)}')
   else:
     h = helper_register[model.helper](**model.helper_kwarg)  # type:BaseHelper
     h.set_dataset(train.batch_size, train.augmenter)
@@ -154,14 +157,17 @@ def main(config_file, new_cfg, mode, model, train):
       tf.keras.mixed_precision.experimental.set_policy(policy)
 
     network = network_register[model.network]
-    infer_model, val_model, train_model = network(**model.network_kwarg)
+    generator_model, discriminator_model, val_model = network(
+        **model.network_kwarg)
 
-    optimizer: tf.keras.optimizers.Optimizer = optimizer_register[
-        train.optimizer](**train.optimizer_kwarg)
+    generator_optimizer: tf.keras.optimizers.Optimizer = optimizer_register[
+        train.generator_optimizer](**train.generator_optimizer_kwarg)
+    discriminator_optimizer: tf.keras.optimizers.Optimizer = optimizer_register[
+        train.discriminator_optimizer](**train.discriminator_optimizer_kwarg)
 
     loop: BaseTrainingLoop = trainloop_register[train.trainloop](
-        train_model, val_model, optimizer, distribution.strategy,
-        **train.trainloop_kwarg)
+        generator_model, discriminator_model, val_model, generator_optimizer,
+        discriminator_optimizer, distribution.strategy, **train.trainloop_kwarg)
     loop.set_dataset(train_ds, validation_ds, train_epoch_step, vali_epoch_step)
 
     cbs = [
@@ -194,7 +200,7 @@ def main(config_file, new_cfg, mode, model, train):
     variablecheckpoint = VariableCheckpoint(log_dir, variable_dict,
                                             **train.variablecheckpoint_kwarg)
     if train.pre_ckpt and '.h5' in train.pre_ckpt:
-      train_model.load_weights(
+      generator_model.load_weights(
           str(train.pre_ckpt), by_name=True, skip_mismatch=True)
       print(INFO, f' Load CKPT {str(train.pre_ckpt)}')
     else:
@@ -204,24 +210,21 @@ def main(config_file, new_cfg, mode, model, train):
     loop.set_callbacks(cbs)
     loop.set_summary_writer(
         str(log_dir), datetime.strftime(datetime.now(), r'%Y%m%d-%H%M%S'))
-    initial_epoch = int(optimizer.iterations.numpy() / train_epoch_step)
+    initial_epoch = int(generator_optimizer.iterations.numpy() / train_epoch_step)
 
     loop.train_and_eval(
         epochs=train.epochs + initial_epoch,
         initial_epoch=initial_epoch,
         steps_per_run=train.steps_per_run)
     """ Finish Training """
-    model_name = f'train_model_{initial_epoch+int(optimizer.iterations.numpy() / train_epoch_step)}.h5'
+    model_name = f'g_model_{initial_epoch+int(generator_optimizer.iterations.numpy() / train_epoch_step)}.h5'
     ckpt = log_dir / model_name
-
-    k.models.save_model(train_model, str(ckpt))
-    print()
-    print(INFO, f' Save Train Model as {str(ckpt)}')
-
-    infer_model_name = f'infer_model_{initial_epoch+int(optimizer.iterations.numpy() / train_epoch_step)}.h5'
-    infer_ckpt = log_dir / infer_model_name
-    k.models.save_model(infer_model, str(infer_ckpt))
-    print(INFO, f' Save Infer Model as {str(infer_ckpt)}')
+    k.models.save_model(generator_model, str(ckpt))
+    print(INFO, f' Save Generator Model as {str(ckpt)}')
+    model_name = f'd_model_{initial_epoch+int(generator_optimizer.iterations.numpy() / train_epoch_step)}.h5'
+    ckpt = log_dir / model_name
+    k.models.save_model(discriminator_model, str(ckpt))
+    print(INFO, f' Save Discriminator Model as {str(ckpt)}')
 
 
 if __name__ == "__main__":
