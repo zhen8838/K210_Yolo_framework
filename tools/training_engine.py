@@ -343,6 +343,36 @@ class BaseTrainingLoop():
     self.summary.writer.close()
 
 
+class GanBaseTrainingLoop(BaseTrainingLoop):
+
+  def __init__(self, generator_model: k.Model, discriminator_model: k.Model,
+               val_model: k.Model, generator_optimizer: k.optimizers.Optimizer,
+               discriminator_optimizer: k.optimizers.Optimizer,
+               strategy: tf.distribute.Strategy, **kwargs):
+    """GanBaseTrainingLoop
+    
+      NOTE: inner class, 
+            self.g_model = generator_model
+            self.d_model = discriminator_model
+            self.g_optimizer = generator_optimizer
+            self.d_optimizer = discriminator_optimizer
+    
+    Args:
+        generator_model (k.Model): generator_model
+        discriminator_model (k.Model): discriminator_model
+        val_model (k.Model): val_model
+        generator_optimizer (k.optimizers.Optimizer): generator_optimizer
+        discriminator_optimizer (k.optimizers.Optimizer): discriminator_optimizer
+        strategy (tf.distribute.Strategy): strategy
+    """
+    super().__init__(generator_model, val_model, generator_optimizer, strategy,
+                     **kwargs)
+    self.g_model = self.train_model
+    self.d_model = discriminator_model
+    self.g_optimizer = self.optimizer
+    self.d_optimizer = discriminator_optimizer
+
+
 class MProgbar(Progbar):
 
   @staticmethod

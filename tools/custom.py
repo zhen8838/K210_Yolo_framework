@@ -172,27 +172,31 @@ class SignalStopping(Callback):
 class LRCallback(Callback):
   """ LRCallback for compat keras callback and custom training callback """
 
+  def __init__(self, outside_optimizer: str = None):
+    super().__init__()
+    self.outside_optimizer: str = outside_optimizer
+
   def set_optimizer(self, optimizer):
     if isinstance(optimizer, tf.optimizers.Optimizer):
       self.optimizer = optimizer
 
   def set_lr(self, new_lr):
-    if self.model.optimizer:
-      K.set_value(self.model.optimizer.lr, new_lr)
-    else:
+    if self.outside_optimizer:
       K.set_value(self.optimizer.lr, new_lr)
+    else:
+      K.set_value(self.model.optimizer.lr, new_lr)
 
   def get_lr(self):
-    if self.model.optimizer:
-      lr = K.get_value(self.model.optimizer.lr)
-    else:
+    if self.outside_optimizer:
       lr = K.get_value(self.optimizer.lr)
+    else:
+      lr = K.get_value(self.model.optimizer.lr)
     return lr
 
 
 class StepLR(LRCallback):
 
-  def __init__(self, rates: list, steps: list):
+  def __init__(self, rates: list, steps: list, outside_optimizer: str = None):
     """ Step learning rate setup callback
 
         eg. steps = [100, 200, 300]
@@ -208,7 +212,7 @@ class StepLR(LRCallback):
         steps : list
 
         """
-    super().__init__()
+    super().__init__(outside_optimizer)
     assert len(rates) == len(
         steps), f'{ERROR} the len(rates) must equal len(steps)'
     assert steps[0] > 0, f'{ERROR} the steps[0] can\'t <= 0'
@@ -230,7 +234,11 @@ class StepLR(LRCallback):
 
 class CosineLR(LRCallback):
 
-  def __init__(self, init_lr: float, decay_steps: int, lowest_lr: float):
+  def __init__(self,
+               init_lr: float,
+               decay_steps: int,
+               lowest_lr: float,
+               outside_optimizer: str = None):
     """ 
         Applies cosine to the learning rate.
 
@@ -252,7 +260,7 @@ class CosineLR(LRCallback):
             0.001*0.9 |    \_/      \_/    
               epochs  :    30        60
         """
-    super().__init__()
+    super().__init__(outside_optimizer)
     self.init_lr = init_lr
     self.decay_steps = decay_steps
     lowest_lr = 0.0001
@@ -275,8 +283,13 @@ class CosineLR(LRCallback):
 class ScheduleLR(LRCallback):
   """Configurable learning rate schedule."""
 
-  def __init__(self, base_lr: float, use_warmup: bool, warmup_epochs: int,
-               decay_rate: float, decay_epochs: int):
+  def __init__(self,
+               base_lr: float,
+               use_warmup: bool,
+               warmup_epochs: int,
+               decay_rate: float,
+               decay_epochs: int,
+               outside_optimizer: str = None):
     """ Schedule lr
 
       When warmup is used, LR will increase linearly from 0 to the peak value of warmup epochs. 
@@ -304,7 +317,7 @@ class ScheduleLR(LRCallback):
         decay_rate (float): each decay rate
         decay_epochs (int): how many epochs decay once
     """
-    super().__init__()
+    super().__init__(outside_optimizer)
     self.base_lr = base_lr
     self.use_warmup = use_warmup
     self.warmup_epochs = warmup_epochs
