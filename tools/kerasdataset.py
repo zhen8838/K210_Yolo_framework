@@ -2,12 +2,13 @@ import tensorflow as tf
 import tensorflow_probability as tfp
 import numpy as np
 from tools.base import BaseHelper, INFO
-from typing import Tuple
+from typing import Tuple, List
 from tools.dcasetask5 import FixMatchSSLHelper
 from tools.training_engine import BaseTrainingLoop, EmaHelper
 from transforms.image.rand_augment import RandAugment
 from transforms.image.ct_augment import CTAugment
 import transforms.image.ops as image_ops
+from functools import partial
 
 
 class KerasDatasetHelper(FixMatchSSLHelper, BaseHelper):
@@ -76,7 +77,7 @@ class KerasDatasetHelper(FixMatchSSLHelper, BaseHelper):
                                                           y_train[unlabel_idxs])
       self.val_list: Tuple[np.ndarray, np.ndarray] = (x_test, y_test)
       self.test_list: Tuple[np.ndarray, np.ndarray] = None
-      self.train_total_data: int = len(label_idxs)
+      self.train_total_data: int = len(unlabel_idxs)
       self.unlabel_total_data: int = len(unlabel_idxs)
       self.val_total_data: int = len(x_test)
       self.test_total_data: int = None
@@ -104,17 +105,38 @@ class KerasDatasetHelper(FixMatchSSLHelper, BaseHelper):
   @staticmethod
   def create_augmenter(name: str, kwarg: dict):
     if not name or (name == 'none') or (name == 'noop'):
-      return (lambda x: x)
+
+      def fn(data, aug_key='data'):
+        output_dict = {}
+        if aug_key is not None:
+          output_dict[aug_key] = data
+        if aug_key != 'data':
+          output_dict['data'] = data
+        return output_dict
+
+      return (
+          None,
+          partial(fn, aug_key='data'),
+          partial(fn, aug_key='aug_data'),
+      )
+
     elif name == 'randaugment':
+
       base_augmenter = RandAugment(**kwarg)
-      return (None, lambda data: {
-          'data': data
-      }, lambda x: base_augmenter(x, aug_key='aug_data'))
+      return (
+          None,
+          lambda data: {
+              'data': data
+          },
+          partial(base_augmenter, aug_key='aug_data'),
+      )
     elif name == 'ctaugment':
       base_augmenter = CTAugment(**kwarg)
-      return (base_augmenter,
-              lambda x: base_augmenter(x, probe=True, aug_key=None),
-              lambda x: base_augmenter(x, probe=False, aug_key='aug_data'))
+      return (
+          base_augmenter,
+          partial(base_augmenter, probe=True, aug_key=None),
+          partial(base_augmenter, probe=False, aug_key='aug_data'),
+      )
     else:
       raise ValueError('Invalid augmentation type {0}'.format(name))
     print(INFO, f'Use {name}')
@@ -406,10 +428,7 @@ class FixMatchMixUpSslLoop(BaseTrainingLoop):
             loss_xe + self.hparams.fixmatchmixup.wu * loss_xeu +
             self.hparams.fixmatchmixup.wmu * loss_xeu_mix + loss_wd)
 
-        if self.strategy:
-          scaled_loss = loss / self.strategy.num_replicas_in_sync
-        else:
-          scaled_loss = loss
+        scaled_loss = loss / self.strategy.num_replicas_in_sync
       grads = tape.gradient(scaled_loss, self.train_model.trainable_variables)
       self.optimizer.apply_gradients(
           zip(grads, self.train_model.trainable_variables))
@@ -431,10 +450,7 @@ class FixMatchMixUpSslLoop(BaseTrainingLoop):
       metrics.acc.update_state(sup_label, logit_sup)
 
     for _ in tf.range(num_steps_to_run):
-      if self.strategy:
-        self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))
-      else:
-        step_fn(next(iterator),)
+      self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))
 
   @tf.function
   def val_step(self, dataset, metrics):
@@ -451,10 +467,7 @@ class FixMatchMixUpSslLoop(BaseTrainingLoop):
       metrics.acc.update_state(labels, logits)
 
     for inputs in dataset:
-      if self.strategy:
-        self.strategy.experimental_run_v2(step_fn, args=(inputs,))
-      else:
-        step_fn(inputs,)
+      self.strategy.experimental_run_v2(step_fn, args=(inputs,))
 
 
 class UDASslLoop(BaseTrainingLoop):
@@ -599,10 +612,7 @@ class UDASslLoop(BaseTrainingLoop):
         # Model weights regularization
         loss_wd = tf.reduce_sum(self.train_model.losses)
         loss = loss_xe + loss_xeu * self.hparams.uda.wu + loss_ent * self.hparams.uda.we + loss_wd
-        if self.strategy:
-          scaled_loss = loss / self.strategy.num_replicas_in_sync
-        else:
-          scaled_loss = loss
+        scaled_loss = loss / self.strategy.num_replicas_in_sync
       grads = tape.gradient(scaled_loss, self.train_model.trainable_variables)
       self.optimizer.apply_gradients(
           zip(grads, self.train_model.trainable_variables))
@@ -624,10 +634,7 @@ class UDASslLoop(BaseTrainingLoop):
       metrics.acc.update_state(sup_label, logit_sup)
 
     for _ in tf.range(num_steps_to_run):
-      if self.strategy:
-        self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))
-      else:
-        step_fn(next(iterator),)
+      self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))
 
   @tf.function
   def val_step(self, dataset, metrics):
@@ -644,10 +651,7 @@ class UDASslLoop(BaseTrainingLoop):
       metrics.acc.update_state(labels, logits)
 
     for inputs in dataset:
-      if self.strategy:
-        self.strategy.experimental_run_v2(step_fn, args=(inputs,))
-      else:
-        step_fn(inputs,)
+      self.strategy.experimental_run_v2(step_fn, args=(inputs,))
 
 
 class PMovingAverage(object):
@@ -896,10 +900,7 @@ class MixMatchSslLoop(BaseTrainingLoop):
         loss_wd = tf.reduce_mean(self.train_model.losses)
 
         loss = loss_xe + loss_l2u * self.hparams.mixmatch.w_match + loss_wd
-        if self.strategy:
-          scaled_loss = loss / self.strategy.num_replicas_in_sync
-        else:
-          scaled_loss = loss
+        scaled_loss = loss / self.strategy.num_replicas_in_sync
       grads = tape.gradient(scaled_loss, self.train_model.trainable_variables)
       self.optimizer.apply_gradients(
           zip(grads, self.train_model.trainable_variables))
@@ -921,10 +922,7 @@ class MixMatchSslLoop(BaseTrainingLoop):
       metrics.acc.update_state(lx, tf.nn.softmax(logits_x))
 
     for _ in tf.range(num_steps_to_run):
-      if self.strategy:
-        self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))
-      else:
-        step_fn(next(iterator),)
+      self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))
 
   @tf.function
   def val_step(self, dataset, metrics):
@@ -941,7 +939,319 @@ class MixMatchSslLoop(BaseTrainingLoop):
       metrics.acc.update_state(labels, logits)
 
     for inputs in dataset:
-      if self.strategy:
-        self.strategy.experimental_run_v2(step_fn, args=(inputs,))
-      else:
-        step_fn(inputs,)
+      self.strategy.experimental_run_v2(step_fn, args=(inputs,))
+
+
+class InfoMaxLoop(BaseTrainingLoop):
+  """ InfoMax self-supervised learning
+  
+  Args:
+      update_augmenter_state: *UPDATE_AUGMENTER_STATE
+      infomax:
+        wkl: 0.01 # weight for kl prior loss
+        wginfo: 0.5 # weight for global information loss
+        wlinfo: 1.5 # weight for local information loss
+      ema:
+        enable: false
+        decay: 0.999
+  """
+
+  def set_augmenter(self, augmenter):
+    if self.hparams.update_augmenter_state:
+      self.augmenter: CTAugment = augmenter
+
+  def set_metrics_dict(self):
+    d = {
+        'train': {
+            'loss': tf.keras.metrics.Mean('train_loss', dtype=tf.float32),
+            'kl_loss': tf.keras.metrics.Mean('kl_loss', dtype=tf.float32),
+            'g_loss': tf.keras.metrics.Mean('g_loss', dtype=tf.float32),
+            'l_loss': tf.keras.metrics.Mean('l_loss', dtype=tf.float32),
+        },
+        'val': {}
+    }
+    self.encoder: tf.keras.Model = tf.keras.backend.function(
+        self.val_model.input,
+        [self.val_model.get_layer(name='normal_mean').output])
+    return d
+
+  @staticmethod
+  def prior_kl_loss(mean, log_sigma):
+    loss = -0.5 * tf.reduce_mean(1 + log_sigma - tf.square(mean) -
+                                 tf.exp(log_sigma))
+    return loss
+
+  @staticmethod
+  def info_loss(
+      true_scores: tf.Tensor,
+      false_scores: tf.Tensor,
+      false_label: tf.Tensor,
+  ) -> tf.Tensor:
+    """ information loss
+    
+    Args:
+        true_scores (tf.Tensor): shape [batch , ?] 
+        false_scores (tf.Tensor): shape [batch , ?] 
+        false_label (tf.Tensor): shape [batch , ?] NOTE: not equal is 1, else 0
+    
+    Returns:
+        tf.Tensor: loss, shape = scalar
+    """
+    # yapf: disable
+    loss = -tf.reduce_mean(
+        tf.math.log(true_scores + 1e-6) +
+        tf.math.log(1 - false_scores + 1e-6) * false_label +
+        tf.math.log(false_scores + 1e-6) * (1 - false_label))
+    # yapf: enable
+    return loss
+
+  @tf.function
+  def train_step(self, iterator, num_steps_to_run, metrics):
+
+    def step_fn(inputs: dict):
+      """Per-Replica training step function."""
+      unsup_data = inputs['unsup_data']
+      with tf.GradientTape() as tape:
+        (
+            unsup_logits,
+            unsup_z_mean,
+            unsup_z_log_sigma,
+            unsup_zz_true_scores,
+            unsup_zz_false_scores,
+            unsup_zz_label,
+            unsup_zf_true_scores,
+            unsup_zf_false_scores,
+            unsup_zf_label,
+        ) = self.train_model(
+            unsup_data, training=True)
+
+        # prior kl loss
+        unsup_kl_loss = self.prior_kl_loss(unsup_z_mean, unsup_z_log_sigma)
+
+        # information loss
+        unsup_zz_loss = self.info_loss(unsup_zz_true_scores,
+                                       unsup_zz_false_scores, unsup_zz_label)
+        unsup_zf_loss = self.info_loss(unsup_zf_true_scores,
+                                       unsup_zf_false_scores, unsup_zf_label)
+
+        # Model weights regularization
+        wd_loss = tf.reduce_mean(self.train_model.losses)
+
+        # yapf: disable
+        loss = (self.hparams.infomax.wkl * unsup_kl_loss +
+                self.hparams.infomax.wginfo * unsup_zz_loss +
+                self.hparams.infomax.wlinfo * unsup_zf_loss +
+                wd_loss)
+        # yapf: enable
+
+        scaled_loss = loss / self.strategy.num_replicas_in_sync
+
+      grads = tape.gradient(scaled_loss, self.train_model.trainable_variables)
+      self.optimizer.apply_gradients(
+          zip(grads, self.train_model.trainable_variables))
+
+      if self.hparams.ema.enable:
+        EmaHelper.update_ema_vars(self.val_model.variables,
+                                  self.train_model.variables,
+                                  self.hparams.ema.decay)
+
+      if self.hparams.update_augmenter_state:
+        if self.hparams.ema.enable and self.hparams.update_augmenter_state:
+          probe_logits = self.val_model(inputs['probe_data'], training=False)
+        else:
+          probe_logits = self.train_model(inputs['probe_data'], training=False)
+        probe_logits = tf.cast(probe_logits, tf.float32)
+        self.augmenter.update(inputs, tf.nn.softmax(probe_logits))
+
+      metrics.loss.update_state(loss)
+      metrics.kl_loss.update_state(unsup_kl_loss)
+      metrics.g_loss.update_state(unsup_zz_loss)
+      metrics.l_loss.update_state(unsup_zf_loss)
+
+    for _ in tf.range(num_steps_to_run):
+      self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))
+
+  @staticmethod
+  def sample_knn(zs: np.ndarray, img_list: np.ndarray):
+    img_h, img_w = img_list.shape[1:-1]
+    n = 10
+    topn = 10
+    figure1 = np.zeros((img_h * n, img_w * topn, 3))
+    figure2 = np.zeros((img_h * n, img_w * topn, 3))
+    zs_ = zs / (zs**2).sum(1, keepdims=True)**0.5
+    for i in range(n):
+      one = np.random.choice(len(img_list))
+      idxs = ((zs**2).sum(1) + (zs[one]**2).sum() -
+              2 * np.dot(zs, zs[one])).argsort()[:topn]
+      for j, k in enumerate(idxs):
+        digit = img_list[k]
+        figure1[i * img_h:(i+1) * img_h, j * img_w:(j+1) * img_w] = digit
+      idxs = np.dot(zs_, zs_[one]).argsort()[-n:][::-1]
+      for j, k in enumerate(idxs):
+        digit = img_list[k]
+        figure2[i * img_h:(i+1) * img_h, j * img_w:(j+1) * img_w] = digit
+    figure1 = figure1.astype('uint8')
+    figure2 = figure2.astype('uint8')
+    return figure1, figure2
+
+  def val_step(self, dataset, metrics):
+    with tf.keras.backend.learning_phase_scope(0):
+      zs_list = []
+      data_list = []
+      for inputs in dataset:
+        datas = inputs['data']
+        zs = self.encoder(datas)[0]
+        zs_list.append(zs)
+        data_list.append(datas.numpy())
+      zs_list: np.ndarray = np.concatenate(zs_list, 0)
+      data_list = np.concatenate(data_list, 0)
+      data_list: np.ndarray = image_ops.renormalize(data_list, 127.5, 127.5)
+      figure1, figure2 = self.sample_knn(zs_list, data_list)
+      self.summary.save_images({'knn': np.stack([figure1, figure2], 0)})
+
+
+class InfoMaxSslV1Loop(InfoMaxLoop):
+  """ InfoMax semi-supervised learning V1
+  
+  Args:
+      update_augmenter_state: *UPDATE_AUGMENTER_STATE
+      infomax:
+        ws: 1. # weight for supervised cross entropy loss
+        wkl: 0.01 # weight for kl prior loss
+        wginfo: 0.5 # weight for global information loss
+        wlinfo: 1.5 # weight for local information loss
+      ema:
+        enable: false
+        decay: 0.999
+  """
+
+  def set_augmenter(self, augmenter):
+    if self.hparams.update_augmenter_state:
+      self.augmenter: CTAugment = augmenter
+
+  def set_metrics_dict(self):
+    d = {
+        'train': {
+            'loss':
+                tf.keras.metrics.Mean('train_loss', dtype=tf.float32),
+            'acc':
+                tf.keras.metrics.SparseCategoricalAccuracy(
+                    'train_acc', dtype=tf.float32)
+        },
+        'val': {
+            'loss':
+                tf.keras.metrics.Mean('val_loss', dtype=tf.float32),
+            'acc':
+                tf.keras.metrics.SparseCategoricalAccuracy(
+                    'val_acc', dtype=tf.float32)
+        }
+    }
+    return d
+
+  @tf.function
+  def train_step(self, iterator, num_steps_to_run, metrics):
+
+    def step_fn(inputs: dict):
+      """Per-Replica training step function."""
+      sup_data = inputs['data']
+      sup_label = inputs['label']
+      unsup_data = inputs['unsup_data']
+      # unsup_aug_data = inputs['unsup_aug_data']
+      with tf.GradientTape() as tape:
+        (
+            sup_logits,
+            sup_z_mean,
+            sup_z_log_sigma,
+            sup_zz_true_scores,
+            sup_zz_false_scores,
+            sup_zz_label,
+            sup_zf_true_scores,
+            sup_zf_false_scores,
+            sup_zf_label,
+        ) = self.train_model(
+            sup_data, training=True)
+
+        (
+            unsup_logits,
+            unsup_z_mean,
+            unsup_z_log_sigma,
+            unsup_zz_true_scores,
+            unsup_zz_false_scores,
+            unsup_zz_label,
+            unsup_zf_true_scores,
+            unsup_zf_false_scores,
+            unsup_zf_label,
+        ) = self.train_model(
+            unsup_data, training=True)
+
+        # Supervised loss
+        sup_xe_loss = tf.reduce_mean(
+            tf.nn.sparse_softmax_cross_entropy_with_logits(
+                labels=sup_label, logits=sup_logits))
+
+        # prior kl loss
+        sup_kl_loss = self.prior_kl_loss(sup_z_mean, sup_z_log_sigma)
+        unsup_kl_loss = self.prior_kl_loss(unsup_z_mean, unsup_z_log_sigma)
+
+        # information loss
+        sup_zz_loss = self.info_loss(sup_zz_true_scores, sup_zz_false_scores,
+                                     sup_zz_label)
+        sup_zf_loss = self.info_loss(sup_zf_true_scores, sup_zf_false_scores,
+                                     sup_zf_label)
+
+        unsup_zz_loss = self.info_loss(unsup_zz_true_scores,
+                                       unsup_zz_false_scores, unsup_zz_label)
+        unsup_zf_loss = self.info_loss(unsup_zf_true_scores,
+                                       unsup_zf_false_scores, unsup_zf_label)
+
+        # Model weights regularization
+        wd_loss = tf.reduce_mean(self.train_model.losses)
+        # yapf: disable
+        loss = (self.hparams.infomax.ws * sup_xe_loss +
+                self.hparams.infomax.wkl * (sup_kl_loss+unsup_kl_loss) +
+                self.hparams.infomax.wginfo * (sup_zz_loss+unsup_zz_loss) +
+                self.hparams.infomax.wlinfo * (sup_zf_loss+unsup_zf_loss) +
+                wd_loss)
+        # yapf: enable
+
+        scaled_loss = loss / self.strategy.num_replicas_in_sync
+
+      grads = tape.gradient(scaled_loss, self.train_model.trainable_variables)
+      self.optimizer.apply_gradients(
+          zip(grads, self.train_model.trainable_variables))
+
+      if self.hparams.ema.enable:
+        EmaHelper.update_ema_vars(self.val_model.variables,
+                                  self.train_model.variables,
+                                  self.hparams.ema.decay)
+
+      if self.hparams.update_augmenter_state:
+        if self.hparams.ema.enable and self.hparams.update_augmenter_state:
+          probe_logits = self.val_model(inputs['probe_data'], training=False)
+        else:
+          probe_logits = self.train_model(inputs['probe_data'], training=False)
+        probe_logits = tf.cast(probe_logits, tf.float32)
+        self.augmenter.update(inputs, tf.nn.softmax(probe_logits))
+
+      metrics.loss.update_state(loss)
+      metrics.acc.update_state(sup_label, sup_logits)
+
+    for _ in tf.range(num_steps_to_run):
+      self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))
+
+  @tf.function
+  def val_step(self, dataset, metrics):
+
+    def step_fn(inputs: dict):
+      """Per-Replica training step function."""
+      datas, labels = inputs['data'], inputs['label']
+      logits = self.val_model(datas, training=False)
+      loss_xe = tf.nn.sparse_softmax_cross_entropy_with_logits(labels, logits)
+      loss_xe = tf.reduce_mean(loss_xe)
+      loss_wd = tf.reduce_sum(self.val_model.losses)
+      loss = loss_xe + loss_wd
+      metrics.loss.update_state(loss)
+      metrics.acc.update_state(labels, logits)
+
+    for inputs in dataset:
+      self.strategy.experimental_run_v2(step_fn, args=(inputs,))

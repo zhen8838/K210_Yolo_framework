@@ -125,10 +125,7 @@ class Task5SupervisedLoop(BaseTrainingLoop):
         # Part 2: Model weights regularization
         loss_wd = tf.reduce_sum(self.train_model.losses)
         loss = loss_xe + loss_wd
-        if self.strategy:
-          scaled_loss = loss / self.strategy.num_replicas_in_sync
-        else:
-          scaled_loss = loss
+        scaled_loss = loss / self.strategy.num_replicas_in_sync
       grads = tape.gradient(scaled_loss, self.train_model.trainable_variables)
       self.optimizer.apply_gradients(
           zip(grads, self.train_model.trainable_variables))
@@ -140,10 +137,7 @@ class Task5SupervisedLoop(BaseTrainingLoop):
       metrics.acc.update_state(labels, tf.nn.softmax(logits))
 
     for _ in tf.range(num_steps_to_run):
-      if self.strategy:
-        self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))
-      else:
-        step_fn(next(iterator),)
+      self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))
 
   @tf.function
   def val_step(self, dataset, metrics):
@@ -160,10 +154,7 @@ class Task5SupervisedLoop(BaseTrainingLoop):
       metrics.acc.update_state(labels, tf.nn.softmax(logits))
 
     for inputs in dataset:
-      if self.strategy:
-        self.strategy.experimental_run_v2(step_fn, args=(inputs,))
-      else:
-        step_fn(inputs,)
+      self.strategy.experimental_run_v2(step_fn, args=(inputs,))
 
 
 class FixMatchSSLHelper(object):
@@ -359,10 +350,7 @@ class Task5FixMatchSslLoop(BaseTrainingLoop):
         loss_wd = tf.reduce_sum(self.train_model.losses)
 
         loss = loss_xe + self.hparams.fixmatch.wu * loss_xeu + loss_wd
-        if self.strategy:
-          scaled_loss = loss / self.strategy.num_replicas_in_sync
-        else:
-          scaled_loss = loss
+        scaled_loss = loss / self.strategy.num_replicas_in_sync
       grads = tape.gradient(scaled_loss, self.train_model.trainable_variables)
       self.optimizer.apply_gradients(
           zip(grads, self.train_model.trainable_variables))
@@ -384,10 +372,7 @@ class Task5FixMatchSslLoop(BaseTrainingLoop):
       metrics.acc.update_state(sup_label, logit_sup)
 
     for _ in tf.range(num_steps_to_run):
-      if self.strategy:
-        self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))
-      else:
-        step_fn(next(iterator),)
+      self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))
 
   @tf.function
   def val_step(self, dataset, metrics):
@@ -404,7 +389,4 @@ class Task5FixMatchSslLoop(BaseTrainingLoop):
       metrics.acc.update_state(labels, logits)
 
     for inputs in dataset:
-      if self.strategy:
-        self.strategy.experimental_run_v2(step_fn, args=(inputs,))
-      else:
-        step_fn(inputs,)
+      self.strategy.experimental_run_v2(step_fn, args=(inputs,))

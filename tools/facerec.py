@@ -548,10 +548,7 @@ class FaceSoftmaxTrainingLoop(BaseTrainingLoop):
         loss = self.loss_fn.call(y_true, y_pred)
         loss_wd = tf.reduce_sum(self.train_model.losses)
         total_loss = loss + loss_wd
-        if self.strategy:
-          scaled_loss = loss / self.strategy.num_replicas_in_sync
-        else:
-          scaled_loss = loss
+        scaled_loss = loss / self.strategy.num_replicas_in_sync
       grads = tape.gradient(scaled_loss, self.train_model.trainable_variables)
       self.optimizer.apply_gradients(
           zip(grads, self.train_model.trainable_variables))
@@ -560,10 +557,7 @@ class FaceSoftmaxTrainingLoop(BaseTrainingLoop):
       metrics.acc.update_state(y_true, y_pred)
 
     for _ in tf.range(num_steps_to_run):
-      if self.strategy:
-        self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))
-      else:
-        step_fn(next(iterator),)    
+      self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))    
 
 
 class FaceTripletTrainingLoop(BaseTrainingLoop):
@@ -612,10 +606,7 @@ class FaceTripletTrainingLoop(BaseTrainingLoop):
               tf.nn.relu(ap - an + self.hparams.loss.target_distance))
         loss_wd = tf.reduce_sum(self.train_model.losses)
         total_loss = loss + loss_wd
-        if self.strategy:
-          scaled_loss = loss / self.strategy.num_replicas_in_sync
-        else:
-          scaled_loss = loss
+        scaled_loss = loss / self.strategy.num_replicas_in_sync
       grads = tape.gradient(scaled_loss, self.train_model.trainable_variables)
       self.optimizer.apply_gradients(
           zip(grads, self.train_model.trainable_variables))
@@ -628,10 +619,7 @@ class FaceTripletTrainingLoop(BaseTrainingLoop):
       metrics.acc.update_state(acc)
 
     for _ in tf.range(num_steps_to_run):
-      if self.strategy:
-        self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))
-      else:
-        step_fn(next(iterator),)
+      self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))
 
   def val_step(self, dataset, metrics):
 

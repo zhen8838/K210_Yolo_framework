@@ -40,7 +40,7 @@ train:
     scoped_allocator_optimization: true
   distributionstrategy_kwarg:
     tpu: null
-    strategy: null #Mirrored
+    strategy: Mirrored
   augmenter: true
   batch_size: 64
   pre_ckpt: null

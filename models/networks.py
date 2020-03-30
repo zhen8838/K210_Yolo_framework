@@ -654,7 +654,7 @@ def imageclassifierCNN13(input_shape, nclasses, filters=32, weight_decay=0.0005)
       kernel_size=3,
       padding='same',
       kernel_regularizer=k.regularizers.l2(weight_decay))
-  dense_kwargs = dict(
+  dense_args = dict(
       kernel_initializer=k.initializers.RandomNormal(stddev=0.01),
       kernel_regularizer=k.regularizers.l2(weight_decay))
   bn_args = dict(momentum=0.999)
@@ -692,7 +692,7 @@ def imageclassifierCNN13(input_shape, nclasses, filters=32, weight_decay=0.0005)
       kl.BatchNormalization(**bn_args),
       # (b, 6, 6, 128) -> (b, 128)
       kl.Lambda(lambda data: tf.reduce_mean(data, [1, 2])),
-      kl.Dense(nclasses, **dense_kwargs),
+      kl.Dense(nclasses, **dense_args),
   )(
       x)
 
@@ -743,7 +743,7 @@ def dcasetask5infomax(
   feature_map_encoder = k.Model(x_in, feature_map)
 
 
-def dcgan_mnist(image_shape:list,noise_dim:int):
+def dcgan_mnist(image_shape: list, noise_dim: int):
 
   def make_generator_model():
     model = k.Sequential([

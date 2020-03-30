@@ -165,10 +165,7 @@ class DCGanLoop(GanBaseTrainingLoop):
       metrics.d_loss.update_state(tf.reduce_mean(scaled_disc_loss))
 
     for _ in tf.range(num_steps_to_run):
-      if self.strategy:
-        self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))
-      else:
-        step_fn(next(iterator),)
+      self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))
 
   # @tf.function
   # def val_step(self, dataset, metrics):
