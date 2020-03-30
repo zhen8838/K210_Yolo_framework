@@ -13,6 +13,7 @@ from models.networks4k210 import (
     retinafacenet_k210, retinafacenet_k210_v1, retinafacenet_k210_v2,
     retinafacenet_k210_v3, ullfd_k210, ullfd_k210_v1, ullfd_k210_v2,
     ullfd_k210_v3, mbv1_facerec_k210, mbv1_facerec_k210_eager)
+from models.semisupervised import cifar_infomax_ssl_v1
 from tools.custom import StepLR, CosineLR, ScheduleLR
 from tools.yolo import (YOLOHelper, YOLOLoss, yolo_infer, yolo_eval,
                         MultiScaleTrain, YOLOIouLoss, YOLOMap)
@@ -32,7 +33,7 @@ from tools.dcasetask2 import DCASETask2Helper, SemiBCELoss, LwlrapValidation
 from tools.dcasetask5 import (DCASETask5Helper, Task5SupervisedLoop,
                               DCASETask5FixMatchSSLHelper, Task5FixMatchSslLoop,
                               AugmenterStateSync)
-from tools.kerasdataset import KerasDatasetHelper, UDASslLoop, MixMatchSslLoop, FixMatchMixUpSslLoop
+from tools.kerasdataset import KerasDatasetHelper, UDASslLoop, MixMatchSslLoop, FixMatchMixUpSslLoop, InfoMaxSslV1Loop, InfoMaxLoop
 from tools.dcgan import KerasDatasetGanHelper, DCGanLoop
 from tools.training_engine import BaseTrainingLoop
 from yaml import safe_dump
@@ -229,7 +230,8 @@ network_register = {
     'dualmbv2net': dualmbv2net,
     'dcasetask5basemodel': dcasetask5basemodel,
     'imageclassifierCNN13': imageclassifierCNN13,
-    'dcgan_mnist': dcgan_mnist
+    'dcgan_mnist': dcgan_mnist,
+    'cifar_infomax_ssl_v1': cifar_infomax_ssl_v1
 }
 
 loss_register = {
@@ -292,6 +294,8 @@ trainloop_register = {
     'UDASslLoop': UDASslLoop,
     'MixMatchSslLoop': MixMatchSslLoop,
     'FixMatchMixUpSslLoop': FixMatchMixUpSslLoop,
+    'InfoMaxLoop': InfoMaxLoop,
+    'InfoMaxSslV1Loop': InfoMaxSslV1Loop,
     'DCGanLoop': DCGanLoop
 }
 

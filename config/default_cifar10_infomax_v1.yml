@@ -1,18 +1,18 @@
-UPDATE_AUGMENTER_STATE: &UPDATE_AUGMENTER_STATE true
+UPDATE_AUGMENTER_STATE: &UPDATE_AUGMENTER_STATE false
 NCLASSES: &NCLASSES 10
 MIXED_PRECISION_DTYPE: &MIXED_PRECISION_DTYPE float32
 
 mode: train
 model:
-  name: fixmatchcifar10
+  name: infomaxv1cifar10
   helper: KerasDatasetHelper
   helper_kwarg:
-    dataset: "cifar10"
+    dataset: cifar10
     label_ratio: 0.05 # Unlabeled sample ratio.
     unlabel_dataset_ratio: 7 # Unlabeled batch size ratio.
     mixed_precision_dtype: *MIXED_PRECISION_DTYPE
     augment_kwargs:
-      name: ctaugment
+      name: null
       kwarg:
         num_layers: 3
         confidence_threshold: 0.8
@@ -20,14 +20,16 @@ model:
         epsilon: 0.001
         prob_to_apply: null
         num_levels: 10
-  network: imageclassifierCNN13
+  network: cifar_infomax_ssl_v1
   network_kwarg:
     input_shape:
       - 32
       - 32
       - 3
     nclasses: *NCLASSES
-    filters: 32
+    softmax: false
+    z_dim: 256
+    weight_decay: 0.0005
 train:
   graph_optimizer: true
   graph_optimizer_kwarg:
@@ -42,7 +44,7 @@ train:
     tpu: null
     strategy: Mirrored
   augmenter: true
-  batch_size: 64
+  batch_size: 128
   pre_ckpt: null
   rand_seed: 10101
   epochs: 100
@@ -50,19 +52,21 @@ train:
   vali_epoch_step: null
   steps_per_run: 30
   log_dir: log
-  sub_log_dir: default_cifar10_fixmatch_ctaug_exp
+  sub_log_dir: default_cifar10_infomaxv1_exp
   mixed_precision:
     enable: false
     dtype: *MIXED_PRECISION_DTYPE
-  trainloop: Task5FixMatchSslLoop
+  trainloop: InfoMaxSslV1Loop
   trainloop_kwarg:
     hparams:
       update_augmenter_state: *UPDATE_AUGMENTER_STATE
-      fixmatch:
-        wu: 1.0 # Pseudo label loss weight
-        confidence: 0.95 # Confidence threshold.
+      infomax:
+        ws: 1. # weight for supervised cross entropy loss
+        wkl: 0.01 # weight for kl prior loss
+        wginfo: 0.5 # weight for global information loss
+        wlinfo: 1.5 # weight for local information loss
       ema:
-        enable: true
+        enable: false
         decay: 0.999
   variablecheckpoint_kwarg:
     variable_dict:
@@ -71,17 +75,12 @@ train:
       optimizer: optimizer
     monitor: val/acc
     mode: max
-  # optimizer: Adam
-  # optimizer_kwarg:
-  #   learning_rate: 0.001
-  #   beta_1: 0.9
-  #   beta_2: 0.999
-  #   amsgrad: false
-  optimizer: SGD
+  optimizer: Adam
   optimizer_kwarg:
     learning_rate: 0.001
-    momentum: 0.9
-    nesterov: True
+    beta_1: 0.9
+    beta_2: 0.999
+    amsgrad: false
   callbacks:
     - name: EarlyStopping
       kwarg:
@@ -92,9 +91,9 @@ train:
         mode: max
         baseline: null
         restore_best_weights: false
-    - name: AugmenterStateSync
-      kwarg:
-        update_augmenter_state: *UPDATE_AUGMENTER_STATE
+    # - name: AugmenterStateSync
+    #   kwarg:
+    #     update_augmenter_state: *UPDATE_AUGMENTER_STATE
     - name: ScheduleLR
       kwarg:
         base_lr: 0.001

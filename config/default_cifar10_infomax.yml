@@ -1,0 +1,91 @@
+UPDATE_AUGMENTER_STATE: false
+NCLASSES: 10
+MIXED_PRECISION_DTYPE: float32
+mode: train
+model:
+  name: infomaxcifar10
+  helper: KerasDatasetHelper
+  helper_kwarg:
+    dataset: cifar10
+    label_ratio: 0.05
+    unlabel_dataset_ratio: 7
+    mixed_precision_dtype: float32
+    augment_kwargs:
+      name: null
+      kwarg:
+        num_layers: 3
+        confidence_threshold: 0.8
+        decay: 0.99
+        epsilon: 0.001
+        prob_to_apply: null
+        num_levels: 10
+  network: cifar_infomax_ssl_v1
+  network_kwarg:
+    input_shape:
+    - 32
+    - 32
+    - 3
+    nclasses: 10
+    softmax: false
+    z_dim: 256
+    weight_decay: 0.0005
+train:
+  graph_optimizer: true
+  graph_optimizer_kwarg:
+    layout_optimizer: true
+    remapping: true
+    shape_optimization: true
+    loop_optimization: true
+    constant_folding: true
+    function_optimization: true
+    scoped_allocator_optimization: true
+  distributionstrategy_kwarg:
+    tpu: null
+    strategy: Mirrored
+  augmenter: true
+  batch_size: 128
+  pre_ckpt: null
+  rand_seed: 10101
+  epochs: 50
+  train_epoch_step: null
+  vali_epoch_step: null
+  steps_per_run: 30
+  log_dir: log
+  sub_log_dir: default_cifar10_infomax_exp
+  mixed_precision:
+    enable: false
+    dtype: float32
+  trainloop: InfoMaxLoop
+  trainloop_kwarg:
+    hparams:
+      update_augmenter_state: false
+      infomax:
+        wkl: 0.01
+        wginfo: 0.5
+        wlinfo: 1.5
+      ema:
+        enable: false
+        decay: 0.999
+  variablecheckpoint_kwarg:
+    variable_dict:
+      model: train_model
+      model_ema: val_model
+      optimizer: optimizer
+    monitor: train/loss
+    mode: min
+  optimizer: Adam
+  optimizer_kwarg:
+    learning_rate: 0.0003
+    beta_1: 0.9
+    beta_2: 0.999
+    amsgrad: false
+  callbacks:
+  - name: EarlyStopping
+    kwarg:
+      monitor: train/loss
+      min_delta: 0
+      patience: 5
+      verbose: 0
+      mode: min
+      baseline: null
+      restore_best_weights: false

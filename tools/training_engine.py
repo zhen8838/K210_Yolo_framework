@@ -160,6 +160,82 @@ class DistributionStrategyHelper(object):
     self.strategy: tf.distribute.MirroredStrategy = distribution_strategy
 
 
+class BaseSummaryHelper():
+
+  def __init__(self,
+               writer,
+               write_dir: str,
+               is_write_graph: bool,
+               profile_batch: int,
+               is_tracing: bool = False,
+               global_seen: int = 0,
+               optimizer: tf.optimizers.Optimizer = None):
+    self.writer = writer
+    self.write_dir = write_dir
+    self.is_write_graph = is_write_graph
+    self.profile_batch = profile_batch
+    self.is_tracing = is_tracing
+    self.global_seen = global_seen
+    self.optimizer = optimizer
+
+  def current_step(self):
+    return self.optimizer.iterations.numpy()
+
+  def write_graph(self, model: tf.keras.Model):
+    """Sets Keras model and writes graph if specified."""
+    if model and self.is_write_graph:
+      with self.writer.as_default(), \
+          summary_ops_v2.always_record_summaries():
+        if not model.run_eagerly:
+          summary_ops_v2.graph(get_graph(), step=0)
+
+        summary_writable = (
+            model._is_graph_network or  # pylint: disable=protected-access
+            model.__class__.__name__ == 'Sequential')  # pylint: disable=protected-access
+        if summary_writable:
+          summary_ops_v2.keras_model('keras', model, step=0)
+
+  def enable_trace(self):
+    tf.summary.trace_on(graph=True, profiler=True)
+    self.is_tracing = True
+
+  def save_trace(self):
+    """Saves tensorboard profile to event file."""
+    step = self.current_step()
+    with self.writer.as_default(), \
+        summary_ops_v2.always_record_summaries():
+      tf.summary.trace_export(
+          name='profile_batch', step=step, profiler_outdir=self.write_dir)
+    self.is_tracing = False
+
+  def update_seen(self):
+    self.global_seen += 1
+
+  def save_metrics(self, metrics: dict):
+    """Saves metrics to event file.
+    
+    Args:
+        metrics (dict): {'name':scalar,'name1':scalar}
+    """
+    step = self.current_step()
+    with self.writer.as_default():
+      for k, v in metrics.items():
+        tf.summary.scalar(k, v, step=step)
+
+  def save_images(self, img_pairs: dict):
+    """ Saves image to event file.
+      
+      NOTE: image shape must be [b, h, w, c]
+      
+    Args:
+        metrics (dict): {'name':image,'name1':image1}
+    """
+    step = self.current_step()
+    with self.writer.as_default():
+      for k, v in img_pairs.items():
+        tf.summary.image(k, v, step=step)
+
+
 class BaseTrainingLoop():
 
   def __init__(self, train_model: k.Model, val_model: k.Model,
@@ -206,65 +282,24 @@ class BaseTrainingLoop():
     """Evaluation StepFn."""
     pass
 
-  def get_current_train_step(self) -> int:
-    """Returns current training step."""
-    return self.optimizer.iterations.numpy()
-
   def set_summary_writer(self,
                          write_dir: str,
                          sub_dir: str = None,
-                         write_graph=True,
+                         is_write_graph=True,
                          profile_batch=2):
 
     full_write_dir = os.path.join(write_dir, sub_dir)
-    self.summary = EasyDict(
-        dict(
-            writer=tf.summary.create_file_writer(full_write_dir),
-            write_dir=full_write_dir,
-            write_graph=write_graph,
-            profile_batch=profile_batch,
-            is_tracing=False,
-            global_seen=0,
-        ))
+    self.summary = BaseSummaryHelper(
+        writer=tf.summary.create_file_writer(full_write_dir),
+        write_dir=full_write_dir,
+        is_write_graph=is_write_graph,
+        profile_batch=profile_batch,
+        is_tracing=False,
+        global_seen=0,
+        optimizer=self.optimizer)
+
     assert self.summary.profile_batch > 1, 'NOTE: summary.profile_batch > 1'
-    self.summary_graph()
-
-  def summary_graph(self):
-    """Sets Keras model and writes graph if specified."""
-    if self.train_model and self.summary.write_graph:
-      with self.summary.writer.as_default(), \
-          summary_ops_v2.always_record_summaries():
-        if not self.train_model.run_eagerly:
-          summary_ops_v2.graph(get_graph(), step=0)
-
-        summary_writable = (
-            self.train_model._is_graph_network or  # pylint: disable=protected-access
-            self.train_model.__class__.__name__ == 'Sequential')  # pylint: disable=protected-access
-        if summary_writable:
-          summary_ops_v2.keras_model('keras', self.train_model, step=0)
-
-  def summary_enable_trace(self):
-    tf.summary.trace_on(graph=True, profiler=True)
-    self.summary.is_tracing = True
-
-  def summary_save_trace(self):
-    """Saves tensorboard profile to event file."""
-    step = self.get_current_train_step()
-    with self.summary.writer.as_default(), \
-        summary_ops_v2.always_record_summaries():
-      tf.summary.trace_export(
-          name='profile_batch', step=step, profiler_outdir=self.summary.write_dir)
-    self.summary.is_tracing = False
-
-  def summary_update_seen(self):
-    self.summary.global_seen += 1
-
-  def summary_save_metrics(self, metrics: dict):
-    """Saves metrics to event file."""
-    step = self.get_current_train_step()
-    with self.summary.writer.as_default():
-      for k, v in metrics.items():
-        tf.summary.scalar(k, v, step=step)
+    self.summary.write_graph(self.train_model)
 
   @abc.abstractclassmethod
   def set_metrics_dict(self):
@@ -315,20 +350,20 @@ class BaseTrainingLoop():
                         self.metrics.train)
         # write something to tensorboard
         if self.summary.is_tracing:
-          self.summary_save_trace()
+          self.summary.save_trace()
         elif (not self.summary.is_tracing and
               self.summary.global_seen == self.summary.profile_batch - 1):
-          self.summary_enable_trace()
+          self.summary.enable_trace()
 
         train_logs = self._make_logs('train', self.metrics.train)
         train_logs['train/lr'] = self.optimizer.learning_rate.numpy()
-        self.summary_save_metrics(train_logs)
-        self.summary_update_seen()
+        self.summary.save_metrics(train_logs)
+        self.summary.update_seen()
         probar.update(seen, probar._make_logs_value(self.metrics.train))
       """ Start Validation """
       self.val_step(self.val_dataset, self.metrics.val)
       val_logs = self._make_logs('val', self.metrics.val)
-      self.summary_save_metrics(val_logs)
+      self.summary.save_metrics(val_logs)
       probar.update(
           seen + 1,
           probar._make_logs_value(self.metrics.train) +
