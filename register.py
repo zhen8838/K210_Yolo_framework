@@ -3,8 +3,8 @@ from models.networks import (mbv1_facerec, mbv2_ctdet, yolo, tiny_yolo, pfld,
                              shuffle_ctdet, yolo3_nano, yolo_mbv1, mbv1_imgnet,
                              mbv2_imgnet, retinafacenet, retinaface_slim,
                              retinaface_rfb, ullfd_slim, dcasetask5basemodel,
-                             FMobileFaceNet_eager, imageclassifierCNN13,
-                             dcgan_mnist)
+                             FMobileFaceNet_eager, imageclassifierCNN13)
+from models.gannet import dcgan_mnist, pix2pix_facde
 from models.receptivefieldnet import rffacedetnet
 from models.audionet import dualmbv2net
 from models.networks4k210 import (
@@ -35,6 +35,7 @@ from tools.dcasetask5 import (DCASETask5Helper, Task5SupervisedLoop,
                               AugmenterStateSync)
 from tools.kerasdataset import KerasDatasetHelper, UDASslLoop, MixMatchSslLoop, FixMatchMixUpSslLoop, InfoMaxSslV1Loop, InfoMaxLoop
 from tools.dcgan import KerasDatasetGanHelper, DCGanLoop
+from tools.pix2pix import CMPFacadeHelper, Pix2PixLoop
 from tools.training_engine import BaseTrainingLoop
 from yaml import safe_dump
 
@@ -190,7 +191,8 @@ helper_register = {
     'SSDHelper': SSDHelper,
     'DCASETask5FixMatchSSLHelper': DCASETask5FixMatchSSLHelper,
     'KerasDatasetHelper': KerasDatasetHelper,
-    'KerasDatasetGanHelper': KerasDatasetGanHelper
+    'KerasDatasetGanHelper': KerasDatasetGanHelper,
+    'CMPFacadeHelper': CMPFacadeHelper
 }
 
 network_register = {
@@ -231,6 +233,7 @@ network_register = {
     'dcasetask5basemodel': dcasetask5basemodel,
     'imageclassifierCNN13': imageclassifierCNN13,
     'dcgan_mnist': dcgan_mnist,
+    'pix2pix_facde': pix2pix_facde,
     'cifar_infomax_ssl_v1': cifar_infomax_ssl_v1
 }
 
@@ -296,7 +299,8 @@ trainloop_register = {
     'FixMatchMixUpSslLoop': FixMatchMixUpSslLoop,
     'InfoMaxLoop': InfoMaxLoop,
     'InfoMaxSslV1Loop': InfoMaxSslV1Loop,
-    'DCGanLoop': DCGanLoop
+    'DCGanLoop': DCGanLoop,
+    'Pix2PixLoop': Pix2PixLoop
 }
 
 if __name__ == "__main__":

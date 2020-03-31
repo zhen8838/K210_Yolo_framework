@@ -102,6 +102,14 @@ class KerasDatasetGanHelper(BaseHelper):
 
 
 class DCGanLoop(GanBaseTrainingLoop):
+  """ GanBaseTrainingLoop
+  
+  Args:
+      hparams:
+        noise_dim: *NOISE_DIM # generator model input noise dim
+        val_nimg: 16 # when validation generate image numbers
+  
+  """
 
   def set_metrics_dict(self):
     d = {
@@ -109,9 +117,7 @@ class DCGanLoop(GanBaseTrainingLoop):
             'g_loss': tf.keras.metrics.Mean('g_loss', dtype=tf.float32),
             'd_loss': tf.keras.metrics.Mean('d_loss', dtype=tf.float32),
         },
-        'val': {
-            'loss': tf.keras.metrics.Mean('val_loss', dtype=tf.float32)
-        }
+        'val': {}
     }
     return d
 
@@ -167,22 +173,20 @@ class DCGanLoop(GanBaseTrainingLoop):
     for _ in tf.range(num_steps_to_run):
       self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))
 
-  # @tf.function
-  # def val_step(self, dataset, metrics):
+  def local_variables_init(self):
+    self.val_seed: tf.Tensor = tf.random.normal(
+        [self.hparams.val_nimg, self.hparams.noise_dim])
 
-  #   def step_fn(inputs):
-  #     """Per-Replica training step function."""
-  #     datas, labels = inputs['data'], inputs['label']
-  #     logits = self.val_model(datas, training=False)
-  #     loss_xe = tf.nn.sparse_softmax_cross_entropy_with_logits(labels, logits)
-  #     loss_xe = tf.reduce_mean(loss_xe)
-  #     loss_wd = tf.reduce_sum(self.val_model.losses)
-  #     loss = loss_xe + loss_wd
-  #     metrics.loss.update_state(loss)
-  #     metrics.acc.update_state(labels, tf.nn.softmax(logits))
+  @staticmethod
+  @tf.function
+  def val_generate_images(g_model, test_input):
+    img = g_model(test_input, training=False)
+    img = image_ops.renormalize(img, 127.5, 127.5)
+    imgw = tf.split(img, 4)
+    imgh = tf.split(tf.concat(imgw, 2), 4)
+    nimg = tf.concat(imgh, 1)
+    return nimg
 
-  #   for inputs in dataset:
-  #     if self.strategy:
-  #       self.strategy.experimental_run_v2(step_fn, args=(inputs,))
-  #     else:
-  #       step_fn(inputs,)
+  def val_step(self, dataset, metrics):
+    img = self.val_generate_images(self.g_model, self.val_seed)
+    self.summary.save_images({'img': img})

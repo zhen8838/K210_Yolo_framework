@@ -27,11 +27,12 @@ class EasyDict(object):
         dicts : dict
             dict
         """
-    for name, value in dicts.items():
-      if isinstance(value, dict):
-        setattr(self, name, EasyDict(value))
-      else:
-        setattr(self, name, value)
+    if dicts != None:
+      for name, value in dicts.items():
+        if isinstance(value, dict):
+          setattr(self, name, EasyDict(value))
+        else:
+          setattr(self, name, value)
 
   def keys(self):
     return self.__dict__.keys()
@@ -184,8 +185,7 @@ class BaseSummaryHelper():
   def write_graph(self, model: tf.keras.Model):
     """Sets Keras model and writes graph if specified."""
     if model and self.is_write_graph:
-      with self.writer.as_default(), \
-          summary_ops_v2.always_record_summaries():
+      with self.writer.as_default(), summary_ops_v2.always_record_summaries():
         if not model.run_eagerly:
           summary_ops_v2.graph(get_graph(), step=0)
 
@@ -202,8 +202,7 @@ class BaseSummaryHelper():
   def save_trace(self):
     """Saves tensorboard profile to event file."""
     step = self.current_step()
-    with self.writer.as_default(), \
-        summary_ops_v2.always_record_summaries():
+    with self.writer.as_default(), summary_ops_v2.always_record_summaries():
       tf.summary.trace_export(
           name='profile_batch', step=step, profiler_outdir=self.write_dir)
     self.is_tracing = False
@@ -222,7 +221,7 @@ class BaseSummaryHelper():
       for k, v in metrics.items():
         tf.summary.scalar(k, v, step=step)
 
-  def save_images(self, img_pairs: dict):
+  def save_images(self, img_pairs: dict, max_outputs=3):
     """ Saves image to event file.
       
       NOTE: image shape must be [b, h, w, c]
@@ -233,7 +232,7 @@ class BaseSummaryHelper():
     step = self.current_step()
     with self.writer.as_default():
       for k, v in img_pairs.items():
-        tf.summary.image(k, v, step=step)
+        tf.summary.image(k, v, step=step, max_outputs=max_outputs)
 
 
 class BaseTrainingLoop():
@@ -271,6 +270,11 @@ class BaseTrainingLoop():
           EmaHelper.initial_ema_vars(self.val_model.variables,
                                      self.train_model.variables)
     self.metrics = EasyDict(self.set_metrics_dict())
+
+  @abc.abstractclassmethod
+  def local_variables_init(self):
+    """ init some variables for training """
+    pass
 
   @abc.abstractmethod
   def train_step(self, iterator, num_steps_to_run, metrics: EasyDict):
@@ -328,6 +332,8 @@ class BaseTrainingLoop():
     self.val_epoch_step = val_epoch_step
 
   def train_and_eval(self, epochs, initial_epoch=0, steps_per_run=1):
+    """ training variables init """
+    self.local_variables_init()
     """ training and eval loop """
     train_target_steps = self.train_epoch_step // steps_per_run
     print(
