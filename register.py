@@ -33,7 +33,9 @@ from tools.dcasetask2 import DCASETask2Helper, SemiBCELoss, LwlrapValidation
 from tools.dcasetask5 import (DCASETask5Helper, Task5SupervisedLoop,
                               DCASETask5FixMatchSSLHelper, Task5FixMatchSslLoop,
                               AugmenterStateSync)
-from tools.kerasdataset import KerasDatasetHelper, UDASslLoop, MixMatchSslLoop, FixMatchMixUpSslLoop, InfoMaxSslV1Loop, InfoMaxLoop
+from tools.kerasdataset import (KerasDatasetHelper, UDASslLoop, MixMatchSslLoop,
+                                FixMatchMixUpSslLoop, InfoMaxLoop,
+                                InfoMaxSslV1Loop, InfoMaxSslV2Loop)
 from tools.dcgan import KerasDatasetGanHelper, DCGanLoop
 from tools.pix2pix import CMPFacadeHelper, Pix2PixLoop
 from tools.training_engine import BaseTrainingLoop
@@ -299,6 +301,7 @@ trainloop_register = {
     'FixMatchMixUpSslLoop': FixMatchMixUpSslLoop,
     'InfoMaxLoop': InfoMaxLoop,
     'InfoMaxSslV1Loop': InfoMaxSslV1Loop,
+    'InfoMaxSslV2Loop': InfoMaxSslV2Loop,
     'DCGanLoop': DCGanLoop,
     'Pix2PixLoop': Pix2PixLoop
 }

@@ -1148,6 +1148,38 @@ class InfoMaxSslV1Loop(InfoMaxLoop):
     }
     return d
 
+  @staticmethod
+  def interior_partion_loss(model: tf.keras.Model,
+                            data: tf.Tensor) -> List[tf.Tensor]:
+    """ calc infomax model kl loss and information loss
+    
+    Args:
+        model (tf.keras.Model): train model
+        data (tf.Tensor): data
+    
+    Returns:
+        List[tf.Tensor]: logits, kl_loss, zz_loss, zf_loss
+    """
+    (
+        logits,
+        z_mean,
+        z_log_sigma,
+        zz_true_scores,
+        zz_false_scores,
+        zz_label,
+        zf_true_scores,
+        zf_false_scores,
+        zf_label,
+    ) = model(
+        data, training=True)
+    # prior kl loss
+    kl_loss = InfoMaxLoop.prior_kl_loss(z_mean, z_log_sigma)
+
+    # information loss
+    zz_loss = InfoMaxLoop.info_loss(zz_true_scores, zz_false_scores, zz_label)
+    zf_loss = InfoMaxLoop.info_loss(zf_true_scores, zf_false_scores, zf_label)
+    return logits, kl_loss, zz_loss, zf_loss
+
   @tf.function
   def train_step(self, iterator, num_steps_to_run, metrics):
 
@@ -1158,51 +1190,16 @@ class InfoMaxSslV1Loop(InfoMaxLoop):
       unsup_data = inputs['unsup_data']
       # unsup_aug_data = inputs['unsup_aug_data']
       with tf.GradientTape() as tape:
-        (
-            sup_logits,
-            sup_z_mean,
-            sup_z_log_sigma,
-            sup_zz_true_scores,
-            sup_zz_false_scores,
-            sup_zz_label,
-            sup_zf_true_scores,
-            sup_zf_false_scores,
-            sup_zf_label,
-        ) = self.train_model(
-            sup_data, training=True)
 
-        (
-            unsup_logits,
-            unsup_z_mean,
-            unsup_z_log_sigma,
-            unsup_zz_true_scores,
-            unsup_zz_false_scores,
-            unsup_zz_label,
-            unsup_zf_true_scores,
-            unsup_zf_false_scores,
-            unsup_zf_label,
-        ) = self.train_model(
-            unsup_data, training=True)
-
+        sup_logits, sup_kl_loss, sup_zz_loss, sup_zf_loss = self.interior_partion_loss(
+            self.train_model, sup_data)
         # Supervised loss
         sup_xe_loss = tf.reduce_mean(
             tf.nn.sparse_softmax_cross_entropy_with_logits(
                 labels=sup_label, logits=sup_logits))
 
-        # prior kl loss
-        sup_kl_loss = self.prior_kl_loss(sup_z_mean, sup_z_log_sigma)
-        unsup_kl_loss = self.prior_kl_loss(unsup_z_mean, unsup_z_log_sigma)
-
-        # information loss
-        sup_zz_loss = self.info_loss(sup_zz_true_scores, sup_zz_false_scores,
-                                     sup_zz_label)
-        sup_zf_loss = self.info_loss(sup_zf_true_scores, sup_zf_false_scores,
-                                     sup_zf_label)
-
-        unsup_zz_loss = self.info_loss(unsup_zz_true_scores,
-                                       unsup_zz_false_scores, unsup_zz_label)
-        unsup_zf_loss = self.info_loss(unsup_zf_true_scores,
-                                       unsup_zf_false_scores, unsup_zf_label)
+        unsup_logits, unsup_kl_loss, unsup_zz_loss, unsup_zf_loss = self.interior_partion_loss(
+            self.train_model, unsup_data)
 
         # Model weights regularization
         wd_loss = tf.reduce_mean(self.train_model.losses)
@@ -1255,3 +1252,129 @@ class InfoMaxSslV1Loop(InfoMaxLoop):
 
     for inputs in dataset:
       self.strategy.experimental_run_v2(step_fn, args=(inputs,))
+
+
+class InfoMaxSslV2Loop(InfoMaxSslV1Loop):
+  """ InfoMax semi-supervised learning V2
+    使用fixmatch结合infomax
+  
+  Args:
+      update_augmenter_state: *UPDATE_AUGMENTER_STATE
+      infomax:
+        confidence: 0.85 # weight for pseudo label cross entropy loss mask
+        ws: 1. # weight for supervised cross entropy loss
+        wu: 1. # weight for pseudo label cross entropy loss
+        wkl: 0.01 # weight for kl prior loss
+        wginfo: 0.5 # weight for global information loss
+        wlinfo: 1.5 # weight for local information loss
+      ema:
+        enable: false
+        decay: 0.999
+  """
+
+  def set_metrics_dict(self):
+    d = {
+        'train': {
+            'loss':
+                tf.keras.metrics.Mean('train_loss', dtype=tf.float32),
+            'xe_loss':
+                tf.keras.metrics.Mean('xe_loss', dtype=tf.float32),
+            'xeu_loss':
+                tf.keras.metrics.Mean('xeu_loss', dtype=tf.float32),
+            'kl_loss':
+                tf.keras.metrics.Mean('kl_loss', dtype=tf.float32),
+            'zz_loss':
+                tf.keras.metrics.Mean('zz_loss', dtype=tf.float32),
+            'zf_loss':
+                tf.keras.metrics.Mean('zf_loss', dtype=tf.float32),
+            'wd_loss':
+                tf.keras.metrics.Mean('wd_loss', dtype=tf.float32),
+            'acc':
+                tf.keras.metrics.SparseCategoricalAccuracy(
+                    'train_acc', dtype=tf.float32)
+        },
+        'val': {
+            'loss':
+                tf.keras.metrics.Mean('val_loss', dtype=tf.float32),
+            'acc':
+                tf.keras.metrics.SparseCategoricalAccuracy(
+                    'val_acc', dtype=tf.float32)
+        }
+    }
+    return d
+
+  @tf.function
+  def train_step(self, iterator, num_steps_to_run, metrics):
+
+    def step_fn(inputs: dict):
+      """Per-Replica training step function."""
+      data = inputs['data']
+      label = inputs['label']
+      udata = inputs['unsup_data']
+      uaugdata = inputs['unsup_aug_data']
+      with tf.GradientTape() as tape:
+
+        logits, kl_loss, zz_loss, zf_loss = self.interior_partion_loss(
+            self.train_model, data)
+
+        ulogits, ukl_loss, uzz_loss, uzf_loss = self.interior_partion_loss(
+            self.train_model, udata)
+
+        uauglogits, uaugkl_loss, uaugzz_loss, uaugzf_loss = self.interior_partion_loss(
+            self.train_model, uaugdata)
+
+        # Supervised loss
+        xe_loss = tf.reduce_mean(
+            tf.nn.sparse_softmax_cross_entropy_with_logits(
+                labels=label, logits=logits))
+
+        # Un-Supervised loss
+        pseudo_labels = tf.stop_gradient(tf.nn.softmax(ulogits))
+        xeu_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(
+            labels=tf.argmax(pseudo_labels, axis=1), logits=uauglogits)
+        pseudo_mask = (
+            tf.reduce_max(pseudo_labels, axis=1) >=
+            self.hparams.infomax.confidence)
+        pseudo_mask = tf.cast(pseudo_mask, tf.float32)
+        xeu_loss = tf.reduce_mean(xeu_loss * pseudo_mask)
+
+        # Model weights regularization
+        wd_loss = tf.reduce_mean(self.train_model.losses)
+
+        xe_loss = self.hparams.infomax.ws * xe_loss
+        xeu_loss = self.hparams.infomax.wu * xeu_loss
+        kl_loss = self.hparams.infomax.wkl * (kl_loss+ukl_loss+uaugkl_loss)
+        zz_loss = self.hparams.infomax.wginfo * (zz_loss+uzz_loss+uaugzz_loss)
+        zf_loss = self.hparams.infomax.wlinfo * (zf_loss+uzf_loss+uaugzf_loss)
+
+        loss = xe_loss + xeu_loss + kl_loss + zz_loss + zf_loss + wd_loss
+        scaled_loss = loss / self.strategy.num_replicas_in_sync
+
+      grads = tape.gradient(scaled_loss, self.train_model.trainable_variables)
+      self.optimizer.apply_gradients(
+          zip(grads, self.train_model.trainable_variables))
+
+      if self.hparams.ema.enable:
+        EmaHelper.update_ema_vars(self.val_model.variables,
+                                  self.train_model.variables,
+                                  self.hparams.ema.decay)
+
+      if self.hparams.update_augmenter_state:
+        if self.hparams.ema.enable and self.hparams.update_augmenter_state:
+          probe_logits = self.val_model(inputs['probe_data'], training=False)
+        else:
+          probe_logits = self.train_model(inputs['probe_data'], training=False)
+        probe_logits = tf.cast(probe_logits, tf.float32)
+        self.augmenter.update(inputs, tf.nn.softmax(probe_logits))
+
+      metrics.loss.update_state(loss)
+      metrics.xe_loss.update_state(xe_loss)
+      metrics.xeu_loss.update_state(xeu_loss)
+      metrics.kl_loss.update_state(kl_loss)
+      metrics.zz_loss.update_state(zz_loss)
+      metrics.zf_loss.update_state(zf_loss)
+      metrics.wd_loss.update_state(wd_loss)
+      metrics.acc.update_state(label, logits)
+
+    for _ in tf.range(num_steps_to_run):
+      self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))
