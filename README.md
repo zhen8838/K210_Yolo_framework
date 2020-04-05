@@ -346,6 +346,13 @@ wget https://raw.githubusercontent.com/tensorflow/models/master/research/slim/da
 python make_imgenet_list.py --input_train_path xxx/imagenet --input_val_path xxx/imagenetval
 ```
 
+or Download [mosquitoes dataset](https://github.com/jypark1994/MosquitoDL)
+
+```sh
+unzip Datasets.zip
+python scripts/make_mosquitoes_list.py --input_train_path xxx/TrainVal --input_val_path xxx/Test --output_file data/mosquitoes_img_ann.npy
+make jit_train CFG=config/default_mosquit.yml
+```
 
 ## Train
 

@@ -235,6 +235,70 @@ class BaseSummaryHelper():
         tf.summary.image(k, v, step=step, max_outputs=max_outputs)
 
 
+class BaseHelperV2(object):
+
+  def __init__(self,
+               dataset_root: str,
+               in_hw: list,
+               mixed_precision_dtype: str,
+               hparams: dict = None):
+    """ 
+      BaseHelperV2
+    
+    Args:
+        dataset_root (str): dataset dir or somethings
+        in_hw (list): default [256,256]
+        mixed_precision_dtype (str): 
+        hparams (dict): can be any things
+    """
+    self.train_dataset: tf.data.Dataset = None
+    self.val_dataset: tf.data.Dataset = None
+    self.test_dataset: tf.data.Dataset = None
+
+    self.epoch_step: int = None
+    self.val_epoch_step: int = None
+    self.test_epoch_step: int = None
+
+    self.train_list: str = None
+    self.val_list: str = None
+    self.test_list: str = None
+    self.unlabel_list: str = None
+
+    self.dataset_root = dataset_root
+    self.in_hw: list = in_hw
+    self.mixed_precision_dtype = mixed_precision_dtype
+    self.hparams = EasyDict(hparams)
+    self.set_datasetlist()
+
+  @abc.abstractclassmethod
+  def set_datasetlist(self):
+    """you must overwrite this function to setup:
+       `self.train_list, self.val_list, self.test_list
+        self.train_total_data, self.val_total_data, self.test_total_data`
+    """
+    raise NotImplementedError
+
+  @abc.abstractclassmethod
+  def build_train_datapipe(self,
+                           batch_size: int,
+                           is_augment: bool,
+                           is_normalize: bool = True) -> tf.data.Dataset:
+    raise NotImplementedError
+
+  @abc.abstractclassmethod
+  def build_val_datapipe(self, batch_size: int,
+                         is_normalize: bool = True) -> tf.data.Dataset:
+    raise NotImplementedError
+
+  def set_dataset(self, batch_size, is_augment, is_normalize: bool = True):
+    self.batch_size = batch_size
+    self.train_dataset = self.build_train_datapipe(batch_size, is_augment,
+                                                   is_normalize)
+    self.val_dataset = self.build_val_datapipe(batch_size, is_normalize)
+    self.epoch_step = self.train_total_data // self.batch_size
+    self.val_epoch_step = self.val_total_data // self.batch_size
+
+
 class BaseTrainingLoop():
 
   def __init__(self, train_model: k.Model, val_model: k.Model,

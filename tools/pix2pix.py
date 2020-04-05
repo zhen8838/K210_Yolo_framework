@@ -234,12 +234,9 @@ class Pix2PixLoop(GanBaseTrainingLoop):
         disc_loss = self.discriminator_loss(disc_real_output,
                                             disc_generated_output)
 
-        if self.strategy:
-          scaled_gen_loss = gen_total_loss / self.strategy.num_replicas_in_sync
-          scaled_disc_loss = disc_loss / self.strategy.num_replicas_in_sync
-        else:
-          scaled_gen_loss = gen_total_loss
-          scaled_disc_loss = disc_loss
+        scaled_gen_loss = gen_total_loss / self.strategy.num_replicas_in_sync
+        scaled_disc_loss = disc_loss / self.strategy.num_replicas_in_sync
+
       g_grad = g_tape.gradient(scaled_gen_loss, self.g_model.trainable_variables)
       d_grad = d_tape.gradient(scaled_disc_loss, self.d_model.trainable_variables)
 

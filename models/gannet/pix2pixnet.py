@@ -2,86 +2,9 @@ import tensorflow as tf
 k = tf.keras
 K = tf.keras.backend
 kl = tf.keras.layers
+from models.darknet import compose
+from models.gannet.common import InstanceNormalization
 
-
-class InstanceNormalization(kl.Layer):
-  """Instance Normalization Layer (https://arxiv.org/abs/1607.08022)."""
-
-  def __init__(self, epsilon=1e-5):
-    super(InstanceNormalization, self).__init__()
-    self.epsilon = epsilon
-
-  def build(self, input_shape):
-    self.scale = self.add_weight(
-        name='scale',
-        shape=input_shape[-1:],
-        initializer=tf.random_normal_initializer(1., 0.02),
-        trainable=True)
-
-    self.offset = self.add_weight(
-        name='offset',
-        shape=input_shape[-1:],
-        initializer='zeros',
-        trainable=True)
-
-  def call(self, x):
-    mean, variance = tf.nn.moments(x, axes=[1, 2], keepdims=True)
-    inv = tf.math.rsqrt(variance + self.epsilon)
-    normalized = (x-mean) * inv
-    return self.scale * normalized + self.offset
-
-  def get_config(self):
-    config = {
-        'epsilon': self.epsilon,
-    }
-    base_config = super().get_config()
-    return dict(list(base_config.items()) + list(config.items()))
-
-
-def dcgan_mnist(image_shape: list, noise_dim: int):
-
-  def make_generator_model():
-    model = k.Sequential([
-        kl.Dense(7 * 7 * 256, use_bias=False, input_shape=(noise_dim,)),
-        kl.BatchNormalization(),
-        kl.LeakyReLU(),
-        kl.Reshape((7, 7, 256)),
-        kl.Conv2DTranspose(
-            128, (5, 5), strides=(1, 1), padding='same', use_bias=False),
-        kl.BatchNormalization(),
-        kl.LeakyReLU(),
-        kl.Conv2DTranspose(
-            64, (5, 5), strides=(2, 2), padding='same', use_bias=False),
-        kl.BatchNormalization(),
-        kl.LeakyReLU(),
-        kl.Conv2DTranspose(
-            1, (5, 5),
-            strides=(2, 2),
-            padding='same',
-            use_bias=False,
-            activation='tanh')
-    ])
-    return model
-
-  def make_discriminator_model():
-    model = k.Sequential([
-        kl.Conv2D(
-            64, (5, 5), strides=(2, 2), padding='same', input_shape=image_shape),
-        kl.LeakyReLU(),
-        kl.Dropout(0.3),
-        kl.Conv2D(128, (5, 5), strides=(2, 2), padding='same'),
-        kl.LeakyReLU(),
-        kl.Dropout(0.3),
-        kl.Flatten(),
-        kl.Dense(1)
-    ])
-
-    return model
-
-  generator = make_generator_model()
-  discriminator = make_discriminator_model()
-
-  return generator, discriminator, None
 
 
 def downsample(filters, size, norm_type='batchnorm', apply_norm=True):
@@ -251,3 +174,4 @@ def pix2pix_facde():
   generator = Generator()
   discriminator = Discriminator()
   return generator, discriminator, None
+
