@@ -54,9 +54,9 @@ def main(config_file, new_cfg, mode, model, train):
         dtype (str): `mixed_float16` or `mixed_bfloat16` policy can be used
       } 
     """
-    if train.mixed_precision.enable:
+    if train.trainloop_kwarg['hparams']['mixed_precision']['enable']:
       policy = tf.keras.mixed_precision.experimental.Policy(
-          train.mixed_precision.dtype)
+          train.trainloop_kwarg['hparams']['mixed_precision']['dtype'])
       tf.keras.mixed_precision.experimental.set_policy(policy)
 
     network = network_register[model.network]
@@ -64,6 +64,9 @@ def main(config_file, new_cfg, mode, model, train):
 
     optimizer: tf.keras.optimizers.Optimizer = optimizer_register[
         train.optimizer](**train.optimizer_kwarg)
+    if train.trainloop_kwarg['hparams']['mixed_precision']['enable']:
+      optimizer = tf.keras.mixed_precision.experimental.LossScaleOptimizer(
+          optimizer, policy.loss_scale)
 
     loop: BaseTrainingLoop = trainloop_register[train.trainloop](
         train_model, val_model, optimizer, distribution.strategy,
@@ -117,17 +120,8 @@ def main(config_file, new_cfg, mode, model, train):
         initial_epoch=initial_epoch,
         steps_per_run=train.steps_per_run)
     """ Finish Training """
-    model_name = f'train_model_{initial_epoch+int(optimizer.iterations.numpy() / train_epoch_step)}.h5'
-    ckpt = log_dir / model_name
-
-    k.models.save_model(train_model, str(ckpt))
-    print()
-    print(INFO, f' Save Train Model as {str(ckpt)}')
-
-    infer_model_name = f'infer_model_{initial_epoch+int(optimizer.iterations.numpy() / train_epoch_step)}.h5'
-    infer_ckpt = log_dir / infer_model_name
-    k.models.save_model(infer_model, str(infer_ckpt))
-    print(INFO, f' Save Infer Model as {str(infer_ckpt)}')
+    loop.save_models(initial_epoch +
+                     int(optimizer.iterations.numpy() / train_epoch_step))
 
 
 if __name__ == "__main__":

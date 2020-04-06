@@ -149,21 +149,16 @@ class DCGanLoop(GanBaseTrainingLoop):
 
         gen_loss = self.generator_loss(fake_output)
         disc_loss = self.discriminator_loss(real_output, fake_output)
-        scaled_gen_loss = gen_loss / self.strategy.num_replicas_in_sync
-        scaled_disc_loss = disc_loss / self.strategy.num_replicas_in_sync
+        scaled_gen_loss = self.optimizer_scale_loss(gen_loss, self.g_optimizer)
+        scaled_disc_loss = self.optimizer_scale_loss(disc_loss, self.d_optimizer)
 
-      g_grad = g_tape.gradient(scaled_gen_loss, self.g_model.trainable_variables)
-      d_grad = d_tape.gradient(scaled_disc_loss, self.d_model.trainable_variables)
+      self.optimizer_apply_grad(scaled_gen_loss, g_tape, self.g_optimizer,
+                                self.g_model)
+      self.optimizer_apply_grad(scaled_disc_loss, d_tape, self.d_optimizer,
+                                self.d_model)
 
-      self.g_optimizer.apply_gradients(
-          zip(g_grad, self.g_model.trainable_variables))
-      self.d_optimizer.apply_gradients(
-          zip(d_grad, self.d_model.trainable_variables))
-
-      # if self.hparams.ema.enable:
-      #   EmaHelper.update_ema_vars(self.val_model.variables,
-      #                             self.train_model.variables,
-      #                             self.hparams.ema.decay)
+      if self.hparams.ema.enable:
+        self.ema.update()
       metrics.g_loss.update_state(tf.reduce_mean(scaled_gen_loss))
       metrics.d_loss.update_state(tf.reduce_mean(scaled_disc_loss))
 

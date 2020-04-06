@@ -355,8 +355,8 @@ class VariableCheckpoint(Callback):
                mode='auto'):
     super().__init__()
     self.log_dir = str(log_dir)
-    self.auto_save_dirs = os.path.join(self.log_dir, 'auto_save/checkpoint')
-    self.final_save_dirs = os.path.join(self.log_dir, 'final_save/checkpoint')
+    self.auto_save_dirs = os.path.join(self.log_dir, 'auto_save')
+    self.final_save_dirs = os.path.join(self.log_dir, 'final_save')
     self.saver = tf.train.Checkpoint(**variable_dict)
     self.auto_save_manager = tf.train.CheckpointManager(
         self.saver, directory=self.auto_save_dirs, max_to_keep=20)
@@ -387,7 +387,7 @@ class VariableCheckpoint(Callback):
 
   def load_checkpoint(self, pre_checkpoint: str):
     if pre_checkpoint:
-      self.saver.restore(pre_checkpoint)
+      self.saver.restore(tf.train.latest_checkpoint(pre_checkpoint))
       print(INFO, f' Load Checkpoint From {pre_checkpoint}')
       return
     else:

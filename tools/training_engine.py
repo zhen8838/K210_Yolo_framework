@@ -1,7 +1,7 @@
 import tensorflow as tf
 k = tf.keras
 kl = tf.keras.layers
-from typing import Iterator
+from typing import Iterator, Mapping
 from tqdm import tqdm
 import abc
 from tensorflow.python.keras.callbacks import CallbackList
@@ -48,7 +48,33 @@ class EasyDict(object):
 
 
 class EmaHelper(object):
-  """ Helper class for exponential moving average. """
+
+  def __init__(self, orig_model: k.Model, decay: float):
+    """ Helper class for exponential moving average.
+    
+    eg. 
+    ```python
+    self.ema = EmaHelper(self.val_model, self.hparams.ema.decay)
+    self.ema.update()
+    .
+    .
+    self.ema.model(test_data,training=False)
+    ```
+    
+    Args:
+        
+        orig model (k.Model): usually be validation model NOTE this model variables must be auto update or update in training loop
+        
+        decay (float): ema decay rate
+    """
+    self.decay = decay
+    self.orig_model = orig_model
+    self.model = k.models.clone_model(orig_model)
+    self.initial_ema_vars(self.model.variables, self.orig_model.variables)
+
+  def update(self):
+    self.update_ema_vars(self.model.variables, self.orig_model.variables,
+                         self.decay)
 
   @staticmethod
   def initial_ema_vars(ema_variables: dict, initial_values: dict):
@@ -182,7 +208,7 @@ class BaseSummaryHelper():
   def current_step(self):
     return self.optimizer.iterations.numpy()
 
-  def write_graph(self, model: tf.keras.Model):
+  def write_graph(self, model: k.Model):
     """Sets Keras model and writes graph if specified."""
     if model and self.is_write_graph:
       with self.writer.as_default(), summary_ops_v2.always_record_summaries():
@@ -317,6 +343,15 @@ class BaseTrainingLoop():
               enable (bool): true or false
               decay (float): ema decay rate, recommend 0.999
             }
+      
+      2.  mixed precision training:
+      
+          Args:
+          mixed_precision:{
+              enable (bool): true or false
+              dtype (str): mixed_float16 or mixed_bfloat16 or float32
+            }
+            
     Args:
         train_model (k.Model): training model
         val_model (k.Model): validation model
@@ -325,14 +360,18 @@ class BaseTrainingLoop():
     self.val_model = val_model
     self.optimizer = optimizer
     self.strategy = strategy
+    self.models_dict: Mapping[str, k.Model] = {
+        'train_model': self.train_model,
+        'val_model': self.val_model,
+    }
     if kwargs:
       assert 'hparams' in kwargs.keys(), 'if use kwargs, must contain hparams !'
       # NOTE hparams contain all extra features
       self.hparams = EasyDict(kwargs['hparams'])
       if 'ema' in self.hparams.keys():
         if self.hparams.ema.enable:
-          EmaHelper.initial_ema_vars(self.val_model.variables,
-                                     self.train_model.variables)
+          self.ema = EmaHelper(self.val_model, self.hparams.ema.decay)
+          self.models_dict.setdefault('ema_model', self.ema.model)
     self.metrics = EasyDict(self.set_metrics_dict())
 
   @abc.abstractclassmethod
@@ -345,10 +384,41 @@ class BaseTrainingLoop():
     """Training StepFn."""
     pass
 
-  @tf.function
+  @abc.abstractmethod
   def val_step(self, dataset: tf.data.Dataset, metrics: EasyDict):
     """Evaluation StepFn."""
     pass
+
+  def optimizer_scale_loss(self, loss: tf.Tensor,
+                           optimizer: tf.optimizers.Optimizer) -> tf.Tensor:
+    """in GradientTape scope , rescale loss 
+    
+    Args:
+        loss (tf.Tensor): 
+        optimizer (tf.optimizers.Optimizer): 
+    
+    Returns:
+        tf.Tensor: scaled_loss
+    """
+    scaled_loss = loss / self.strategy.num_replicas_in_sync
+    if self.hparams.mixed_precision.enable:
+      scaled_loss = optimizer.get_scaled_loss(loss)
+    return scaled_loss
+
+  def optimizer_apply_grad(self, scaled_loss: tf.Tensor, tape: tf.GradientTape,
+                           optimizer: tf.optimizers.Optimizer, model: k.Model):
+    """apply gradients
+    
+    Args:
+        scaled_loss (tf.Tensor): 
+        tape (tf.GradientTape): 
+        optimizer (tf.optimizers.Optimizer): 
+        model (k.Model):
+    """
+    grad = tape.gradient(scaled_loss, model.trainable_variables)
+    if self.hparams.mixed_precision.enable:
+      grad = optimizer.get_unscaled_gradients(grad)
+    optimizer.apply_gradients(zip(grad, model.trainable_variables))
 
   def set_summary_writer(self,
                          write_dir: str,
@@ -447,6 +517,19 @@ class BaseTrainingLoop():
     self.callback_list.on_train_end(val_logs)
     self.summary.writer.close()
 
+  def save_models(self, finally_epoch: int):
+    """save all models in training loop models_dict
+    
+    Args:
+        finally_epoch (int): finshed epoch
+    """
+    for key, v in self.models_dict.items():
+      save_path = os.path.join(self.summary.write_dir,
+                               f'{key}-{finally_epoch}.h5')
+      if isinstance(v, k.Model):
+        k.models.save_model(v, save_path)
+        print(INFO, f'Save {key} as {save_path}')
+
 
 class GanBaseTrainingLoop(BaseTrainingLoop):
 
@@ -470,12 +553,26 @@ class GanBaseTrainingLoop(BaseTrainingLoop):
         discriminator_optimizer (k.optimizers.Optimizer): discriminator_optimizer
         strategy (tf.distribute.Strategy): strategy
     """
-    super().__init__(generator_model, val_model, generator_optimizer, strategy,
-                     **kwargs)
-    self.g_model = self.train_model
+    self.train_model = self.g_model = generator_model
     self.d_model = discriminator_model
-    self.g_optimizer = self.optimizer
+    self.g_optimizer = self.optimizer = generator_optimizer
     self.d_optimizer = discriminator_optimizer
+    self.val_model = val_model
+    self.strategy = strategy
+    self.models_dict: Mapping[str, k.Model] = {
+        'generator_model': self.g_model,
+        'discriminator_model': self.d_model,
+        'val_model': self.val_model,
+    }
+    if kwargs:
+      assert 'hparams' in kwargs.keys(), 'if use kwargs, must contain hparams !'
+      # NOTE hparams contain all extra features
+      self.hparams = EasyDict(kwargs['hparams'])
+      if 'ema' in self.hparams.keys():
+        if self.hparams.ema.enable:
+          self.ema = EmaHelper(self.val_model, self.hparams.ema.decay)
+          self.models_dict.setdefault('ema_model', self.ema.model)
+    self.metrics = EasyDict(self.set_metrics_dict())
 
 
 class MProgbar(Progbar):

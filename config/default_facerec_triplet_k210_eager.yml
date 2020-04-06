@@ -46,15 +46,15 @@ train:
   steps_per_run: 30
   log_dir: log
   sub_log_dir: default_facerec_triplet_k210_eager_exp
-  mixed_precision:
-    enable: false 
-    dtype: float32
   trainloop: FaceTripletTrainingLoop
   trainloop_kwarg: 
     hparams:
       loss:
         target_distance: 1.0
         distance_fn: 'l2'
+      mixed_precision:
+        enable: false 
+        dtype: float32
   variablecheckpoint_kwarg: 
     variable_dict:
       model: train_model

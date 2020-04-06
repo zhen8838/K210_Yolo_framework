@@ -428,19 +428,16 @@ class FixMatchMixUpSslLoop(BaseTrainingLoop):
             loss_xe + self.hparams.fixmatchmixup.wu * loss_xeu +
             self.hparams.fixmatchmixup.wmu * loss_xeu_mix + loss_wd)
 
-        scaled_loss = loss / self.strategy.num_replicas_in_sync
-      grads = tape.gradient(scaled_loss, self.train_model.trainable_variables)
-      self.optimizer.apply_gradients(
-          zip(grads, self.train_model.trainable_variables))
+        scaled_loss = self.optimizer_scale_loss(loss, self.optimizer)
+      self.optimizer_apply_grad(scaled_loss, tape, self.optimizer,
+                                self.train_model)
 
       if self.hparams.ema.enable:
-        EmaHelper.update_ema_vars(self.val_model.variables,
-                                  self.train_model.variables,
-                                  self.hparams.ema.decay)
+        self.ema.update()
 
       if self.hparams.update_augmenter_state:
         if self.hparams.ema.enable and self.hparams.update_augmenter_state:
-          probe_logits = self.val_model(inputs['probe_data'], training=False)
+          probe_logits = self.ema.model(inputs['probe_data'], training=False)
         else:
           probe_logits = self.train_model(inputs['probe_data'], training=False)
         probe_logits = tf.cast(probe_logits, tf.float32)
@@ -612,19 +609,16 @@ class UDASslLoop(BaseTrainingLoop):
         # Model weights regularization
         loss_wd = tf.reduce_sum(self.train_model.losses)
         loss = loss_xe + loss_xeu * self.hparams.uda.wu + loss_ent * self.hparams.uda.we + loss_wd
-        scaled_loss = loss / self.strategy.num_replicas_in_sync
-      grads = tape.gradient(scaled_loss, self.train_model.trainable_variables)
-      self.optimizer.apply_gradients(
-          zip(grads, self.train_model.trainable_variables))
+        scaled_loss = self.optimizer_scale_loss(loss, self.optimizer)
+      self.optimizer_apply_grad(scaled_loss, tape, self.optimizer,
+                                self.train_model)
 
       if self.hparams.ema.enable:
-        EmaHelper.update_ema_vars(self.val_model.variables,
-                                  self.train_model.variables,
-                                  self.hparams.ema.decay)
+        self.ema.update()
 
       if self.hparams.update_augmenter_state:
         if self.hparams.ema.enable and self.hparams.update_augmenter_state:
-          probe_logits = self.val_model(inputs['probe_data'], training=False)
+          probe_logits = self.ema.model(inputs['probe_data'], training=False)
         else:
           probe_logits = self.train_model(inputs['probe_data'], training=False)
         probe_logits = tf.cast(probe_logits, tf.float32)
@@ -900,19 +894,16 @@ class MixMatchSslLoop(BaseTrainingLoop):
         loss_wd = tf.reduce_mean(self.train_model.losses)
 
         loss = loss_xe + loss_l2u * self.hparams.mixmatch.w_match + loss_wd
-        scaled_loss = loss / self.strategy.num_replicas_in_sync
-      grads = tape.gradient(scaled_loss, self.train_model.trainable_variables)
-      self.optimizer.apply_gradients(
-          zip(grads, self.train_model.trainable_variables))
+        scaled_loss = self.optimizer_scale_loss(loss, self.optimizer)
+      self.optimizer_apply_grad(scaled_loss, tape, self.optimizer,
+                                self.train_model)
 
       if self.hparams.ema.enable:
-        EmaHelper.update_ema_vars(self.val_model.variables,
-                                  self.train_model.variables,
-                                  self.hparams.ema.decay)
+        self.ema.update()
 
       if self.hparams.update_augmenter_state:
         if self.hparams.ema.enable and self.hparams.update_augmenter_state:
-          probe_logits = self.val_model(inputs['probe_data'], training=False)
+          probe_logits = self.ema.model(inputs['probe_data'], training=False)
         else:
           probe_logits = self.train_model(inputs['probe_data'], training=False)
         probe_logits = tf.cast(probe_logits, tf.float32)
@@ -1044,20 +1035,17 @@ class InfoMaxLoop(BaseTrainingLoop):
                 wd_loss)
         # yapf: enable
 
-        scaled_loss = loss / self.strategy.num_replicas_in_sync
+        scaled_loss = self.optimizer_scale_loss(loss, self.optimizer)
 
-      grads = tape.gradient(scaled_loss, self.train_model.trainable_variables)
-      self.optimizer.apply_gradients(
-          zip(grads, self.train_model.trainable_variables))
+      self.optimizer_apply_grad(scaled_loss, tape, self.optimizer,
+                                self.train_model)
 
       if self.hparams.ema.enable:
-        EmaHelper.update_ema_vars(self.val_model.variables,
-                                  self.train_model.variables,
-                                  self.hparams.ema.decay)
+        self.ema.update()
 
       if self.hparams.update_augmenter_state:
         if self.hparams.ema.enable and self.hparams.update_augmenter_state:
-          probe_logits = self.val_model(inputs['probe_data'], training=False)
+          probe_logits = self.ema.model(inputs['probe_data'], training=False)
         else:
           probe_logits = self.train_model(inputs['probe_data'], training=False)
         probe_logits = tf.cast(probe_logits, tf.float32)
@@ -1211,20 +1199,17 @@ class InfoMaxSslV1Loop(InfoMaxLoop):
                 wd_loss)
         # yapf: enable
 
-        scaled_loss = loss / self.strategy.num_replicas_in_sync
+        scaled_loss = self.optimizer_scale_loss(loss, self.optimizer)
 
-      grads = tape.gradient(scaled_loss, self.train_model.trainable_variables)
-      self.optimizer.apply_gradients(
-          zip(grads, self.train_model.trainable_variables))
+      self.optimizer_apply_grad(scaled_loss, tape, self.optimizer,
+                                self.train_model)
 
       if self.hparams.ema.enable:
-        EmaHelper.update_ema_vars(self.val_model.variables,
-                                  self.train_model.variables,
-                                  self.hparams.ema.decay)
+        self.ema.update()
 
       if self.hparams.update_augmenter_state:
         if self.hparams.ema.enable and self.hparams.update_augmenter_state:
-          probe_logits = self.val_model(inputs['probe_data'], training=False)
+          probe_logits = self.ema.model(inputs['probe_data'], training=False)
         else:
           probe_logits = self.train_model(inputs['probe_data'], training=False)
         probe_logits = tf.cast(probe_logits, tf.float32)
@@ -1348,20 +1333,17 @@ class InfoMaxSslV2Loop(InfoMaxSslV1Loop):
         zf_loss = self.hparams.infomax.wlinfo * (zf_loss+uzf_loss+uaugzf_loss)
 
         loss = xe_loss + xeu_loss + kl_loss + zz_loss + zf_loss + wd_loss
-        scaled_loss = loss / self.strategy.num_replicas_in_sync
+        scaled_loss = self.optimizer_scale_loss(loss, self.optimizer)
 
-      grads = tape.gradient(scaled_loss, self.train_model.trainable_variables)
-      self.optimizer.apply_gradients(
-          zip(grads, self.train_model.trainable_variables))
+      self.optimizer_apply_grad(scaled_loss, tape, self.optimizer,
+                                self.train_model)
 
       if self.hparams.ema.enable:
-        EmaHelper.update_ema_vars(self.val_model.variables,
-                                  self.train_model.variables,
-                                  self.hparams.ema.decay)
+        self.ema.update()
 
       if self.hparams.update_augmenter_state:
         if self.hparams.ema.enable and self.hparams.update_augmenter_state:
-          probe_logits = self.val_model(inputs['probe_data'], training=False)
+          probe_logits = self.ema.model(inputs['probe_data'], training=False)
         else:
           probe_logits = self.train_model(inputs['probe_data'], training=False)
         probe_logits = tf.cast(probe_logits, tf.float32)

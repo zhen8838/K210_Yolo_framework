@@ -45,9 +45,6 @@ train:
   steps_per_run: 30
   log_dir: log
   sub_log_dir: default_facerec_amsoftmax_y1_exp
-  mixed_precision:
-    enable: false 
-    dtype: float32
   trainloop: FaceSoftmaxTrainingLoop
   trainloop_kwarg: 
     hparams:
@@ -57,6 +54,9 @@ train:
           batch_size: *BATCH_SIZE_REF
           scale: 30
           margin: 0.35
+      mixed_precision:
+        enable: false 
+        dtype: float32
   variablecheckpoint_kwarg: 
     variable_dict:
       model: train_model

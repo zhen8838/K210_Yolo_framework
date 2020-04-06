@@ -42,19 +42,20 @@ train:
   steps_per_run: 30
   log_dir: log
   sub_log_dir: default_dcasetask5_exp
-  mixed_precision:
-    enable: false 
-    dtype: float32
   trainloop: Task5SupervisedLoop
   trainloop_kwarg: 
     hparams:
       ema:
         enable: true
         decay: 0.999
+      mixed_precision:
+        enable: false 
+        dtype: float32
   variablecheckpoint_kwarg: 
     variable_dict:
-      model: train_model
-      model_ema: val_model
+      train_model: train_model
+      val_model: val_model
+      ema_model: loop.ema.model
       optimizer: optimizer
     monitor: val/acc
     mode: max

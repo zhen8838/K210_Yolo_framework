@@ -643,8 +643,8 @@ def dcasetask5basemodel(input_shape,
                **dense_kwargs),
   )(
       inputs)
-  infer_model = val_model = k.Model(inputs, outputs, name='dcasetask5basemodel')
   train_model = k.Model(inputs, outputs, name='dcasetask5basemodel')
+  infer_model = val_model = train_model
   return infer_model, val_model, train_model
 
 
@@ -697,8 +697,6 @@ def imageclassifierCNN13(input_shape, nclasses, filters=32, weight_decay=0.0005)
       x)
 
   train_model = k.Model(x, logits)
-  val_model = k.Model(x, logits)
-  infer_model = val_model
+  infer_model = val_model = train_model
   return infer_model, val_model, train_model
-
 

@@ -6,7 +6,7 @@ model:
   helper: CMPFacadeHelper
   helper_kwarg:
     dataset_root: /home/zqh/workspace/facades
-    in_hw: 
+    in_hw:
       - 256
       - 256
     mixed_precision_dtype: *MIXED_PRECISION_DTYPE
@@ -36,20 +36,20 @@ train:
   steps_per_run: 5
   log_dir: log
   sub_log_dir: default_facde_pix2pix_exp
-  mixed_precision:
-    enable: false
-    dtype: *MIXED_PRECISION_DTYPE
   trainloop: Pix2PixLoop
   trainloop_kwarg:
     hparams:
-      wl1: 100 # generator loss = gan_loss + wl1 * l1_loss, in paper wl1 = 100. 
+      wl1: 100 # generator loss = gan_loss + wl1 * l1_loss, in paper wl1 = 100.
+      mixed_precision:
+        enable: false
+        dtype: *MIXED_PRECISION_DTYPE
       # ema:
       #   enable: true
       #   decay: 0.999
   variablecheckpoint_kwarg:
     variable_dict:
       g_model: generator_model
-      d_model: discriminator_optimizer
+      d_model: discriminator_model
       g_optimizer: generator_optimizer
       d_optimizer: discriminator_optimizer
     monitor: train/g_loss

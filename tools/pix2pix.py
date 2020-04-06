@@ -229,27 +229,23 @@ class Pix2PixLoop(GanBaseTrainingLoop):
         disc_generated_output = self.d_model([input_image, gen_output],
                                              training=True)
 
-        gen_total_loss, gen_gan_loss, gen_l1_loss = self.generator_loss(
+        gen_loss, gen_gan_loss, gen_l1_loss = self.generator_loss(
             disc_generated_output, gen_output, target, self.hparams.wl1)
         disc_loss = self.discriminator_loss(disc_real_output,
                                             disc_generated_output)
 
-        scaled_gen_loss = gen_total_loss / self.strategy.num_replicas_in_sync
-        scaled_disc_loss = disc_loss / self.strategy.num_replicas_in_sync
+        scaled_gen_loss = self.optimizer_scale_loss(gen_loss, self.g_optimizer)
+        scaled_disc_loss = self.optimizer_scale_loss(disc_loss, self.d_optimizer)
 
-      g_grad = g_tape.gradient(scaled_gen_loss, self.g_model.trainable_variables)
-      d_grad = d_tape.gradient(scaled_disc_loss, self.d_model.trainable_variables)
+      self.optimizer_apply_grad(scaled_gen_loss, g_tape, self.g_optimizer,
+                                self.g_model)
+      self.optimizer_apply_grad(scaled_disc_loss, d_tape, self.d_optimizer,
+                                self.d_model)
 
-      self.g_optimizer.apply_gradients(
-          zip(g_grad, self.g_model.trainable_variables))
-      self.d_optimizer.apply_gradients(
-          zip(d_grad, self.d_model.trainable_variables))
+      if self.hparams.ema.enable:
+        self.ema.update()
 
-      # if self.hparams.ema.enable:
-      #   EmaHelper.update_ema_vars(self.val_model.variables,
-      #                             self.train_model.variables,
-      #                             self.hparams.ema.decay)
-      metrics.g_loss.update_state(gen_total_loss)
+      metrics.g_loss.update_state(gen_loss)
       metrics.gan_loss.update_state(gen_gan_loss)
       metrics.l1_loss.update_state(gen_l1_loss)
       metrics.d_loss.update_state(disc_loss)

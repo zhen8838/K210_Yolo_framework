@@ -19,8 +19,7 @@ def main(config_file, new_cfg, mode, model, train):
   assert len(physical_devices) > 0, "Not enough GPU hardware devices available"
   tf.config.experimental.set_memory_growth(physical_devices[0], True)
   if train.graph_optimizer is True:
-    tf.config.optimizer.set_experimental_options(
-        train.graph_optimizer_kwarg)
+    tf.config.optimizer.set_experimental_options(train.graph_optimizer_kwarg)
   """ Set Golbal Paramter """
   tf.random.set_seed(train.rand_seed)
   np.random.seed(train.rand_seed)
@@ -56,9 +55,9 @@ def main(config_file, new_cfg, mode, model, train):
         dtype (str): `mixed_float16` or `mixed_bfloat16` policy can be used
       } 
     """
-    if train.mixed_precision.enable:
+    if train.trainloop_kwarg['hparams']['mixed_precision']['enable']:
       policy = tf.keras.mixed_precision.experimental.Policy(
-          train.mixed_precision.dtype)
+          train.trainloop_kwarg['hparams']['mixed_precision']['dtype'])
       tf.keras.mixed_precision.experimental.set_policy(policy)
 
     network = network_register[model.network]
@@ -69,6 +68,11 @@ def main(config_file, new_cfg, mode, model, train):
         train.generator_optimizer](**train.generator_optimizer_kwarg)
     discriminator_optimizer: tf.keras.optimizers.Optimizer = optimizer_register[
         train.discriminator_optimizer](**train.discriminator_optimizer_kwarg)
+    if train.trainloop_kwarg['hparams']['mixed_precision']['enable']:
+      generator_optimizer = tf.keras.mixed_precision.experimental.LossScaleOptimizer(
+          generator_optimizer, policy.loss_scale)
+      discriminator_optimizer = tf.keras.mixed_precision.experimental.LossScaleOptimizer(
+          discriminator_optimizer, policy.loss_scale)
 
     loop: BaseTrainingLoop = trainloop_register[train.trainloop](
         generator_model, discriminator_model, val_model, generator_optimizer,
@@ -115,23 +119,15 @@ def main(config_file, new_cfg, mode, model, train):
     loop.set_callbacks(cbs)
     loop.set_summary_writer(
         str(log_dir), datetime.strftime(datetime.now(), r'%Y%m%d-%H%M%S'))
-    initial_epoch = int(generator_optimizer.iterations.numpy() /
-                        train_epoch_step)
+    initial_epoch = int(generator_optimizer.iterations.numpy() / train_epoch_step)
 
     loop.train_and_eval(
         epochs=train.epochs + initial_epoch,
         initial_epoch=initial_epoch,
         steps_per_run=train.steps_per_run)
     """ Finish Training """
-    model_name = f'g_model_{initial_epoch+int(generator_optimizer.iterations.numpy() / train_epoch_step)}.h5'
-    ckpt = log_dir / model_name
-    k.models.save_model(generator_model, str(ckpt))
-    print(INFO, f' Save Generator Model as {str(ckpt)}')
-    model_name = f'd_model_{initial_epoch+int(generator_optimizer.iterations.numpy() / train_epoch_step)}.h5'
-    ckpt = log_dir / model_name
-    k.models.save_model(discriminator_model, str(ckpt))
-    print(INFO, f' Save Discriminator Model as {str(ckpt)}')
-
+    loop.save_models(initial_epoch + int(generator_optimizer.iterations.numpy() /
+                                         train_epoch_step))
 
 
 if __name__ == "__main__":

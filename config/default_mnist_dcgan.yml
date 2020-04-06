@@ -40,9 +40,6 @@ train:
   steps_per_run: 30
   log_dir: log
   sub_log_dir: default_mnist_dcgan_exp
-  mixed_precision:
-    enable: false
-    dtype: *MIXED_PRECISION_DTYPE
   trainloop: DCGanLoop
   trainloop_kwarg:
     hparams:
@@ -51,10 +48,13 @@ train:
       # ema:
       #   enable: true
       #   decay: 0.999
+      mixed_precision:
+        enable: false
+        dtype: *MIXED_PRECISION_DTYPE
   variablecheckpoint_kwarg:
     variable_dict:
       g_model: generator_model
-      d_model: discriminator_optimizer
+      d_model: discriminator_model
       g_optimizer: generator_optimizer
       d_optimizer: discriminator_optimizer
     monitor: train/g_loss

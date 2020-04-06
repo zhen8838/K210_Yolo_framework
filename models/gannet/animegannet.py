@@ -3,7 +3,7 @@ k = tf.keras
 K = tf.keras.backend
 kl = tf.keras.layers
 from models.darknet import compose
-from models.gannet.common import SpectralNormalization, InstanceNormalization
+from models.gannet.common import Conv2DSpectralNormal, InstanceNormalization
 
 
 def Conv2D(filters, kernel_size=3, strides=1, padding='valid', use_bias=False):
@@ -143,7 +143,8 @@ def generator(input_shape):
   x = compose(Unsample(128), Conv2DNormLReLU(64), Conv2DNormLReLU(64))(x)
   # out
   x = compose(
-      Conv2D(filters=3, kernel_size=1, strides=1), kl.Activation(tf.nn.tanh))(
+      Conv2D(filters=3, kernel_size=1, strides=1),
+      kl.Activation(tf.nn.tanh, dtype=tf.float32))(
           x)
   return k.Model(inputs, x)
 
@@ -157,10 +158,8 @@ def Conv2DSN(filters,
   f = []
   if use_sn:
     f.append(
-        SpectralNormalization(
-            kl.Conv2D(
-                filters, kernel_size, strides, padding=padding,
-                use_bias=use_bias)))
+        Conv2DSpectralNormal(
+            filters, kernel_size, strides, padding=padding, use_bias=use_bias))
   else:
     f.append(
         kl.Conv2D(
@@ -233,7 +232,8 @@ def discriminator(input_shape: list, filters: int, nblocks: int,
           strides=1,
           padding='same',
           use_bias=False,
-          use_sn=use_sn)
+          use_sn=use_sn),
+      kl.Activation('linear', dtype=tf.float32)
   ])
 
   x = compose(*f)(inputs)

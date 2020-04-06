@@ -4,7 +4,7 @@ from models.networks import (mbv1_facerec, mbv2_ctdet, yolo, tiny_yolo, pfld,
                              mbv2_imgnet, retinafacenet, retinaface_slim,
                              retinaface_rfb, ullfd_slim, dcasetask5basemodel,
                              FMobileFaceNet_eager, imageclassifierCNN13)
-from models.gannet import dcgan_mnist, pix2pix_facde
+from models.gannet import dcgan_mnist, pix2pix_facde, animenet
 from models.receptivefieldnet import rffacedetnet
 from models.audionet import dualmbv2net
 from models.networks4k210 import (
@@ -38,6 +38,7 @@ from tools.kerasdataset import (KerasDatasetHelper, UDASslLoop, MixMatchSslLoop,
                                 InfoMaxSslV1Loop, InfoMaxSslV2Loop)
 from tools.dcgan import KerasDatasetGanHelper, DCGanLoop
 from tools.pix2pix import CMPFacadeHelper, Pix2PixLoop
+from tools.animegan import AnimeGanHelper, AnimeGanInitLoop, AnimeGanLoop
 from tools.training_engine import BaseTrainingLoop
 from yaml import safe_dump
 
@@ -194,6 +195,7 @@ helper_register = {
     'DCASETask5FixMatchSSLHelper': DCASETask5FixMatchSSLHelper,
     'KerasDatasetHelper': KerasDatasetHelper,
     'KerasDatasetGanHelper': KerasDatasetGanHelper,
+    'AnimeGanHelper': AnimeGanHelper,
     'CMPFacadeHelper': CMPFacadeHelper
 }
 
@@ -236,6 +238,7 @@ network_register = {
     'imageclassifierCNN13': imageclassifierCNN13,
     'dcgan_mnist': dcgan_mnist,
     'pix2pix_facde': pix2pix_facde,
+    'animenet': animenet,
     'cifar_infomax_ssl_v1': cifar_infomax_ssl_v1
 }
 
@@ -303,7 +306,9 @@ trainloop_register = {
     'InfoMaxSslV1Loop': InfoMaxSslV1Loop,
     'InfoMaxSslV2Loop': InfoMaxSslV2Loop,
     'DCGanLoop': DCGanLoop,
-    'Pix2PixLoop': Pix2PixLoop
+    'Pix2PixLoop': Pix2PixLoop,
+    'AnimeGanInitLoop': AnimeGanInitLoop,
+    'AnimeGanLoop': AnimeGanLoop,
 }
 
 if __name__ == "__main__":

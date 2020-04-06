@@ -2,6 +2,7 @@ import tensorflow as tf
 from tools.training_engine import BaseHelperV2, EasyDict, GanBaseTrainingLoop
 import transforms.image.ops as image_ops
 import os
+from tensorflow.python.keras.losses import huber_loss
 
 
 class AnimeGanHelper(BaseHelperV2):
@@ -135,7 +136,7 @@ class AnimeGanHelper(BaseHelperV2):
     self.train_dataset = self.build_train_datapipe(batch_size, is_augment,
                                                    is_normalize)
     self.val_dataset = self.build_val_datapipe(batch_size, is_normalize)
-    self.epoch_step = self.train_total_data // self.batch_size
+    self.train_epoch_step = self.train_total_data // self.batch_size
     self.val_epoch_step = self.val_total_data // self.batch_size
 
 
@@ -150,7 +151,7 @@ class AnimeGanInitLoop(GanBaseTrainingLoop):
   def set_metrics_dict(self):
     d = {
         'train': {
-            'loss': tf.keras.metrics.Mean('loss', dtype=tf.float32),
+            'g_loss': tf.keras.metrics.Mean('g_loss', dtype=tf.float32),
         },
         'val': {}
     }
@@ -179,18 +180,13 @@ class AnimeGanInitLoop(GanBaseTrainingLoop):
         con_loss = self.con_loss(self.p_model, real_data, gen_output)
         loss = self.hparams.wc * con_loss
 
-        scaled_loss = loss / self.strategy.num_replicas_in_sync
+        scaled_loss = self.optimizer_scale_loss(loss, self.g_optimizer)
 
-      grad = tape.gradient(scaled_loss, self.g_model.trainable_variables)
+      self.optimizer_apply_grad(scaled_loss, tape, self.g_optimizer, self.g_model)
 
-      self.g_optimizer.apply_gradients(
-          zip(grad, self.g_model.trainable_variables))
-
-      # if self.hparams.ema.enable:
-      #   EmaHelper.update_ema_vars(self.val_model.variables,
-      #                             self.train_model.variables,
-      #                             self.hparams.ema.decay)
-      metrics.loss.update_state(loss)
+      if self.hparams.ema.enable:
+        self.ema.update()
+      metrics.g_loss.update_state(loss)
 
     for _ in tf.range(num_steps_to_run):
       self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))
@@ -207,10 +203,10 @@ class AnimeGanInitLoop(GanBaseTrainingLoop):
     self.p_model: tf.keras.Model = tf.keras.Model(
         inputs,
         model.get_layer('block_6_expand').output)
-    self.p_model.trainable(False)
+    self.p_model.trainable = False
 
 
-class AnimeGanLoop(GanBaseTrainingLoop):
+class AnimeGanLoop(AnimeGanInitLoop):
   """ AnimeGanLoop for generator weight init
   
   Args:
@@ -245,8 +241,7 @@ class AnimeGanLoop(GanBaseTrainingLoop):
 
   @staticmethod
   def style_loss(style, fake):
-    return AnimeGanInitLoop.l1_loss(
-        AnimeGanLoop.gram(style), AnimeGanLoop.gram(fake))
+    return AnimeGanLoop.l1_loss(AnimeGanLoop.gram(style), AnimeGanLoop.gram(fake))
 
   @staticmethod
   def con_sty_loss(pre_train_model, real, anime, fake):
@@ -256,8 +251,8 @@ class AnimeGanLoop(GanBaseTrainingLoop):
 
     anime_feature_map = pre_train_model(anime, training=False)
 
-    c_loss = AnimeGanInitLoop.l1_loss(real_feature_map, fake_feature_map)
-    s_loss = AnimeGanInitLoop.style_loss(anime_feature_map, fake_feature_map)
+    c_loss = AnimeGanLoop.l1_loss(real_feature_map, fake_feature_map)
+    s_loss = AnimeGanLoop.style_loss(anime_feature_map, fake_feature_map)
 
     return c_loss, s_loss
 
@@ -271,10 +266,8 @@ class AnimeGanLoop(GanBaseTrainingLoop):
     con = AnimeGanLoop.rgb2yuv(con)
     fake = AnimeGanLoop.rgb2yuv(fake)
 
-    return AnimeGanInitLoop.l1_loss(
-        con[..., 0], fake[..., 0]) + tf.losses.huber_loss(
-            con[..., 1], fake[..., 1]) + tf.losses.huber_loss(
-                con[..., 2], fake[..., 2])
+    return AnimeGanLoop.l1_loss(con[..., 0], fake[..., 0]) + huber_loss(
+        con[..., 1], fake[..., 1]) + huber_loss(con[..., 2], fake[..., 2])
 
   @staticmethod
   def generator_loss(loss_type, fake_logit):
@@ -301,7 +294,7 @@ class AnimeGanLoop(GanBaseTrainingLoop):
                        fake: tf.Tensor, ld: float):
     # 梯度惩罚
     if 'dragan' in loss_type:
-      eps = tf.random_uniform(shape=tf.shape(real), minval=0., maxval=1.)
+      eps = tf.random.uniform(tf.shape(real), 0., 1.)
       _, x_var = tf.nn.moments(real, axes=[0, 1, 2, 3])
       # magnitude of noise decides the size of local region
       x_std = tf.sqrt(x_var)
@@ -309,24 +302,22 @@ class AnimeGanLoop(GanBaseTrainingLoop):
       fake = real + 0.5*x_std*eps
 
     batch = tf.shape(real)[0]
-    alpha = tf.random_uniform(shape=[batch, 1, 1, 1], minval=0., maxval=1.)
+    alpha = tf.random.uniform([batch, 1, 1, 1], 0., 1.)
     interpolated = real + alpha * (fake-real)
-
-    logit, _ = discriminator(interpolated, training=True)
+    logit = discriminator(interpolated, training=True)
     with gradtape.stop_recording():
       # gradient of D(interpolated) NOTE : should test more
       grad = gradtape.gradient(logit, interpolated)[0]
     grad_norm = tf.norm(tf.keras.layers.Flatten()(grad), axis=1)  # l2 norm
 
-    GP = 0
+    gp_loss = 0
     # WGAN - LP
     if 'lp' in loss_type:
-      GP = ld * tf.reduce_mean(tf.square(tf.maximum(0.0, grad_norm - 1.)))
-
+      gp_loss = ld * tf.reduce_mean(tf.square(tf.maximum(0.0, grad_norm - 1.)))
     elif 'gp' in loss_type or 'dragan' == loss_type:
-      GP = ld * tf.reduce_mean(tf.square(grad_norm - 1.))
+      gp_loss = ld * tf.reduce_mean(tf.square(grad_norm - 1.))
 
-    return GP
+    return gp_loss
 
   @staticmethod
   def discriminator_loss(loss_type, real, gray, fake, real_blur):
@@ -394,33 +385,32 @@ class AnimeGanLoop(GanBaseTrainingLoop):
         t_loss = self.hparams.wc * con_loss + self.hparams.ws * sty_loss + self.hparams.wcl * col_loss
         g_loss = self.hparams.wg * self.generator_loss(self.hparams.ltype,
                                                        gen_logit) + t_loss
+        # gradient panalty
+        if ('gp' in self.hparams.ltype or 'lp' in self.hparams.ltype or
+            'dragan' in self.hparams.ltype):
+          gp_loss = self.gradient_panalty(self.hparams.ltype, tape, self.d_model,
+                                          anime_data, gen_output, self.hparams.ld)
+        else:
+          gp_loss = 0.0
+
         # discriminator loss
         d_loss = self.hparams.wd * self.discriminator_loss(
-            self.hparams.ltype, anime_logit, gray_logit,
-            gen_logit, smooth_logit) + self.gradient_panalty(
-                self.hparams.ltype, tape, self.d_model, anime_data, gen_output,
-                self.hparams.ld)
+            self.hparams.ltype, anime_logit, gray_logit, gen_logit, smooth_logit)
 
-        scaled_g_loss = g_loss / self.strategy.num_replicas_in_sync
-        scaled_d_loss = d_loss / self.strategy.num_replicas_in_sync
+        d_loss += gp_loss
 
-      g_grad = tape.gradient(scaled_g_loss, self.g_model.trainable_variables)
-      d_grad = tape.gradient(scaled_d_loss, self.d_model.trainable_variables)
+        scaled_g_loss = self.optimizer_scale_loss(g_loss, self.g_optimizer)
+        scaled_d_loss = self.optimizer_scale_loss(d_loss, self.d_optimizer)
 
-      self.g_optimizer.apply_gradients(
-          zip(g_grad, self.g_model.trainable_variables))
-      self.g_optimizer.apply_gradients(
-          zip(d_grad, self.d_model.trainable_variables))
+      self.optimizer_apply_grad(scaled_g_loss, tape, self.g_optimizer,
+                                self.g_model)
+      self.optimizer_apply_grad(scaled_d_loss, tape, self.d_optimizer,
+                                self.d_model)
 
-      # if self.hparams.ema.enable:
-      #   EmaHelper.update_ema_vars(self.val_model.variables,
-      #                             self.train_model.variables,
-      #                             self.hparams.ema.decay)
+      if self.hparams.ema.enable:
+        self.ema.update()
       metrics.g_loss.update_state(g_loss)
       metrics.d_loss.update_state(d_loss)
 
     for _ in tf.range(num_steps_to_run):
       self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))
-
-  def local_variables_init(self):
-    pass
