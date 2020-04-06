@@ -125,14 +125,11 @@ class Task5SupervisedLoop(BaseTrainingLoop):
         # Part 2: Model weights regularization
         loss_wd = tf.reduce_sum(self.train_model.losses)
         loss = loss_xe + loss_wd
-        scaled_loss = loss / self.strategy.num_replicas_in_sync
-      grads = tape.gradient(scaled_loss, self.train_model.trainable_variables)
-      self.optimizer.apply_gradients(
-          zip(grads, self.train_model.trainable_variables))
+        scaled_loss = self.optimizer_scale_loss(loss, self.optimizer)
+      self.optimizer_apply_grad(scaled_loss, tape, self.optimizer,
+                                self.train_model)
       if self.hparams.ema.enable:
-        EmaHelper.update_ema_vars(self.val_model.variables,
-                                  self.train_model.variables,
-                                  self.hparams.ema.decay)
+        self.ema.update()
       metrics.loss.update_state(loss)
       metrics.acc.update_state(labels, tf.nn.softmax(logits))
 
@@ -350,19 +347,16 @@ class Task5FixMatchSslLoop(BaseTrainingLoop):
         loss_wd = tf.reduce_sum(self.train_model.losses)
 
         loss = loss_xe + self.hparams.fixmatch.wu * loss_xeu + loss_wd
-        scaled_loss = loss / self.strategy.num_replicas_in_sync
-      grads = tape.gradient(scaled_loss, self.train_model.trainable_variables)
-      self.optimizer.apply_gradients(
-          zip(grads, self.train_model.trainable_variables))
+        scaled_loss = self.optimizer_scale_loss(loss, self.optimizer)
+      self.optimizer_apply_grad(scaled_loss, tape, self.optimizer,
+                                self.train_model)
 
       if self.hparams.ema.enable:
-        EmaHelper.update_ema_vars(self.val_model.variables,
-                                  self.train_model.variables,
-                                  self.hparams.ema.decay)
+        self.ema.update()
 
       if self.hparams.update_augmenter_state:
         if self.hparams.ema.enable and self.hparams.update_augmenter_state:
-          probe_logits = self.val_model(inputs['probe_data'], training=False)
+          probe_logits = self.ema.model(inputs['probe_data'], training=False)
         else:
           probe_logits = self.train_model(inputs['probe_data'], training=False)
         probe_logits = tf.cast(probe_logits, tf.float32)

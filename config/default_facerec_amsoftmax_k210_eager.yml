@@ -25,7 +25,7 @@ model:
     loss: amsoftmax
 train:
   graph_optimizer: true
-  graph_optimizer_kwarg: 
+  graph_optimizer_kwarg:
     layout_optimizer: true
     remapping: true
     shape_optimization: true
@@ -46,19 +46,19 @@ train:
   steps_per_run: 30
   log_dir: log
   sub_log_dir: default_facerec_amsoftmax_k210_eager_exp
-  mixed_precision:
-    enable: false 
-    dtype: float32
   trainloop: FaceSoftmaxTrainingLoop
-  trainloop_kwarg: 
+  trainloop_kwarg:
     hparams:
       loss:
         name: Sparse_AmsoftmaxLoss
-        kwarg: 
+        kwarg:
           batch_size: *BATCH_SIZE_REF
           scale: 30
           margin: 0.35
-  variablecheckpoint_kwarg: 
+      mixed_precision:
+        enable: false
+        dtype: float32
+  variablecheckpoint_kwarg:
     variable_dict:
       model: train_model
       optimizer: optimizer
@@ -82,5 +82,5 @@ train:
         restore_best_weights: false
     - name: StepLR
       kwarg:
-        steps: [ 10  ,  80    ,  120   ]
-        rates: [0.0001, 0.0008,  0.0004]
+        steps: [10, 80, 120]
+        rates: [0.0001, 0.0008, 0.0004]

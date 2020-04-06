@@ -1,22 +1,18 @@
 MIXED_PRECISION_DTYPE: &MIXED_PRECISION_DTYPE float32
-NOISE_DIM: &NOISE_DIM 100
 
 mode: train
 model:
-  name: mnistdcgan
-  helper: KerasDatasetGanHelper
+  name: facdepix2pix
+  helper: CMPFacadeHelper
   helper_kwarg:
-    dataset: mnist
+    dataset_root: /home/zqh/workspace/facades
+    in_hw:
+      - 256
+      - 256
     mixed_precision_dtype: *MIXED_PRECISION_DTYPE
-    hparams:
-      noise_dim: *NOISE_DIM # when use dcgan, input noise shape
-  network: dcgan_mnist
-  network_kwarg:
-    image_shape:
-      - 28
-      - 28
-      - 1
-    noise_dim: *NOISE_DIM
+    hparams: null
+  network: pix2pix_facde
+  network_kwarg: null
 train:
   graph_optimizer: true
   graph_optimizer_kwarg:
@@ -31,26 +27,25 @@ train:
     tpu: null
     strategy: Mirrored
   augmenter: true
-  batch_size: 128
+  batch_size: 16
   pre_ckpt: null
   rand_seed: 10101
   epochs: 100
-  train_epoch_step: 1024
+  train_epoch_step: null
   vali_epoch_step: null
-  steps_per_run: 30
+  steps_per_run: 5
   log_dir: log
-  sub_log_dir: default_mnist_dcgan_exp
-  trainloop: DCGanLoop
+  sub_log_dir: default_facde_pix2pix_exp
+  trainloop: Pix2PixLoop
   trainloop_kwarg:
     hparams:
-      noise_dim: *NOISE_DIM # generator model input noise dim
-      val_nimg: 16 # when validation generate image numbers
-      # ema:
-      #   enable: true
-      #   decay: 0.999
+      wl1: 100 # generator loss = gan_loss + wl1 * l1_loss, in paper wl1 = 100.
       mixed_precision:
         enable: false
         dtype: *MIXED_PRECISION_DTYPE
+      # ema:
+      #   enable: true
+      #   decay: 0.999
   variablecheckpoint_kwarg:
     variable_dict:
       g_model: generator_model
@@ -61,16 +56,12 @@ train:
     mode: min
   generator_optimizer: Adam
   generator_optimizer_kwarg:
-    learning_rate: 0.0005
-    beta_1: 0.9
-    beta_2: 0.999
-    amsgrad: false
+    learning_rate: 0.0002
+    beta_1: 0.5
   discriminator_optimizer: Adam
   discriminator_optimizer_kwarg:
-    learning_rate: 0.0005
-    beta_1: 0.9
-    beta_2: 0.999
-    amsgrad: false
+    learning_rate: 0.0002
+    beta_1: 0.5
   callbacks:
     - name: EarlyStopping
       kwarg:

@@ -643,8 +643,8 @@ def dcasetask5basemodel(input_shape,
                **dense_kwargs),
   )(
       inputs)
-  infer_model = val_model = k.Model(inputs, outputs, name='dcasetask5basemodel')
   train_model = k.Model(inputs, outputs, name='dcasetask5basemodel')
+  infer_model = val_model = train_model
   return infer_model, val_model, train_model
 
 
@@ -697,93 +697,6 @@ def imageclassifierCNN13(input_shape, nclasses, filters=32, weight_decay=0.0005)
       x)
 
   train_model = k.Model(x, logits)
-  val_model = k.Model(x, logits)
-  infer_model = val_model
+  infer_model = val_model = train_model
   return infer_model, val_model, train_model
 
-
-def dcasetask5infomax(
-    input_shape,
-    nclasses,
-    softmax=False,
-    z_dim=256,  # 隐变量维度
-    alpha=0.5,  # 全局互信息的loss比重
-    beta=1.5,  # 局部互信息的loss比重
-    gamma=0.01,  # 先验分布的loss比重
-    weight_decay=1e-4,
-    bn_decay=0.9,
-    bn_epsilon=1e-5) -> k.Model:
-  conv_kwargs = dict(
-      use_bias=False,
-      kernel_initializer='he_normal',
-      kernel_regularizer=k.regularizers.l2(weight_decay))
-
-  bn_kwargs = dict(momentum=bn_decay, epsilon=bn_epsilon)
-
-  dense_kwargs = dict(
-      kernel_initializer=k.initializers.RandomNormal(stddev=0.01),
-      kernel_regularizer=k.regularizers.l2(weight_decay),
-      bias_regularizer=k.regularizers.l2(weight_decay))
-
-  x_in = k.Input(input_shape)
-  feature_map = compose(
-      kl.Conv2D(64, (7, 1), padding='same', **conv_kwargs),
-      kl.BatchNormalization(**bn_kwargs),
-      kl.LeakyReLU(),
-      kl.MaxPool2D((4, 1)),
-      kl.Dropout(0.2),
-      kl.Conv2D(128, (10, 1), **conv_kwargs),
-      kl.BatchNormalization(**bn_kwargs),
-      kl.LeakyReLU(),
-      kl.Conv2D(256, (1, 7), padding='same', **conv_kwargs),
-      kl.BatchNormalization(**bn_kwargs),
-  )(
-      x_in)
-
-  feature_map_encoder = k.Model(x_in, feature_map)
-
-
-def dcgan_mnist(image_shape: list, noise_dim: int):
-
-  def make_generator_model():
-    model = k.Sequential([
-        kl.Dense(7 * 7 * 256, use_bias=False, input_shape=(noise_dim,)),
-        kl.BatchNormalization(),
-        kl.LeakyReLU(),
-        kl.Reshape((7, 7, 256)),
-        kl.Conv2DTranspose(
-            128, (5, 5), strides=(1, 1), padding='same', use_bias=False),
-        kl.BatchNormalization(),
-        kl.LeakyReLU(),
-        kl.Conv2DTranspose(
-            64, (5, 5), strides=(2, 2), padding='same', use_bias=False),
-        kl.BatchNormalization(),
-        kl.LeakyReLU(),
-        kl.Conv2DTranspose(
-            1, (5, 5),
-            strides=(2, 2),
-            padding='same',
-            use_bias=False,
-            activation='tanh')
-    ])
-    return model
-
-  def make_discriminator_model():
-    model = k.Sequential([
-        kl.Conv2D(
-            64, (5, 5), strides=(2, 2), padding='same', input_shape=image_shape),
-        kl.LeakyReLU(),
-        kl.Dropout(0.3),
-        kl.Conv2D(128, (5, 5), strides=(2, 2), padding='same'),
-        kl.LeakyReLU(),
-        kl.Dropout(0.3),
-        kl.Flatten(),
-        kl.Dense(1)
-    ])
-
-    return model
-
-  generator = make_generator_model()
-  discriminator = make_discriminator_model()
-
-  return generator, discriminator, None

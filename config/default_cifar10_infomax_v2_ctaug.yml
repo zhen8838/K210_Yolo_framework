@@ -1,15 +1,15 @@
-UPDATE_AUGMENTER_STATE: &UPDATE_AUGMENTER_STATE true
+UPDATE_AUGMENTER_STATE: &UPDATE_AUGMENTER_STATE false
 NCLASSES: &NCLASSES 10
 MIXED_PRECISION_DTYPE: &MIXED_PRECISION_DTYPE float32
 
 mode: train
 model:
-  name: udacifar10
+  name: infomaxv2cifar10
   helper: KerasDatasetHelper
   helper_kwarg:
-    dataset: "cifar10"
+    dataset: cifar10
     label_ratio: 0.05 # Unlabeled sample ratio.
-    unlabel_dataset_ratio: 7 # Unlabeled batch size ratio.
+    unlabel_dataset_ratio: 6 # Unlabeled batch size ratio.
     mixed_precision_dtype: *MIXED_PRECISION_DTYPE
     augment_kwargs:
       name: ctaugment
@@ -20,14 +20,16 @@ model:
         epsilon: 0.001
         prob_to_apply: null
         num_levels: 10
-  network: imageclassifierCNN13
+  network: cifar_infomax_ssl_v1
   network_kwarg:
     input_shape:
       - 32
       - 32
       - 3
     nclasses: *NCLASSES
-    filters: 32
+    softmax: false
+    z_dim: 256
+    weight_decay: 0.0005
 train:
   graph_optimizer: true
   graph_optimizer_kwarg:
@@ -42,7 +44,7 @@ train:
     tpu: null
     strategy: Mirrored
   augmenter: true
-  batch_size: 64
+  batch_size: 128
   pre_ckpt: null
   rand_seed: 10101
   epochs: 100
@@ -50,46 +52,37 @@ train:
   vali_epoch_step: null
   steps_per_run: 30
   log_dir: log
-  sub_log_dir: default_cifar10_uda_ctaug_exp
-  trainloop: UDASslLoop
+  sub_log_dir: default_cifar10_infomaxv2_ctaug_exp
+  trainloop: InfoMaxSslV2Loop
   trainloop_kwarg:
     hparams:
-      nclasses: *NCLASSES
       update_augmenter_state: *UPDATE_AUGMENTER_STATE
-      tsa: # 训练信号退火
-        mode: "no" # Can choice from [linear,exp,log,no]
-        scale: 5 # scale
-        max_epoch: 256 # max update batch
-      uda:
-        temperature: 1 # sharpening by temperature
-        confidence: 0.95 # Ignore predictions < confidence
-        wu: 1 # loss unlabeled weights
-        we: 0 # loss entropy 
+      infomax:
+        confidence: 0.85 # weight for pseudo label cross entropy loss mask
+        ws: 1. # weight for supervised cross entropy loss
+        wu: 1. # weight for pseudo label cross entropy loss
+        wkl: 0.01 # weight for kl prior loss
+        wginfo: 0.5 # weight for global information loss
+        wlinfo: 1.5 # weight for local information loss
       ema:
-        enable: true
+        enable: false
         decay: 0.999
       mixed_precision:
         enable: false
         dtype: *MIXED_PRECISION_DTYPE
   variablecheckpoint_kwarg:
     variable_dict:
-      train_model: train_model
-      val_model: val_model
-      ema_model: loop.ema.model
+      model: train_model
+      model_ema: val_model
       optimizer: optimizer
     monitor: val/acc
     mode: max
-  # optimizer: Adam
-  # optimizer_kwarg:
-  #   learning_rate: 0.001
-  #   beta_1: 0.9
-  #   beta_2: 0.999
-  #   amsgrad: false
-  optimizer: SGD
+  optimizer: Adam
   optimizer_kwarg:
     learning_rate: 0.001
-    momentum: 0.9
-    nesterov: True
+    beta_1: 0.9
+    beta_2: 0.999
+    amsgrad: false
   callbacks:
     - name: EarlyStopping
       kwarg:
@@ -105,9 +98,9 @@ train:
         update_augmenter_state: *UPDATE_AUGMENTER_STATE
     - name: ScheduleLR
       kwarg:
-        base_lr: 0.03
+        base_lr: 0.001
         use_warmup: true
         warmup_epochs: 20
-        decay_rate: 0.7
+        decay_rate: 0.9
         decay_epochs: 20
         outside_optimizer: optimizer

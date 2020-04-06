@@ -355,9 +355,13 @@ class VariableCheckpoint(Callback):
                mode='auto'):
     super().__init__()
     self.log_dir = str(log_dir)
-    self.auto_save_dirs = os.path.join(self.log_dir, 'auto_save/checkpoint')
-    self.final_save_dirs = os.path.join(self.log_dir, 'final_save/checkpoint')
+    self.auto_save_dirs = os.path.join(self.log_dir, 'auto_save')
+    self.final_save_dirs = os.path.join(self.log_dir, 'final_save')
     self.saver = tf.train.Checkpoint(**variable_dict)
+    self.auto_save_manager = tf.train.CheckpointManager(
+        self.saver, directory=self.auto_save_dirs, max_to_keep=20)
+    self.final_save_manager = tf.train.CheckpointManager(
+        self.saver, directory=self.final_save_dirs, max_to_keep=None)
     self.monitor = monitor
     self.save_best_only = True
 
@@ -383,7 +387,7 @@ class VariableCheckpoint(Callback):
 
   def load_checkpoint(self, pre_checkpoint: str):
     if pre_checkpoint:
-      self.saver.restore(pre_checkpoint)
+      self.saver.restore(tf.train.latest_checkpoint(pre_checkpoint))
       print(INFO, f' Load Checkpoint From {pre_checkpoint}')
       return
     else:
@@ -406,13 +410,13 @@ class VariableCheckpoint(Callback):
     else:
       if self.monitor_op(current, self.best):
         self.best = current
-        self.saver.save(self.auto_save_dirs)
+        self.auto_save_manager.save()
 
   def on_epoch_end(self, epoch, logs=None):
     self._save_variable(logs)
 
   def on_train_end(self, logs=None):
-    self.saver.save(self.final_save_dirs)
+    self.final_save_manager.save()
 
 
 def focal_sigmoid_cross_entropy_with_logits(labels: tf.Tensor,

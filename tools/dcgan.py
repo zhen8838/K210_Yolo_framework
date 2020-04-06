@@ -102,6 +102,14 @@ class KerasDatasetGanHelper(BaseHelper):
 
 
 class DCGanLoop(GanBaseTrainingLoop):
+  """ GanBaseTrainingLoop
+  
+  Args:
+      hparams:
+        noise_dim: *NOISE_DIM # generator model input noise dim
+        val_nimg: 16 # when validation generate image numbers
+  
+  """
 
   def set_metrics_dict(self):
     d = {
@@ -109,9 +117,7 @@ class DCGanLoop(GanBaseTrainingLoop):
             'g_loss': tf.keras.metrics.Mean('g_loss', dtype=tf.float32),
             'd_loss': tf.keras.metrics.Mean('d_loss', dtype=tf.float32),
         },
-        'val': {
-            'loss': tf.keras.metrics.Mean('val_loss', dtype=tf.float32)
-        }
+        'val': {}
     }
     return d
 
@@ -143,46 +149,36 @@ class DCGanLoop(GanBaseTrainingLoop):
 
         gen_loss = self.generator_loss(fake_output)
         disc_loss = self.discriminator_loss(real_output, fake_output)
-        if self.strategy:
-          scaled_gen_loss = gen_loss / self.strategy.num_replicas_in_sync
-          scaled_disc_loss = disc_loss / self.strategy.num_replicas_in_sync
-        else:
-          scaled_gen_loss = gen_loss
-          scaled_disc_loss = disc_loss
-      g_grad = g_tape.gradient(scaled_gen_loss, self.g_model.trainable_variables)
-      d_grad = d_tape.gradient(scaled_disc_loss, self.d_model.trainable_variables)
+        scaled_gen_loss = self.optimizer_scale_loss(gen_loss, self.g_optimizer)
+        scaled_disc_loss = self.optimizer_scale_loss(disc_loss, self.d_optimizer)
 
-      self.g_optimizer.apply_gradients(
-          zip(g_grad, self.g_model.trainable_variables))
-      self.d_optimizer.apply_gradients(
-          zip(d_grad, self.d_model.trainable_variables))
+      self.optimizer_apply_grad(scaled_gen_loss, g_tape, self.g_optimizer,
+                                self.g_model)
+      self.optimizer_apply_grad(scaled_disc_loss, d_tape, self.d_optimizer,
+                                self.d_model)
 
-      # if self.hparams.ema.enable:
-      #   EmaHelper.update_ema_vars(self.val_model.variables,
-      #                             self.train_model.variables,
-      #                             self.hparams.ema.decay)
+      if self.hparams.ema.enable:
+        self.ema.update()
       metrics.g_loss.update_state(tf.reduce_mean(scaled_gen_loss))
       metrics.d_loss.update_state(tf.reduce_mean(scaled_disc_loss))
 
     for _ in tf.range(num_steps_to_run):
       self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))
 
-  # @tf.function
-  # def val_step(self, dataset, metrics):
+  def local_variables_init(self):
+    self.val_seed: tf.Tensor = tf.random.normal(
+        [self.hparams.val_nimg, self.hparams.noise_dim])
 
-  #   def step_fn(inputs):
-  #     """Per-Replica training step function."""
-  #     datas, labels = inputs['data'], inputs['label']
-  #     logits = self.val_model(datas, training=False)
-  #     loss_xe = tf.nn.sparse_softmax_cross_entropy_with_logits(labels, logits)
-  #     loss_xe = tf.reduce_mean(loss_xe)
-  #     loss_wd = tf.reduce_sum(self.val_model.losses)
-  #     loss = loss_xe + loss_wd
-  #     metrics.loss.update_state(loss)
-  #     metrics.acc.update_state(labels, tf.nn.softmax(logits))
+  @staticmethod
+  @tf.function
+  def val_generate_images(g_model, test_input):
+    img = g_model(test_input, training=False)
+    img = image_ops.renormalize(img, 127.5, 127.5)
+    imgw = tf.split(img, 4)
+    imgh = tf.split(tf.concat(imgw, 2), 4)
+    nimg = tf.concat(imgh, 1)
+    return nimg
 
-  #   for inputs in dataset:
-  #     if self.strategy:
-  #       self.strategy.experimental_run_v2(step_fn, args=(inputs,))
-  #     else:
-  #       step_fn(inputs,)
+  def val_step(self, dataset, metrics):
+    img = self.val_generate_images(self.g_model, self.val_seed)
+    self.summary.save_images({'img': img})
