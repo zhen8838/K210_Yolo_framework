@@ -3,6 +3,8 @@ import numpy as np
 from tools.base import BaseHelper
 from matplotlib.pyplot import imshow, show
 from tensorflow.python.keras.losses import LossFunctionWrapper
+import imgaug as ia
+import imgaug.augmenters as iaa
 k = tf.keras
 kl = tf.keras.layers
 
@@ -50,26 +52,45 @@ class ImgnetHelper(BaseHelper):
     self.train_total_data = self.meta['train_num']
     self.val_total_data = self.meta['val_num']
 
+    self.iaaseq = iaa.Sequential([
+        iaa.SomeOf([1, None], [
+            iaa.MultiplyHueAndSaturation(
+                mul_hue=(0.7, 1.3), mul_saturation=(0.7, 1.3), per_channel=True),
+            iaa.Multiply((0.5, 1.5), per_channel=True),
+            iaa.SigmoidContrast((3, 8)),
+        ], True),
+        iaa.SomeOf([1, None], [
+            iaa.Fliplr(0.5),
+            iaa.Affine(scale={
+                "x": (0.7, 1.3),
+                "y": (0.7, 1.3)
+            }, backend='cv2'),
+            iaa.Affine(
+                translate_percent={
+                    "x": (-0.15, 0.15),
+                    "y": (-0.15, 0.15)
+                },
+                backend='cv2'),
+            iaa.Affine(rotate=(-15, 15), backend='cv2')
+        ], True)
+    ], True)
+
   def read_img(self, img_path: tf.Tensor) -> tf.Tensor:
     return tf.image.decode_jpeg(tf.io.read_file(img_path), 3)
 
   def resize_img(self, img: tf.Tensor, ann: tf.Tensor) -> [tf.Tensor, tf.Tensor]:
-    img = tf.image.resize_with_pad(img, self.in_hw[0], self.in_hw[1])
+    img = tf.image.resize_with_pad(
+        img, self.in_hw[0], self.in_hw[1], method='nearest')
     return img, ann
 
-  def resize_train_img(self, img: tf.Tensor,
-                       ann: tf.Tensor) -> [tf.Tensor, tf.Tensor]:
-    img = tf.cond(
-        tf.random.uniform([]) >
-        0.5, lambda: tf.image.resize_with_pad(img, self.in_hw[0], self.in_hw[1]),
-        lambda: tf.image.random_crop(img, (self.in_hw[0], self.in_hw[1], 3)))
-    return img, ann
+  # def augment_img(self, img: tf.Tensor, ann: tf.Tensor) -> [tf.Tensor, tf.Tensor]:
+  #   img = tf.numpy_function(lambda x: self.iaaseq(image=x,), [img], tf.uint8)
 
-  def augment_img(self, img: tf.Tensor, ann: tf.Tensor) -> [tf.Tensor, tf.Tensor]:
-    img = tf.image.random_flip_left_right(img)
-    img = tf.image.random_flip_up_down(img)
-    img = tf.image.random_brightness(img, 0.5)
-    return img, ann
+  #   return img, ann
+  def iaa_augment_img(self, img: np.ndarray,
+                      ann: np.ndarray) -> [np.ndarray, np.ndarray]:
+    image_aug = self.iaaseq(image=img)
+    return image_aug, ann
 
   def build_datapipe(self, image_ann_list: np.ndarray, batch_size: int,
                      is_augment: bool, is_normlize: bool,
@@ -77,12 +98,10 @@ class ImgnetHelper(BaseHelper):
 
     def parser(img_path: tf.Tensor, ann: tf.Tensor):
       img = self.read_img(img_path)
+      img, ann = self.resize_img(img, ann)
       if is_augment:
-        img, ann = self.resize_train_img(img, ann)
-      else:
-        img, ann = self.resize_img(img, ann)
-      if is_augment:
-        img, ann = self.augment_img(img, ann)
+        img, ann = tf.numpy_function(self.iaa_augment_img, [img, ann],
+                                     [tf.uint8, tf.int32])
       if is_normlize:
         img = self.normlize_img(img)
       label = tf.one_hot(ann, self.class_num)

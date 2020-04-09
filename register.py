@@ -25,8 +25,8 @@ from tools.ssd import SSDHelper, SSDLoss, ssd_infer
 from tools.retinaface import RetinaFaceHelper, RetinaFaceLoss, retinaface_infer
 from tools.tinyimgnet import TinyImgnetHelper
 from tools.imgnet import ImgnetHelper, ClassifyLoss
-from tools.facerec import (FcaeRecHelper, TripletLoss, Sparse_SoftmaxLoss,
-                           Sparse_AmsoftmaxLoss, Sparse_AsoftmaxLoss,
+from tools.facerec import (FcaeRecHelper, TripletLoss, SparseSoftmaxLoss,
+                           SparseAmsoftmaxLoss, SparseAsoftmaxLoss,
                            FacerecValidation, facerec_eval,
                            FaceTripletTrainingLoop, FaceSoftmaxTrainingLoop)
 from tools.dcasetask2 import DCASETask2Helper, SemiBCELoss, LwlrapValidation
@@ -249,9 +249,9 @@ loss_register = {
     'PFLDLoss': PFLDLoss,
     'CtdetLoss': CtdetLoss,
     'TripletLoss': TripletLoss,
-    'Sparse_SoftmaxLoss': Sparse_SoftmaxLoss,
-    'Sparse_AmsoftmaxLoss': Sparse_AmsoftmaxLoss,
-    'Sparse_AsoftmaxLoss': Sparse_AsoftmaxLoss,
+    'SparseSoftmaxLoss': SparseSoftmaxLoss,
+    'SparseAmsoftmaxLoss': SparseAmsoftmaxLoss,
+    'SparseAsoftmaxLoss': SparseAsoftmaxLoss,
     'LFFDLoss': LFFDLoss,
     'ClassifyLoss': ClassifyLoss,
     'RetinaFaceLoss': RetinaFaceLoss,

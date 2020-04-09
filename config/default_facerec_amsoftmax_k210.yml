@@ -22,7 +22,7 @@ model:
     embedding_size: 128
     depth_multiplier: 0.5
     loss: amsoftmax
-  loss: Sparse_AmsoftmaxLoss
+  loss: SparseAmsoftmaxLoss
   loss_kwarg:
     batch_size: *BATCH_SIZE_REF
     scale: 30

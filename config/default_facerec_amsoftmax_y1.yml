@@ -49,7 +49,7 @@ train:
   trainloop_kwarg: 
     hparams:
       loss:
-        name: Sparse_AmsoftmaxLoss
+        name: SparseAmsoftmaxLoss
         kwarg: 
           batch_size: *BATCH_SIZE_REF
           scale: 30
