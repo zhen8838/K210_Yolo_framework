@@ -1,0 +1,115 @@
+MIXED_PRECISION_DTYPE: &MIXED_PRECISION_DTYPE float32
+
+mode: train
+model:
+  name: animegan
+  helper: AnimeGanHelper
+  helper_kwarg:
+    dataset_root: /home/zqh/workspace/animedataset
+    in_hw:
+      - 256
+      - 256
+    mixed_precision_dtype: float32
+    hparams:
+      style: Hayao # use which anime style for training
+  network: animenet
+  network_kwarg:
+    image_shape:
+      - 256
+      - 256
+      - 3
+    filters: 64
+    nblocks: 3
+    use_sn: true
+train:
+  graph_optimizer: true
+  graph_optimizer_kwarg:
+    layout_optimizer: true
+    constant_folding: true
+    shape_optimization: true
+    remapping: true
+    arithmetic_optimization: true
+    dependency_optimization: true
+    loop_optimization: true
+    function_optimization: true
+    debug_stripper: true
+    disable_model_pruning: false
+    scoped_allocator_optimization: true
+    pin_to_host_optimization: false
+    implementation_selector: true
+    auto_mixed_precision: false
+    disable_meta_optimizer: false
+    min_graph_nodes: true
+  distributionstrategy_kwarg:
+    tpu: null
+    strategy: Mirrored
+  augmenter: true
+  batch_size: 2
+  pre_ckpt: log/default_animegan_exp/final_save
+  rand_seed: 10101
+  epochs: 100
+  train_epoch_step: null
+  vali_epoch_step: null
+  steps_per_run: 30
+  log_dir: log
+  sub_log_dir: default_animegan_exp_2
+  trainloop: AnimeGanLoop
+  trainloop_kwarg:
+    hparams:
+      wc: 1.5 # l1 loss with pre-trained model weight
+      ws: 3.0 # sty loss weight
+      wcl: 10.0 # color loss weight
+      wg: 300.0 # generator loss weight
+      wd: 300.0 # discriminator loss weight
+      ltype: lsgan # gan loss type in [gan, lsgan, wgan-gp, wgan-lp, dragan, hinge]
+      ld: 10.0 # gradient penalty lambda
+      mixed_precision:
+        enable: false
+        dtype: *MIXED_PRECISION_DTYPE
+      ema:
+        enable: false
+        decay: 0.999
+  variablecheckpoint_kwarg:
+    variable_dict:
+      g_model: generator_model
+      d_model: discriminator_model
+      g_optimizer: generator_optimizer
+      d_optimizer: discriminator_optimizer
+    monitor: train/g_loss
+    mode: min
+  generator_optimizer: Adam
+  generator_optimizer_kwarg:
+    learning_rate: 0.0002
+    beta_1: 0.5
+    beta_2: 0.999
+  discriminator_optimizer: Adam
+  discriminator_optimizer_kwarg:
+    learning_rate: 0.0001
+    beta_1: 0.5
+    beta_2: 0.999
+  callbacks:
+    - name: EarlyStopping
+      kwarg:
+        monitor: train/d_loss
+        min_delta: 0
+        patience: 20
+        verbose: 0
+        mode: min
+        baseline: null
+        restore_best_weights: false
+    # - name: ScheduleLR
+    #   kwarg:
+    #     base_lr: 0.03
+    #     use_warmup: true
+    #     warmup_epochs: 20
+    #     decay_rate: 0.7
+    #     decay_epochs: 20
+    #     outside_optimizer: generator_optimizer
+    # - name: ScheduleLR
+    #   kwarg:
+    #     base_lr: 0.03
+    #     use_warmup: true
+    #     warmup_epochs: 20
+    #     decay_rate: 0.7
+    #     decay_epochs: 20
+    #     outside_optimizer: discriminator_optimizer

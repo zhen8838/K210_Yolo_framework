@@ -127,7 +127,7 @@ class AnimeGanHelper(BaseHelperV2):
       return data_dict
 
     ds = tf.data.Dataset.from_tensor_slices(
-        self.test_list[0][:4]).map(pipe).batch(1)
+        self.test_list[0][:4]).map(pipe).batch(4)
 
     return ds
 
@@ -414,3 +414,11 @@ class AnimeGanLoop(AnimeGanInitLoop):
 
     for _ in tf.range(num_steps_to_run):
       self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))
+
+  def val_step(self, dataset, metrics):
+    for inputs in dataset:
+      real_data = inputs['real_data']
+      gen_output = self.g_model(real_data, training=False)
+      gen_output = tf.cast(
+          image_ops.renormalize(gen_output, 127.5, 127.5), tf.uint8)
+      self.summary.save_images({'gen': gen_output}, 4)

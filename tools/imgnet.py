@@ -102,6 +102,8 @@ class ImgnetHelper(BaseHelper):
       if is_augment:
         img, ann = tf.numpy_function(self.iaa_augment_img, [img, ann],
                                      [tf.uint8, tf.int32])
+        img.set_shape([self.in_hw[0], self.in_hw[1], 3])
+        ann.set_shape([])
       if is_normlize:
         img = self.normlize_img(img)
       label = tf.one_hot(ann, self.class_num)

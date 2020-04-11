@@ -33,14 +33,13 @@ def main(config_file, new_cfg, mode, model, train):
     safe_dump(new_cfg, f, sort_keys=False)  # save config file name
   """ Build Data Input PipeLine """
   distribution = DistributionStrategyHelper(**train.distributionstrategy_kwarg)
-  with distribution.strategy.scope():
+  strategy_scope = distribution.get_strategy_scope()
+  with strategy_scope:
     h = helper_register[model.helper](**model.helper_kwarg)  # type:BaseHelper
     h.set_dataset(train.batch_size, train.augmenter)
 
-    train_ds = distribution.strategy.experimental_distribute_dataset(
-        h.train_dataset)
-    validation_ds = distribution.strategy.experimental_distribute_dataset(
-        h.val_dataset)
+    train_ds, validation_ds = distribution.get_strategy_dataset(
+        h.train_dataset, h.val_dataset)
 
     train_epoch_step = train.train_epoch_step if train.train_epoch_step else int(
         h.train_epoch_step)

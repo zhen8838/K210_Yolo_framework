@@ -30,7 +30,7 @@ train:
     constant_folding: true
     function_optimization: true
     scoped_allocator_optimization: true
-  augmenter: false
+  augmenter: true
   batch_size: 32
   pre_ckpt: null
   rand_seed: 10101

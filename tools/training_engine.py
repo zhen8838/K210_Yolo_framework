@@ -153,6 +153,15 @@ class EmaHelper(object):
           _update_one_var_fn(ema_var, value)
 
 
+class DummyContextManager(object):
+
+  def __enter__(self):
+    pass
+
+  def __exit__(self, *args):
+    pass
+
+
 class DistributionStrategyHelper(object):
 
   def __init__(self, tpu=None, strategy='Mirrored'):
@@ -185,6 +194,20 @@ class DistributionStrategyHelper(object):
         print(INFO, 'Don\'t Using DistributionStrategy on local devices.')
         distribution_strategy = None
     self.strategy: tf.distribute.MirroredStrategy = distribution_strategy
+
+  def get_strategy_scope(self):
+    if self.strategy:
+      strategy_scope = self.strategy.scope()
+    else:
+      strategy_scope = DummyContextManager()
+
+    return strategy_scope
+
+  def get_strategy_dataset(self, *args):
+    if self.strategy:
+      return (self.strategy.experimental_distribute_dataset(ds) for ds in args)
+    else:
+      return tuple(args)
 
 
 class BaseSummaryHelper():

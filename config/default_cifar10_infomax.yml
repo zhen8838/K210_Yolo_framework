@@ -33,12 +33,21 @@ train:
   graph_optimizer: true
   graph_optimizer_kwarg:
     layout_optimizer: true
-    remapping: true
-    shape_optimization: true
-    loop_optimization: true
     constant_folding: true
+    shape_optimization: true
+    remapping: true
+    arithmetic_optimization: true
+    dependency_optimization: true
+    loop_optimization: true
     function_optimization: true
+    debug_stripper: true
+    disable_model_pruning: false
     scoped_allocator_optimization: true
+    pin_to_host_optimization: false
+    implementation_selector: true
+    auto_mixed_precision: false
+    disable_meta_optimizer: false
+    min_graph_nodes: true
   distributionstrategy_kwarg:
     tpu: null
     strategy: Mirrored
