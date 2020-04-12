@@ -445,7 +445,7 @@ class BaseTrainingLoop():
 
   def set_summary_writer(self,
                          write_dir: str,
-                         sub_dir: str = None,
+                         sub_dir: str = 'train',
                          is_write_graph=True,
                          profile_batch=2):
 
@@ -539,6 +539,7 @@ class BaseTrainingLoop():
       [v.reset_states() for v in self.metrics.val.values()]
     self.callback_list.on_train_end(val_logs)
     self.summary.writer.close()
+    return cur_ep + 1
 
   def save_models(self, finally_epoch: int):
     """save all models in training loop models_dict

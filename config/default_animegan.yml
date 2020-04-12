@@ -1,4 +1,4 @@
-MIXED_PRECISION_DTYPE: &MIXED_PRECISION_DTYPE float32
+MIXED_PRECISION_DTYPE: &MIXED_PRECISION_DTYPE mixed_float16
 
 mode: train
 model:
@@ -47,7 +47,7 @@ train:
   batch_size: 2
   pre_ckpt: log/default_animegan_exp/final_save
   rand_seed: 10101
-  epochs: 100
+  epochs: 50
   train_epoch_step: null
   vali_epoch_step: null
   steps_per_run: 30
@@ -79,22 +79,22 @@ train:
     mode: min
   generator_optimizer: Adam
   generator_optimizer_kwarg:
-    learning_rate: 0.0002
+    learning_rate: 0.00016
     beta_1: 0.5
     beta_2: 0.999
   discriminator_optimizer: Adam
   discriminator_optimizer_kwarg:
-    learning_rate: 0.0001
+    learning_rate: 0.00008
     beta_1: 0.5
     beta_2: 0.999
   callbacks:
     - name: EarlyStopping
       kwarg:
-        monitor: train/d_loss
+        monitor: train/g_loss
         min_delta: 0
         patience: 20
         verbose: 0
-        mode: min
+        mode: max
         baseline: null
         restore_best_weights: false
     # - name: ScheduleLR

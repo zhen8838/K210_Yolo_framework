@@ -193,16 +193,26 @@ class AnimeGanInitLoop(GanBaseTrainingLoop):
 
   def local_variables_init(self):
     inputs = tf.keras.Input([256, 256, 3])
-    model = tf.keras.applications.MobileNetV2(
+    # model = tf.keras.applications.MobileNetV2(
+    #     include_top=False,
+    #     alpha=1.3,
+    #     weights='imagenet',
+    #     input_tensor=inputs,
+    #     pooling=None,
+    #     classes=1000)
+    # self.p_model: tf.keras.Model = tf.keras.Model(
+    #     inputs,
+    #     model.get_layer('block_6_expand').output)
+    model: tf.keras.Model = tf.keras.applications.VGG19(
         include_top=False,
-        alpha=1.3,
         weights='imagenet',
         input_tensor=inputs,
         pooling=None,
         classes=1000)
-    self.p_model: tf.keras.Model = tf.keras.Model(
+    self.p_model = tf.keras.Model(
         inputs,
-        model.get_layer('block_6_expand').output)
+        tf.keras.layers.Activation('linear', dtype=tf.float32)(
+            model.get_layer('block4_conv4').output))
     self.p_model.trainable = False
 
 
