@@ -54,9 +54,9 @@ def main(config_file, new_cfg, mode, model, train):
         dtype (str): `mixed_float16` or `mixed_bfloat16` policy can be used
       } 
     """
-    if train.trainloop_kwarg['hparams']['mixed_precision']['enable']:
+    if train.mixed_precision.enable:
       policy = tf.keras.mixed_precision.experimental.Policy(
-          train.trainloop_kwarg['hparams']['mixed_precision']['dtype'])
+          train.mixed_precision.dtype)
       tf.keras.mixed_precision.experimental.set_policy(policy)
 
     network = network_register[model.network]
@@ -64,7 +64,7 @@ def main(config_file, new_cfg, mode, model, train):
 
     optimizer: tf.keras.optimizers.Optimizer = optimizer_register[
         train.optimizer](**train.optimizer_kwarg)
-    if train.trainloop_kwarg['hparams']['mixed_precision']['enable']:
+    if train.mixed_precision.enable:
       optimizer = tf.keras.mixed_precision.experimental.LossScaleOptimizer(
           optimizer, policy.loss_scale)
 

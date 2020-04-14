@@ -670,11 +670,11 @@ class FaceSoftmaxTrainingLoop(BaseTrainingLoop):
         loss = self.loss_fn.call(y_true, y_pred)
         loss_wd = tf.reduce_sum(self.train_model.losses)
         total_loss = loss + loss_wd
-        scaled_loss = self.optimizer_scale_loss(loss, self.optimizer)
-      self.optimizer_apply_grad(scaled_loss, tape, self.optimizer,
-                                self.train_model)
-
-      metrics.loss.update_state(loss)
+        
+      scaled_loss = self.optimizer_minimize(loss, tape, self.optimizer,
+                                            self.train_model)
+      
+      metrics.loss.update_state(scaled_loss)
       metrics.acc.update_state(y_true, y_pred)
 
     for _ in tf.range(num_steps_to_run):
@@ -727,15 +727,15 @@ class FaceTripletTrainingLoop(BaseTrainingLoop):
               tf.nn.relu(ap - an + self.hparams.loss.target_distance))
         loss_wd = tf.reduce_sum(self.train_model.losses)
         total_loss = loss + loss_wd
-        scaled_loss = self.optimizer_scale_loss(loss, self.optimizer)
-      self.optimizer_apply_grad(scaled_loss, tape, self.optimizer,
-                                self.train_model)
+    
+      scaled_loss = self.optimizer_minimize(loss, tape, self.optimizer,
+                                            self.train_model)
 
       acc = tf.reduce_mean(
           tf.cast(
               tf.equal(ap + self.hparams.loss.target_distance < an,
                        tf.ones_like(ap, tf.bool)), tf.float32))
-      metrics.loss.update_state(loss)
+      metrics.loss.update_state(scaled_loss)
       metrics.acc.update_state(acc)
 
     for _ in tf.range(num_steps_to_run):

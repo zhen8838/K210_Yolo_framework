@@ -7,7 +7,7 @@ from tensorflow.python.keras.engine.input_spec import InputSpec
 from tensorflow.python.framework import tensor_shape
 from tensorflow.python.ops import nn_ops
 from tensorflow.python.ops import array_ops
-from tensorflow.python.keras.utils import conv_utils
+from tensorflow.python.keras.utils import conv_utils, tf_utils
 from tensorflow.python.ops import state_ops
 from tensorflow.python.framework import ops
 from tensorflow.python.keras.layers.convolutional import Conv
@@ -47,7 +47,6 @@ class InstanceNormalization(kl.Layer):
     return dict(list(base_config.items()) + list(config.items()))
 
 
-
 class ConvSpectralNormal(Conv):
 
   def build(self, input_shape):
@@ -79,8 +78,7 @@ class ConvSpectralNormal(Conv):
           initializer=tf.keras.initializers.ones,
           synchronization=tf.VariableSynchronization.ON_READ,
           trainable=False,
-          aggregation=tf.VariableAggregation.MEAN,
-          experimental_autocast=False)
+          aggregation=tf.VariableAggregation.MEAN)
     finally:
       if partitioner:
         self._scope.set_partitioner(partitioner)
@@ -114,10 +112,13 @@ class ConvSpectralNormal(Conv):
         data_format=self._conv_op_data_format)
     self.built = True
 
-  def call(self, inputs):
+  def call(self, inputs, training=None):
     # Check if the input_shape in call() is different from that in build().
     # If they are different, recreate the _convolution_op to avoid the stateful
     # behavior.
+    if training is None:
+      training = K.learning_phase()
+
     call_input_shape = inputs.get_shape()
     recreate_conv_op = (
         call_input_shape[1:] != self._build_conv_op_input_shape[1:])
@@ -140,13 +141,15 @@ class ConvSpectralNormal(Conv):
 
     def u_update():
       # TODO u_update maybe need `training control`
-      return self._assign_new_value(self.u, u)
+      return tf_utils.smart_cond(training, lambda: self._assign_new_value(
+          self.u, u), lambda: array_ops.identity(u))
 
     # NOTE add update must in call function scope
     self.add_update(u_update)
 
     sigma = self.calc_sigma(u, v, w)
-    new_kernel = self.kernel / sigma
+    new_kernel = tf_utils.smart_cond(
+        training, lambda: self.kernel / sigma, lambda: self.kernel)
 
     outputs = self._convolution_op(inputs, new_kernel)
 

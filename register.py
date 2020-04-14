@@ -24,7 +24,7 @@ from tools.lffd import LFFDHelper, LFFDLoss
 from tools.ssd import SSDHelper, SSDLoss, ssd_infer
 from tools.retinaface import RetinaFaceHelper, RetinaFaceLoss, retinaface_infer
 from tools.tinyimgnet import TinyImgnetHelper
-from tools.imgnet import ImgnetHelper, ClassifyLoss
+from tools.imgnet import ImgnetHelper, ClassifyLoss, imgnet_infer, imgnet_eval
 from tools.facerec import (FcaeRecHelper, TripletLoss, SparseSoftmaxLoss,
                            SparseAmsoftmaxLoss, SparseAsoftmaxLoss,
                            FacerecValidation, facerec_eval,
@@ -288,10 +288,15 @@ infer_register = {
     'pfld_infer': pfld_infer,
     'ctdet_infer': ctdet_infer,
     'retinaface_infer': retinaface_infer,
-    'ssd_infer': ssd_infer
+    'ssd_infer': ssd_infer,
+    'imgnet_infer': imgnet_infer,
 }
 
-eval_register = {'yolo_eval': yolo_eval, 'facerec_eval': facerec_eval}
+eval_register = {
+    'yolo_eval': yolo_eval,
+    'facerec_eval': facerec_eval,
+    'imgnet_eval': imgnet_eval
+}
 
 trainloop_register = {
     'BaseTrainingLoop': BaseTrainingLoop,

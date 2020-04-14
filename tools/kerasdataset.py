@@ -428,9 +428,8 @@ class FixMatchMixUpSslLoop(BaseTrainingLoop):
             loss_xe + self.hparams.fixmatchmixup.wu * loss_xeu +
             self.hparams.fixmatchmixup.wmu * loss_xeu_mix + loss_wd)
 
-        scaled_loss = self.optimizer_scale_loss(loss, self.optimizer)
-      self.optimizer_apply_grad(scaled_loss, tape, self.optimizer,
-                                self.train_model)
+      scaled_loss = self.optimizer_minimize(loss, tape, self.optimizer,
+                                            self.train_model)
 
       if self.hparams.ema.enable:
         self.ema.update()
@@ -443,7 +442,7 @@ class FixMatchMixUpSslLoop(BaseTrainingLoop):
         probe_logits = tf.cast(probe_logits, tf.float32)
         self.augmenter.update(inputs, tf.nn.softmax(probe_logits))
 
-      metrics.loss.update_state(loss)
+      metrics.loss.update_state(scaled_loss)
       metrics.acc.update_state(sup_label, logit_sup)
 
     for _ in tf.range(num_steps_to_run):
@@ -460,7 +459,7 @@ class FixMatchMixUpSslLoop(BaseTrainingLoop):
       loss_xe = tf.reduce_mean(loss_xe)
       loss_wd = tf.reduce_sum(self.val_model.losses)
       loss = loss_xe + loss_wd
-      metrics.loss.update_state(loss)
+      metrics.loss.update_state(scaled_loss)
       metrics.acc.update_state(labels, logits)
 
     for inputs in dataset:
@@ -609,10 +608,10 @@ class UDASslLoop(BaseTrainingLoop):
         # Model weights regularization
         loss_wd = tf.reduce_sum(self.train_model.losses)
         loss = loss_xe + loss_xeu * self.hparams.uda.wu + loss_ent * self.hparams.uda.we + loss_wd
-        scaled_loss = self.optimizer_scale_loss(loss, self.optimizer)
-      self.optimizer_apply_grad(scaled_loss, tape, self.optimizer,
-                                self.train_model)
-
+      
+      scaled_loss = self.optimizer_minimize(loss, tape, self.optimizer,
+                                            self.train_model)
+      
       if self.hparams.ema.enable:
         self.ema.update()
 
@@ -624,7 +623,7 @@ class UDASslLoop(BaseTrainingLoop):
         probe_logits = tf.cast(probe_logits, tf.float32)
         self.augmenter.update(inputs, tf.nn.softmax(probe_logits))
 
-      metrics.loss.update_state(loss)
+      metrics.loss.update_state(scaled_loss)
       metrics.acc.update_state(sup_label, logit_sup)
 
     for _ in tf.range(num_steps_to_run):
@@ -641,7 +640,7 @@ class UDASslLoop(BaseTrainingLoop):
       loss_xe = tf.reduce_mean(loss_xe)
       loss_wd = tf.reduce_sum(self.val_model.losses)
       loss = loss_xe + loss_wd
-      metrics.loss.update_state(loss)
+      metrics.loss.update_state(scaled_loss)
       metrics.acc.update_state(labels, logits)
 
     for inputs in dataset:
@@ -894,9 +893,9 @@ class MixMatchSslLoop(BaseTrainingLoop):
         loss_wd = tf.reduce_mean(self.train_model.losses)
 
         loss = loss_xe + loss_l2u * self.hparams.mixmatch.w_match + loss_wd
-        scaled_loss = self.optimizer_scale_loss(loss, self.optimizer)
-      self.optimizer_apply_grad(scaled_loss, tape, self.optimizer,
-                                self.train_model)
+      
+      scaled_loss = self.optimizer_minimize(loss, tape, self.optimizer,
+                                            self.train_model)
 
       if self.hparams.ema.enable:
         self.ema.update()
@@ -909,7 +908,7 @@ class MixMatchSslLoop(BaseTrainingLoop):
         probe_logits = tf.cast(probe_logits, tf.float32)
         self.augmenter.update(inputs, tf.nn.softmax(probe_logits))
 
-      metrics.loss.update_state(loss)
+      metrics.loss.update_state(scaled_loss)
       metrics.acc.update_state(lx, tf.nn.softmax(logits_x))
 
     for _ in tf.range(num_steps_to_run):
@@ -926,7 +925,7 @@ class MixMatchSslLoop(BaseTrainingLoop):
       loss_xe = tf.reduce_mean(loss_xe)
       loss_wd = tf.reduce_sum(self.val_model.losses)
       loss = loss_xe + loss_wd
-      metrics.loss.update_state(loss)
+      metrics.loss.update_state(scaled_loss)
       metrics.acc.update_state(labels, logits)
 
     for inputs in dataset:
@@ -1035,10 +1034,8 @@ class InfoMaxLoop(BaseTrainingLoop):
                 wd_loss)
         # yapf: enable
 
-        scaled_loss = self.optimizer_scale_loss(loss, self.optimizer)
-
-      self.optimizer_apply_grad(scaled_loss, tape, self.optimizer,
-                                self.train_model)
+      scaled_loss = self.optimizer_minimize(loss, tape, self.optimizer,
+                                            self.train_model)
 
       if self.hparams.ema.enable:
         self.ema.update()
@@ -1051,7 +1048,7 @@ class InfoMaxLoop(BaseTrainingLoop):
         probe_logits = tf.cast(probe_logits, tf.float32)
         self.augmenter.update(inputs, tf.nn.softmax(probe_logits))
 
-      metrics.loss.update_state(loss)
+      metrics.loss.update_state(scaled_loss)
       metrics.kl_loss.update_state(unsup_kl_loss)
       metrics.g_loss.update_state(unsup_zz_loss)
       metrics.l_loss.update_state(unsup_zf_loss)
@@ -1199,10 +1196,8 @@ class InfoMaxSslV1Loop(InfoMaxLoop):
                 wd_loss)
         # yapf: enable
 
-        scaled_loss = self.optimizer_scale_loss(loss, self.optimizer)
-
-      self.optimizer_apply_grad(scaled_loss, tape, self.optimizer,
-                                self.train_model)
+      scaled_loss = self.optimizer_minimize(loss, tape, self.optimizer,
+                                            self.train_model)
 
       if self.hparams.ema.enable:
         self.ema.update()
@@ -1215,7 +1210,7 @@ class InfoMaxSslV1Loop(InfoMaxLoop):
         probe_logits = tf.cast(probe_logits, tf.float32)
         self.augmenter.update(inputs, tf.nn.softmax(probe_logits))
 
-      metrics.loss.update_state(loss)
+      metrics.loss.update_state(scaled_loss)
       metrics.acc.update_state(sup_label, sup_logits)
 
     for _ in tf.range(num_steps_to_run):
@@ -1232,7 +1227,7 @@ class InfoMaxSslV1Loop(InfoMaxLoop):
       loss_xe = tf.reduce_mean(loss_xe)
       loss_wd = tf.reduce_sum(self.val_model.losses)
       loss = loss_xe + loss_wd
-      metrics.loss.update_state(loss)
+      metrics.loss.update_state(scaled_loss)
       metrics.acc.update_state(labels, logits)
 
     for inputs in dataset:
@@ -1333,10 +1328,9 @@ class InfoMaxSslV2Loop(InfoMaxSslV1Loop):
         zf_loss = self.hparams.infomax.wlinfo * (zf_loss+uzf_loss+uaugzf_loss)
 
         loss = xe_loss + xeu_loss + kl_loss + zz_loss + zf_loss + wd_loss
-        scaled_loss = self.optimizer_scale_loss(loss, self.optimizer)
-
-      self.optimizer_apply_grad(scaled_loss, tape, self.optimizer,
-                                self.train_model)
+      
+      scaled_loss = self.optimizer_minimize(loss, tape, self.optimizer,
+                                            self.train_model)
 
       if self.hparams.ema.enable:
         self.ema.update()
@@ -1349,7 +1343,7 @@ class InfoMaxSslV2Loop(InfoMaxSslV1Loop):
         probe_logits = tf.cast(probe_logits, tf.float32)
         self.augmenter.update(inputs, tf.nn.softmax(probe_logits))
 
-      metrics.loss.update_state(loss)
+      metrics.loss.update_state(scaled_loss)
       metrics.xe_loss.update_state(xe_loss)
       metrics.xeu_loss.update_state(xeu_loss)
       metrics.kl_loss.update_state(kl_loss)

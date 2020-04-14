@@ -82,6 +82,10 @@ prune:
   end_epoch: 5
   frequency: 100
 inference:
-  infer_fn: null
+  infer_fn: imgnet_infer
+  infer_fn_kwarg: null
 evaluate:
-  eval_fn: null
+  eval_fn: imgnet_eval
+  eval_fn_kwarg:
+    batch_size: 32
+

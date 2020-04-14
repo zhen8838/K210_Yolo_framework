@@ -180,13 +180,12 @@ class AnimeGanInitLoop(GanBaseTrainingLoop):
         con_loss = self.con_loss(self.p_model, real_data, gen_output)
         loss = self.hparams.wc * con_loss
 
-        scaled_loss = self.optimizer_scale_loss(loss, self.g_optimizer)
-
-      self.optimizer_apply_grad(scaled_loss, tape, self.g_optimizer, self.g_model)
+      scaled_loss = self.optimizer_minimize(loss, tape, self.g_optimizer,
+                                            self.g_model)
 
       if self.hparams.ema.enable:
         self.ema.update()
-      metrics.g_loss.update_state(loss)
+      metrics.g_loss.update_state(scaled_loss)
 
     for _ in tf.range(num_steps_to_run):
       self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))
@@ -409,18 +408,15 @@ class AnimeGanLoop(AnimeGanInitLoop):
 
         d_loss += gp_loss
 
-        scaled_g_loss = self.optimizer_scale_loss(g_loss, self.g_optimizer)
-        scaled_d_loss = self.optimizer_scale_loss(d_loss, self.d_optimizer)
-
-      self.optimizer_apply_grad(scaled_g_loss, tape, self.g_optimizer,
-                                self.g_model)
-      self.optimizer_apply_grad(scaled_d_loss, tape, self.d_optimizer,
-                                self.d_model)
+      scaled_g_loss = self.optimizer_minimize(g_loss, tape, self.g_optimizer,
+                                              self.g_model)
+      scaled_d_loss = self.optimizer_minimize(d_loss, tape, self.d_optimizer,
+                                              self.d_model)
 
       if self.hparams.ema.enable:
         self.ema.update()
-      metrics.g_loss.update_state(g_loss)
-      metrics.d_loss.update_state(d_loss)
+      metrics.g_loss.update_state(scaled_g_loss)
+      metrics.d_loss.update_state(scaled_d_loss)
 
     for _ in tf.range(num_steps_to_run):
       self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))

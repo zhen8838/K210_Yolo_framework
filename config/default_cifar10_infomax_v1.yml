@@ -53,6 +53,9 @@ train:
   steps_per_run: 30
   log_dir: log
   sub_log_dir: default_cifar10_infomaxv1_exp
+  mixed_precision:
+    enable: false
+    dtype: *MIXED_PRECISION_DTYPE
   trainloop: InfoMaxSslV1Loop
   trainloop_kwarg:
     hparams:
@@ -65,9 +68,6 @@ train:
       ema:
         enable: false
         decay: 0.999
-      mixed_precision:
-        enable: false
-        dtype: *MIXED_PRECISION_DTYPE
   variablecheckpoint_kwarg:
     variable_dict:
       model: train_model

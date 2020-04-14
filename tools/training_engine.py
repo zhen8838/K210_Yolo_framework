@@ -366,14 +366,6 @@ class BaseTrainingLoop():
               enable (bool): true or false
               decay (float): ema decay rate, recommend 0.999
             }
-      
-      2.  mixed precision training:
-      
-          Args:
-          mixed_precision:{
-              enable (bool): true or false
-              dtype (str): mixed_float16 or mixed_bfloat16 or float32
-            }
             
     Args:
         train_model (k.Model): training model
@@ -412,36 +404,28 @@ class BaseTrainingLoop():
     """Evaluation StepFn."""
     pass
 
-  def optimizer_scale_loss(self, loss: tf.Tensor,
-                           optimizer: tf.optimizers.Optimizer) -> tf.Tensor:
-    """in GradientTape scope , rescale loss 
-    
-    Args:
-        loss (tf.Tensor): 
-        optimizer (tf.optimizers.Optimizer): 
-    
-    Returns:
-        tf.Tensor: scaled_loss
-    """
-    scaled_loss = loss / self.strategy.num_replicas_in_sync
-    if self.hparams.mixed_precision.enable:
-      scaled_loss = optimizer.get_scaled_loss(loss)
-    return scaled_loss
-
-  def optimizer_apply_grad(self, scaled_loss: tf.Tensor, tape: tf.GradientTape,
-                           optimizer: tf.optimizers.Optimizer, model: k.Model):
+  def optimizer_minimize(self, loss: tf.Tensor, tape: tf.GradientTape,
+                         optimizer: tf.optimizers.Optimizer, model: k.Model):
     """apply gradients
     
     Args:
-        scaled_loss (tf.Tensor): 
+        loss (tf.Tensor): 
         tape (tf.GradientTape): 
         optimizer (tf.optimizers.Optimizer): 
         model (k.Model):
     """
+    with tape:
+      scaled_loss = loss / self.strategy.num_replicas_in_sync
+      if isinstance(optimizer,
+                    tf.keras.mixed_precision.experimental.LossScaleOptimizer):
+        scaled_loss = optimizer.get_scaled_loss(loss)
+
     grad = tape.gradient(scaled_loss, model.trainable_variables)
-    if self.hparams.mixed_precision.enable:
+    if isinstance(optimizer,
+                  tf.keras.mixed_precision.experimental.LossScaleOptimizer):
       grad = optimizer.get_unscaled_gradients(grad)
     optimizer.apply_gradients(zip(grad, model.trainable_variables))
+    return scaled_loss
 
   def set_summary_writer(self,
                          write_dir: str,

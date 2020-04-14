@@ -56,6 +56,9 @@ train:
   steps_per_run: 30
   log_dir: log
   sub_log_dir: default_dcasetask5_fixmatch_ctaug_exp
+  mixed_precision:
+    enable: false
+    dtype: *MIXED_PRECISION_DTYPE
   trainloop: Task5FixMatchSslLoop
   trainloop_kwarg:
     hparams:
@@ -66,9 +69,6 @@ train:
       ema:
         enable: true
         decay: 0.999
-      mixed_precision:
-        enable: false
-        dtype: *MIXED_PRECISION_DTYPE
   variablecheckpoint_kwarg:
     variable_dict:
       train_model: train_model

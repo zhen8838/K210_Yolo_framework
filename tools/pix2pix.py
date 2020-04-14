@@ -234,21 +234,18 @@ class Pix2PixLoop(GanBaseTrainingLoop):
         disc_loss = self.discriminator_loss(disc_real_output,
                                             disc_generated_output)
 
-        scaled_gen_loss = self.optimizer_scale_loss(gen_loss, self.g_optimizer)
-        scaled_disc_loss = self.optimizer_scale_loss(disc_loss, self.d_optimizer)
-
-      self.optimizer_apply_grad(scaled_gen_loss, g_tape, self.g_optimizer,
-                                self.g_model)
-      self.optimizer_apply_grad(scaled_disc_loss, d_tape, self.d_optimizer,
-                                self.d_model)
+      scaled_g_loss = self.optimizer_minimize(gen_loss, g_tape, self.g_optimizer,
+                                              self.g_model)
+      scaled_d_loss = self.optimizer_minimize(disc_loss, d_tape, self.d_optimizer,
+                                              self.d_model)
 
       if self.hparams.ema.enable:
         self.ema.update()
 
-      metrics.g_loss.update_state(gen_loss)
+      metrics.g_loss.update_state(scaled_g_loss)
       metrics.gan_loss.update_state(gen_gan_loss)
       metrics.l1_loss.update_state(gen_l1_loss)
-      metrics.d_loss.update_state(disc_loss)
+      metrics.d_loss.update_state(scaled_d_loss)
 
     for _ in tf.range(num_steps_to_run):
       self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))

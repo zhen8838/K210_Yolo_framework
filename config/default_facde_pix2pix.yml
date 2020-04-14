@@ -36,13 +36,13 @@ train:
   steps_per_run: 5
   log_dir: log
   sub_log_dir: default_facde_pix2pix_exp
+  mixed_precision:
+    enable: false
+    dtype: *MIXED_PRECISION_DTYPE
   trainloop: Pix2PixLoop
   trainloop_kwarg:
     hparams:
       wl1: 100 # generator loss = gan_loss + wl1 * l1_loss, in paper wl1 = 100.
-      mixed_precision:
-        enable: false
-        dtype: *MIXED_PRECISION_DTYPE
       # ema:
       #   enable: true
       #   decay: 0.999

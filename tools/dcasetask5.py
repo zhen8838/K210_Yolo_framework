@@ -125,12 +125,11 @@ class Task5SupervisedLoop(BaseTrainingLoop):
         # Part 2: Model weights regularization
         loss_wd = tf.reduce_sum(self.train_model.losses)
         loss = loss_xe + loss_wd
-        scaled_loss = self.optimizer_scale_loss(loss, self.optimizer)
-      self.optimizer_apply_grad(scaled_loss, tape, self.optimizer,
-                                self.train_model)
+      scaled_loss = self.optimizer_minimize(loss, tape, self.optimizer,
+                                            self.train_model)
       if self.hparams.ema.enable:
         self.ema.update()
-      metrics.loss.update_state(loss)
+      metrics.loss.update_state(scaled_loss)
       metrics.acc.update_state(labels, tf.nn.softmax(logits))
 
     for _ in tf.range(num_steps_to_run):
@@ -147,7 +146,7 @@ class Task5SupervisedLoop(BaseTrainingLoop):
       loss_xe = tf.reduce_mean(loss_xe)
       loss_wd = tf.reduce_sum(self.val_model.losses)
       loss = loss_xe + loss_wd
-      metrics.loss.update_state(loss)
+      metrics.loss.update_state(scaled_loss)
       metrics.acc.update_state(labels, tf.nn.softmax(logits))
 
     for inputs in dataset:
@@ -347,9 +346,9 @@ class Task5FixMatchSslLoop(BaseTrainingLoop):
         loss_wd = tf.reduce_sum(self.train_model.losses)
 
         loss = loss_xe + self.hparams.fixmatch.wu * loss_xeu + loss_wd
-        scaled_loss = self.optimizer_scale_loss(loss, self.optimizer)
-      self.optimizer_apply_grad(scaled_loss, tape, self.optimizer,
-                                self.train_model)
+
+      scaled_loss = self.optimizer_minimize(loss, tape, self.optimizer,
+                                            self.train_model)
 
       if self.hparams.ema.enable:
         self.ema.update()
@@ -362,7 +361,7 @@ class Task5FixMatchSslLoop(BaseTrainingLoop):
         probe_logits = tf.cast(probe_logits, tf.float32)
         self.augmenter.update(inputs, tf.nn.softmax(probe_logits))
 
-      metrics.loss.update_state(loss)
+      metrics.loss.update_state(scaled_loss)
       metrics.acc.update_state(sup_label, logit_sup)
 
     for _ in tf.range(num_steps_to_run):
@@ -379,7 +378,7 @@ class Task5FixMatchSslLoop(BaseTrainingLoop):
       loss_xe = tf.reduce_mean(loss_xe)
       loss_wd = tf.reduce_sum(self.val_model.losses)
       loss = loss_xe + loss_wd
-      metrics.loss.update_state(loss)
+      metrics.loss.update_state(scaled_loss)
       metrics.acc.update_state(labels, logits)
 
     for inputs in dataset:
