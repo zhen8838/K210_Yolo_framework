@@ -58,7 +58,7 @@ train:
   trainloop_kwarg:
     hparams:
       wc: 1.5 # l1 loss with pre-trained model weight
-      ws: 3.0 # sty loss weight
+      ws: 30.0 # 3.0 # sty loss weight
       wcl: 10.0 # color loss weight
       wg: 300.0 # generator loss weight
       wd: 300.0 # discriminator loss weight

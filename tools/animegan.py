@@ -197,7 +197,7 @@ class AnimeGanInitLoop(GanBaseTrainingLoop):
     model = tf.keras.applications.MobileNetV2(
         include_top=False,
         alpha=1.3,
-        weights='imagenet',
+        weights=None,  #'imagenet',
         input_tensor=inputs,
         pooling=None,
         classes=1000)
@@ -391,7 +391,7 @@ class AnimeGanLoop(AnimeGanInitLoop):
       fake_loss = tf.reduce_mean(tf.nn.relu(1.0 + fake))
       real_blur_loss = tf.reduce_mean(tf.nn.relu(1.0 + real_blur))
 
-    return real_loss, fake_loss, real_blur_loss, gray_loss
+    return real_loss, gray_loss, fake_loss, real_blur_loss
 
   @tf.function
   def train_step(self, iterator, num_steps_to_run, metrics):
@@ -428,13 +428,13 @@ class AnimeGanLoop(AnimeGanInitLoop):
                                           anime_data, gen_output, self.hparams.ld)
         else:
           gp_loss = 0.0
-        real_loss, fake_loss, real_blur_loss, gray_loss = self.discriminator_loss(
+        real_loss, gray_loss, fake_loss, real_blur_loss = self.discriminator_loss(
             self.hparams.ltype, anime_logit, gray_logit, gen_logit, smooth_logit)
         # discriminator loss
         real_loss = self.hparams.wd * real_loss
+        gray_loss = self.hparams.wd * gray_loss
         fake_loss = self.hparams.wd * fake_loss
         real_blur_loss = self.hparams.wd * real_blur_loss * 0.1
-        gray_loss = self.hparams.wd * gray_loss
         d_loss = real_loss + fake_loss + real_blur_loss + gray_loss + gp_loss
 
       scaled_g_loss = self.optimizer_minimize(g_loss, tape, self.g_optimizer,
