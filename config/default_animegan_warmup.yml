@@ -9,7 +9,7 @@ model:
       - 256
     mixed_precision_dtype: float32
     hparams:
-      style: Hayao # use which anime style for training
+      style: Shinkai # use which anime style for training
   network: animenet
   network_kwarg:
     image_shape:
@@ -36,7 +36,7 @@ train:
   batch_size: 2
   pre_ckpt: null
   rand_seed: 10101
-  epochs: 20
+  epochs: 1
   train_epoch_step: null
   vali_epoch_step: null
   steps_per_run: 30

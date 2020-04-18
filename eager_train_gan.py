@@ -81,18 +81,18 @@ def main(config_file, new_cfg, mode, model, train):
         SignalStopping(),
         tf.keras.callbacks.CSVLogger(str(log_dir / 'training.csv'), '\t', True)
     ]
-
-    for cbkparam in train.callbacks:
-      cbk_fn = callback_register[cbkparam.name]
-      if cbkparam.name == 'AugmenterStateSync':
-        cbs.append(cbk_fn(h.augmenter, **cbkparam.kwarg))
-        loop.set_augmenter(h.augmenter)
-        need_saved_variable_dict = h.augmenter.get_state()
-      else:
-        cbk_obj = cbk_fn(**cbkparam.kwarg)
-        if isinstance(cbk_obj, LRCallback):
-          cbk_obj.set_optimizer(eval(cbk_obj.outside_optimizer))
-        cbs.append(cbk_obj)
+    if train.callbacks:
+      for cbkparam in train.callbacks:
+        cbk_fn = callback_register[cbkparam.name]
+        if cbkparam.name == 'AugmenterStateSync':
+          cbs.append(cbk_fn(h.augmenter, **cbkparam.kwarg))
+          loop.set_augmenter(h.augmenter)
+          need_saved_variable_dict = h.augmenter.get_state()
+        else:
+          cbk_obj = cbk_fn(**cbkparam.kwarg)
+          if isinstance(cbk_obj, LRCallback):
+            cbk_obj.set_optimizer(eval(cbk_obj.outside_optimizer))
+          cbs.append(cbk_obj)
     """ Load Pre-Train Model Weights """
     # NOTE use eval captrue local variables
     variable_str_dict = train.variablecheckpoint_kwarg.pop('variable_dict')

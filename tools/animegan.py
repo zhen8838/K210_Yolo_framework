@@ -20,6 +20,7 @@ class AnimeGanHelper(BaseHelperV2):
   def set_datasetlist(self):
     assert tf.io.gfile.exists(self.dataset_root), 'dataset_root not exists !'
     real_root = os.path.join(self.dataset_root, 'train_photo')
+    val_root = os.path.join(self.dataset_root, 'test/test_photo')
     anime_root = os.path.join(self.dataset_root, self.hparams.style, 'style')
     animesooth_root = os.path.join(self.dataset_root, self.hparams.style,
                                    'smooth')
@@ -30,7 +31,7 @@ class AnimeGanHelper(BaseHelperV2):
 
     self.val_list: List[str] = [[
         os.path.join(root, fname) for fname in tf.io.gfile.listdir(root)
-    ] for root in [real_root]]
+    ] for root in [val_root]]
     self.test_list: List[str] = self.val_list
     self.train_total_data: int = max([len(l) for l in self.train_list])
     self.val_total_data: int = max([len(l) for l in self.val_list])
@@ -88,7 +89,8 @@ class AnimeGanHelper(BaseHelperV2):
       if is_augment:
         for key, v in data_dict.items():
           if key.startswith('real'):
-            data_dict[key] = self.random_jitter(v, self.in_hw[0], self.in_hw[1])
+            # data_dict[key] = self.random_jitter(v, self.in_hw[0], self.in_hw[1])
+            data_dict[key] = tf.image.random_flip_left_right(v)
 
       if is_normalize:
         for key, v in data_dict.items():
@@ -118,7 +120,7 @@ class AnimeGanHelper(BaseHelperV2):
     def pipe(real_path):
       real = self.imread(real_path)
       data_dict = {}
-      data_dict['real_data'] = real
+      data_dict['real_data'] = tf.image.resize(real, self.in_hw)
       if is_normalize:
         for key, v in data_dict.items():
           if key.endswith('data'):
@@ -192,26 +194,26 @@ class AnimeGanInitLoop(GanBaseTrainingLoop):
 
   def local_variables_init(self):
     inputs = tf.keras.Input([256, 256, 3])
-    # model = tf.keras.applications.MobileNetV2(
-    #     include_top=False,
-    #     alpha=1.3,
-    #     weights='imagenet',
-    #     input_tensor=inputs,
-    #     pooling=None,
-    #     classes=1000)
-    # self.p_model: tf.keras.Model = tf.keras.Model(
-    #     inputs,
-    #     model.get_layer('block_6_expand').output)
-    model: tf.keras.Model = tf.keras.applications.VGG19(
+    model = tf.keras.applications.MobileNetV2(
         include_top=False,
+        alpha=1.3,
         weights='imagenet',
         input_tensor=inputs,
         pooling=None,
         classes=1000)
-    self.p_model = tf.keras.Model(
+    self.p_model: tf.keras.Model = tf.keras.Model(
         inputs,
-        tf.keras.layers.Activation('linear', dtype=tf.float32)(
-            model.get_layer('block4_conv4').output))
+        model.get_layer('block_6_expand').output)
+    # model: tf.keras.Model = tf.keras.applications.VGG19(
+    #     include_top=False,
+    #     weights='imagenet',
+    #     input_tensor=inputs,
+    #     pooling=None,
+    #     classes=1000)
+    # self.p_model = tf.keras.Model(
+    #     inputs,
+    #     tf.keras.layers.Activation('linear', dtype=tf.float32)(
+    #         model.get_layer('block4_conv4').output))
     self.p_model.trainable = False
 
 
@@ -235,7 +237,27 @@ class AnimeGanLoop(AnimeGanInitLoop):
             'g_loss': tf.keras.metrics.Mean('g_loss', dtype=tf.float32),
             'd_loss': tf.keras.metrics.Mean('d_loss', dtype=tf.float32),
         },
-        'val': {}
+        'val': {},
+        'debug': {
+            'g_col_loss':
+                tf.keras.metrics.Mean('g_col_loss', dtype=tf.float32),
+            'g_con_loss':
+                tf.keras.metrics.Mean('g_con_loss', dtype=tf.float32),
+            'g_sty_loss':
+                tf.keras.metrics.Mean('g_sty_loss', dtype=tf.float32),
+            'g_col_loss':
+                tf.keras.metrics.Mean('g_col_loss', dtype=tf.float32),
+            'g_gen_loss':
+                tf.keras.metrics.Mean('g_gen_loss', dtype=tf.float32),
+            'd_real_loss':
+                tf.keras.metrics.Mean('d_real_loss', dtype=tf.float32),
+            'd_fake_loss':
+                tf.keras.metrics.Mean('d_fake_loss', dtype=tf.float32),
+            'd_real_blur_loss':
+                tf.keras.metrics.Mean('d_real_blur_loss', dtype=tf.float32),
+            'd_gray_loss':
+                tf.keras.metrics.Mean('d_gray_loss', dtype=tf.float32),
+        }
     }
     return d
 
@@ -313,6 +335,7 @@ class AnimeGanLoop(AnimeGanInitLoop):
     batch = tf.shape(real)[0]
     alpha = tf.random.uniform([batch, 1, 1, 1], 0., 1.)
     interpolated = real + alpha * (fake-real)
+    gradtape.watch(interpolated)
     logit = discriminator(interpolated, training=True)
     with gradtape.stop_recording():
       # gradient of D(interpolated) NOTE : should test more
@@ -342,6 +365,7 @@ class AnimeGanLoop(AnimeGanInitLoop):
       real_blur_loss = tf.reduce_mean(real_blur)
 
     if loss_type == 'lsgan':
+
       real_loss = tf.reduce_mean(tf.square(real - 1.0))
       gray_loss = tf.reduce_mean(tf.square(gray))
       fake_loss = tf.reduce_mean(tf.square(fake))
@@ -367,9 +391,7 @@ class AnimeGanLoop(AnimeGanInitLoop):
       fake_loss = tf.reduce_mean(tf.nn.relu(1.0 + fake))
       real_blur_loss = tf.reduce_mean(tf.nn.relu(1.0 + real_blur))
 
-    loss = real_loss + fake_loss + real_blur_loss*0.1 + gray_loss
-
-    return loss
+    return real_loss, fake_loss, real_blur_loss, gray_loss
 
   @tf.function
   def train_step(self, iterator, num_steps_to_run, metrics):
@@ -383,17 +405,22 @@ class AnimeGanLoop(AnimeGanInitLoop):
       with tf.GradientTape(persistent=True) as tape:
         # forward
         gen_output = self.g_model(real_data, training=True)
-        anime_logit = self.d_model(anime_data, training=True)
         gen_logit = self.d_model(gen_output, training=True)
+
+        anime_logit = self.d_model(anime_data, training=True)
         smooth_logit = self.d_model(anime_smooth_data, training=True)
         gray_logit = self.d_model(anime_gray_data, training=True)
+
         # generator loss
         con_loss, sty_loss = self.con_sty_loss(self.p_model, real_data,
                                                anime_gray_data, gen_output)
-        col_loss = self.color_loss(real_data, gen_output)
-        t_loss = self.hparams.wc * con_loss + self.hparams.ws * sty_loss + self.hparams.wcl * col_loss
-        g_loss = self.hparams.wg * self.generator_loss(self.hparams.ltype,
-                                                       gen_logit) + t_loss
+        con_loss = self.hparams.wc * con_loss
+        sty_loss = self.hparams.ws * sty_loss
+        col_loss = self.hparams.wcl * self.color_loss(real_data, gen_output)
+        gen_loss = self.hparams.wg * self.generator_loss(self.hparams.ltype,
+                                                         gen_logit)
+        g_loss = col_loss + con_loss + sty_loss + col_loss + gen_loss
+
         # gradient panalty
         if ('gp' in self.hparams.ltype or 'lp' in self.hparams.ltype or
             'dragan' in self.hparams.ltype):
@@ -401,22 +428,35 @@ class AnimeGanLoop(AnimeGanInitLoop):
                                           anime_data, gen_output, self.hparams.ld)
         else:
           gp_loss = 0.0
-
-        # discriminator loss
-        d_loss = self.hparams.wd * self.discriminator_loss(
+        real_loss, fake_loss, real_blur_loss, gray_loss = self.discriminator_loss(
             self.hparams.ltype, anime_logit, gray_logit, gen_logit, smooth_logit)
-
-        d_loss += gp_loss
+        # discriminator loss
+        real_loss = self.hparams.wd * real_loss
+        fake_loss = self.hparams.wd * fake_loss
+        real_blur_loss = self.hparams.wd * real_blur_loss * 0.1
+        gray_loss = self.hparams.wd * gray_loss
+        d_loss = real_loss + fake_loss + real_blur_loss + gray_loss + gp_loss
 
       scaled_g_loss = self.optimizer_minimize(g_loss, tape, self.g_optimizer,
                                               self.g_model)
+
       scaled_d_loss = self.optimizer_minimize(d_loss, tape, self.d_optimizer,
                                               self.d_model)
 
       if self.hparams.ema.enable:
         self.ema.update()
       metrics.g_loss.update_state(scaled_g_loss)
+      self.metrics.debug.g_col_loss.update_state(col_loss)
+      self.metrics.debug.g_con_loss.update_state(con_loss)
+      self.metrics.debug.g_sty_loss.update_state(sty_loss)
+      self.metrics.debug.g_col_loss.update_state(col_loss)
+      self.metrics.debug.g_gen_loss.update_state(gen_loss)
+
       metrics.d_loss.update_state(scaled_d_loss)
+      self.metrics.debug.d_real_loss.update_state(real_loss)
+      self.metrics.debug.d_fake_loss.update_state(fake_loss)
+      self.metrics.debug.d_real_blur_loss.update_state(real_blur_loss)
+      self.metrics.debug.d_gray_loss.update_state(gray_loss)
 
     for _ in tf.range(num_steps_to_run):
       self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))

@@ -387,7 +387,7 @@ class BaseTrainingLoop():
         if self.hparams.ema.enable:
           self.ema = EmaHelper(self.val_model, self.hparams.ema.decay)
           self.models_dict.setdefault('ema_model', self.ema.model)
-    self.metrics = EasyDict(self.set_metrics_dict())
+    self.metrics = EasyDict(self.set_metrics_dict_wraper())
 
   @abc.abstractclassmethod
   def local_variables_init(self):
@@ -447,8 +447,13 @@ class BaseTrainingLoop():
     self.summary.write_graph(self.train_model)
 
   @abc.abstractclassmethod
-  def set_metrics_dict(self):
+  def set_metrics_dict(self) -> dict:
     return None
+
+  def set_metrics_dict_wraper(self) -> dict:
+    d = self.set_metrics_dict()
+    d.setdefault('debug', {})
+    return d
 
   def set_callbacks(self, callbacks: list, model: k.Model = None):
     """Configures callbacks for use in various training loops.
@@ -478,7 +483,7 @@ class BaseTrainingLoop():
     """ training and eval loop """
     train_target_steps = self.train_epoch_step // steps_per_run
     print(
-        f'Train {train_target_steps} steps, validate {self.val_epoch_step} steps')
+        f'Train {train_target_steps} steps, Validate {self.val_epoch_step} steps')
     """ Set Progbar Log Param"""
     probar_metrics = set(self.metrics.train.keys())
     probar_metrics = probar_metrics.union(
@@ -505,6 +510,8 @@ class BaseTrainingLoop():
         train_logs = self._make_logs('train', self.metrics.train)
         train_logs['train/lr'] = self.optimizer.learning_rate.numpy()
         self.summary.save_metrics(train_logs)
+        debug_logs = self._make_logs('debug', self.metrics.debug)
+        self.summary.save_metrics(debug_logs)
         self.summary.update_seen()
         probar.update(seen, probar._make_logs_value(self.metrics.train))
       """ Start Validation """
@@ -580,7 +587,7 @@ class GanBaseTrainingLoop(BaseTrainingLoop):
         if self.hparams.ema.enable:
           self.ema = EmaHelper(self.val_model, self.hparams.ema.decay)
           self.models_dict.setdefault('ema_model', self.ema.model)
-    self.metrics = EasyDict(self.set_metrics_dict())
+    self.metrics = EasyDict(self.set_metrics_dict_wraper())
 
 
 class MProgbar(Progbar):
