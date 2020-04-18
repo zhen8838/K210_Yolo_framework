@@ -54,8 +54,8 @@ def yolo_mbv1_k210(input_shape: list, anchor_num: int, class_num: int,
   y2 = compose(k.layers.Concatenate(), DarknetConv2D_BN_Leaky(filters, (3, 3)),
                DarknetConv2D(anchor_num * (class_num+5), (1, 1)))([x2, x1])
 
-  y1_reshape = kl.Lambda(lambda x: x, name='l1')(y1)
-  y2_reshape = kl.Lambda(lambda x: x, name='l2')(y2)
+  y1_reshape = kl.Activation('linear', name='l1')(y1)
+  y2_reshape = kl.Activation('linear', name='l2')(y2)
 
   yolo_model = k.Model(inputs, [y1, y2])
   yolo_model_warpper = k.Model(inputs, [y1_reshape, y2_reshape])
@@ -120,8 +120,8 @@ def yolo_mbv2_k210(input_shape: list, anchor_num: int, class_num: int,
   y2 = compose(kl.Concatenate(), DarknetConv2D_BN_Leaky(filters, (3, 3)),
                DarknetConv2D(anchor_num * (class_num+5), (1, 1)))([x2, x1])
 
-  y1_reshape = kl.Lambda(lambda x: x, name='l1')(y1)
-  y2_reshape = kl.Lambda(lambda x: x, name='l2')(y2)
+  y1_reshape = kl.Activation('linear', name='l1')(y1)
+  y2_reshape = kl.Activation('linear', name='l2')(y2)
 
   yolo_model = k.Model(inputs=input_tensor, outputs=[y1, y2])
   yolo_model_warpper = k.Model(
@@ -188,7 +188,7 @@ def yolo2_mbv1_k210(input_shape: list, anchor_num: int, class_num: int,
 
   y = DarknetConv2D(anchor_num * (class_num+5), (1, 1))(y)
 
-  y_reshape = kl.Lambda(lambda x: x, name='l1')(y)
+  y_reshape = kl.Activation('linear', name='l1')(y)
 
   yolo_model = k.Model(inputs, [y])
   yolo_model_warpper = k.Model(inputs, [y_reshape])
@@ -284,8 +284,8 @@ def yoloalgin_mbv1_k210(input_shape: list, anchor_num: int, class_num: int,
       DarknetConv2D(anchor_num * (5 + landmark_num*2 + class_num),
                     (1, 1)))([x2, x1])
 
-  y1_reshape = kl.Lambda(lambda x: x, name='l1')(y1)
-  y2_reshape = kl.Lambda(lambda x: x, name='l2')(y2)
+  y1_reshape = kl.Activation('linear', name='l1')(y1)
+  y2_reshape = kl.Activation('linear', name='l2')(y2)
 
   yolo_model = k.Model(inputs, [y1, y2])
   yolo_model_warpper = k.Model(inputs, [y1_reshape, y2_reshape])

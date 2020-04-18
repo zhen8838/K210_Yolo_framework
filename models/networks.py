@@ -338,8 +338,8 @@ def tiny_yolo(input_shape, anchor_num, class_num) -> [k.Model, k.Model]:
   y2 = compose(kl.Concatenate(), DarknetConv2D_BN_Leaky(256, (3, 3)),
                DarknetConv2D(anchor_num * (class_num+5), (1, 1)))([x2, x1])
 
-  y1_reshape = kl.Lambda(lambda x: x, name='l1')(y1)
-  y2_reshape = kl.Lambda(lambda x: x, name='l2')(y2)
+  y1_reshape = kl.Activation('linear', name='l1')(y1)
+  y2_reshape = kl.Activation('linear', name='l2')(y2)
 
   yolo_model = k.Model(inputs, [y1, y2])
   yolo_model_warpper = k.Model(inputs, [y1_reshape, y2_reshape])
@@ -373,9 +373,9 @@ def yolo(input_shape, anchor_num, class_num) -> [k.Model, k.Model]:
   x = kl.Concatenate()([x, darknet.layers[92].output])
   x, y3 = make_last_layers(x, 128, anchor_num * (class_num+5))
 
-  y1_reshape = kl.Lambda(lambda x: x, name='l1')(y1)
-  y2_reshape = kl.Lambda(lambda x: x, name='l2')(y2)
-  y3_reshape = kl.Lambda(lambda x: x, name='l3')(y3)
+  y1_reshape = kl.Activation('linear', name='l1')(y1)
+  y2_reshape = kl.Activation('linear', name='l2')(y2)
+  y3_reshape = kl.Activation('linear', name='l3')(y3)
 
   yolo_model = k.Model(inputs, [y1, y2, y3])
   yolo_model_warpper = k.Model(
@@ -561,9 +561,9 @@ def yolo_mbv1(input_shape: list, anchor_num: int, class_num: int,
   ])
   x, y3 = make_last_layers_mobilenet(x, 25, 128, anchor_num * (class_num+5))
 
-  y1_reshape = kl.Lambda(lambda x: x, name='y1')(y1)
-  y2_reshape = kl.Lambda(lambda x: x, name='y2')(y2)
-  y3_reshape = kl.Lambda(lambda x: x, name='y3')(y3)
+  y1_reshape = kl.Activation('linear', name='y1')(y1)
+  y2_reshape = kl.Activation('linear', name='y2')(y2)
+  y3_reshape = kl.Activation('linear', name='y3')(y3)
 
   infer_model = k.Model(inputs, [y1, y2, y3])
   train_model = k.Model(

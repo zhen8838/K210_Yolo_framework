@@ -9,7 +9,11 @@ from pathlib import Path
 from datetime import datetime
 import numpy as np
 import argparse
-from tensorflow_model_optimization.python.core.api.sparsity import keras as sparsity
+import tensorflow_model_optimization as tfmot
+tfmot_sparsity = tfmot.sparsity.keras
+tfmot_quantization = tfmot.quantization.keras
+from tensorflow_model_optimization.python.core.quantization.keras import quantize_annotate as quantize_annotate_mod
+
 from register import dict2obj, network_register, optimizer_register,\
     helper_register, loss_register, callback_register
 from yaml import safe_dump, safe_load
@@ -17,7 +21,7 @@ from tensorflow.python import debug as tfdebug
 from typing import List
 
 
-def main(config_file, new_cfg, mode, model, train, prune):
+def main(config_file, new_cfg, mode, model, train, prune, quantize):
   """ config tensorflow backend """
   physical_devices = tf.config.experimental.list_physical_devices('GPU')
   assert len(physical_devices) > 0, "Not enough GPU hardware devices available"
@@ -58,18 +62,45 @@ def main(config_file, new_cfg, mode, model, train, prune):
     network = network_register[model.network]
     infer_model, train_model = network(**model.network_kwarg)
   """  Config Prune Model Paramter """
-  if prune.is_prune == 'True':
+  if prune.is_prune == True:
     pruning_params = {
         'pruning_schedule':
-            sparsity.PolynomialDecay(
+            tfmot_sparsity.PolynomialDecay(
                 initial_sparsity=prune.init_sparsity,
                 final_sparsity=prune.final_sparsity,
                 begin_step=0,
                 end_step=train_epoch_step * prune.end_epoch,
                 frequency=prune.frequency)
     }
-    train_model = sparsity.prune_low_magnitude(train_model,
-                                               **pruning_params)  # type:k.Model
+    train_model = tfmot_sparsity.prune_low_magnitude(
+        train_model, **pruning_params)  # type:k.Model
+
+  if quantize.is_quantize == True:
+    cannot_quant_map = (k.layers.LeakyReLU, k.layers.UpSampling2D,
+                        k.layers.Concatenate)
+
+    def _add_quant_wrapper(layer):
+      """Add annotation wrapper."""
+      # Already annotated layer. No need to wrap.
+      if isinstance(layer, quantize_annotate_mod.QuantizeAnnotate):
+        return layer
+
+      if isinstance(layer, cannot_quant_map):
+        return layer
+
+      if isinstance(layer, tf.keras.Model):
+        raise ValueError(
+            'Quantizing a tf.keras Model inside another tf.keras Model is not supported.'
+        )
+
+      return quantize_annotate_mod.QuantizeAnnotate(layer)
+
+    train_model = tfmot_quantization.quantize_apply(
+        k.models.clone_model(
+            train_model, input_tensors=None, clone_function=_add_quant_wrapper))
+    infer_model = tfmot_quantization.quantize_apply(
+        k.models.clone_model(
+            infer_model, input_tensors=None, clone_function=_add_quant_wrapper))
   """ Comile Model, Set loss and metric """
   optimizer = optimizer_register[train.optimizer](**train.optimizer_kwarg)
   metrics: List[k.metrics.Metric] = []
@@ -157,8 +188,8 @@ def main(config_file, new_cfg, mode, model, train, prune):
 
   if prune.is_prune == True:
     cbs += [
-        sparsity.UpdatePruningStep(),
-        sparsity.PruningSummaries(log_dir=str(log_dir), profile_batch=0)
+        tfmot_sparsity.UpdatePruningStep(),
+        tfmot_sparsity.PruningSummaries(log_dir=str(log_dir), profile_batch=0)
     ]
 
   for cbkparam in train.callbacks:
@@ -205,11 +236,21 @@ def main(config_file, new_cfg, mode, model, train, prune):
   ckpt = log_dir / model_name
 
   if prune.is_prune == True:
-    final_model = sparsity.strip_pruning(train_model)
-    prune_ckpt = log_dir/'prune' + model_name
+    final_model = tfmot_sparsity.strip_pruning(train_model)
+    prune_ckpt = log_dir / ('prune'+model_name)
     k.models.save_model(train_model, str(prune_ckpt), include_optimizer=False)
     print()
     print(INFO, f' Save Pruned Model as {str(prune_ckpt)}')
+  elif quantize.is_quantize == True:
+    train_ckpt = log_dir / ('quantize_'+model_name)
+    k.models.save_model(train_model, str(train_ckpt))
+    print()
+    print(INFO, f' Save Train Model as {str(train_ckpt)}')
+
+    infer_model_name = f'infer_model_{initial_epoch+int(train_model.optimizer.iterations / train_epoch_step)}.h5'
+    infer_ckpt = log_dir / ('quantize_'+infer_model_name)
+    k.models.save_model(infer_model, str(infer_ckpt))
+    print(INFO, f' Save Infer Model as {str(infer_ckpt)}')
   else:
     k.models.save_model(train_model, str(ckpt))
     print()
@@ -247,5 +288,7 @@ if __name__ == "__main__":
     new_cfg = safe_load(f)
 
   ArgMap = dict2obj(new_cfg)
+  if not hasattr(ArgMap, 'quantize'):
+    ArgMap.quantize = dict2obj({'is_quantize': False})
   main(args.config_file, new_cfg, ArgMap.mode, ArgMap.model, ArgMap.train,
-       ArgMap.prune)
+       ArgMap.prune, ArgMap.quantize)

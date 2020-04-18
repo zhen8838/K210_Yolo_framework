@@ -1,0 +1,150 @@
+mode: train
+model:
+  name: yolo
+  helper: YOLOHelper
+  helper_kwarg:
+    image_ann: data/voc_img_ann.npy
+    class_num: 20
+    anchors: data/voc_anchor_v3.npy
+    in_hw:
+      - 416
+      - 416
+    out_hw:
+      - - 13
+        - 13
+      - - 26
+        - 26
+      - - 52
+        - 52
+    resize_method: gluon # origin 
+    augment_method: iaa # origin
+  network: yolo_mbv1
+  network_kwarg:
+    input_shape:
+      - 416
+      - 416
+      - 3
+    anchor_num: 3
+    class_num: 20
+    alpha: 1.0
+  loss: YOLOIouLoss
+  loss_kwarg:
+    iou_thresh: 0.5
+    obj_thresh: 0.7
+    obj_weight: 1
+    bbox_weight: 2
+    noobj_weight: 1
+    cls_weight: 1
+    use_focalloss: true
+    focal_gamma: 2.0
+    focal_alpha: 0.25
+    iou_method: ciou
+train:
+  graph_optimizer: true
+  graph_optimizer_kwarg: 
+    layout_optimizer: true
+    remapping: true
+    shape_optimization: true
+    loop_optimization: true
+    constant_folding: true
+    function_optimization: true
+    scoped_allocator_optimization: true
+  augmenter: true
+  batch_size: 4
+  pre_ckpt: log/default_yolov3_mbv1_ciou/train_model_205.h5
+  rand_seed: 10101
+  epochs: 2
+  log_dir: log
+  sub_log_dir: default_yolov3_mbv1_ciou_quantize
+  debug: false
+  verbose: 1
+  vali_step_factor: 0.5
+  optimizer: Adam
+  optimizer_kwarg:
+    learning_rate: 0.001
+    beta_1: 0.9
+    beta_2: 0.999
+    amsgrad: false
+  Lookahead: true
+  Lookahead_kwarg:
+    k: 5
+    alpha: 0.5
+  callbacks:
+    # - name: EarlyStopping
+    #   kwarg:
+    #     monitor: val_loss
+    #     min_delta: 0
+    #     patience: 4
+    #     verbose: 0
+    #     mode: auto
+    #     baseline: null
+    #     restore_best_weights: false
+    - name: ModelCheckpoint
+      kwarg:
+        monitor: val_loss
+        verbose: 0
+        save_best_only: true
+        save_weights_only: false
+        mode: auto
+        save_freq: epoch
+        load_weights_on_restart: false
+    - name: TerminateOnNaN
+      kwarg: null
+    # - name: MultiScaleTrain
+    #   kwarg:
+    #     interval: 50
+    #     scale_range: [-3, 3]
+    # - name: StepLR
+    #   kwarg:
+    #     steps: [20, 100, 150, 170, 220]
+    #     rates: [0.0001, 0.0008, 0.0008,0.0004, 0.0002]
+    - name: CosineLR
+      kwarg:
+         init_lr: 0.0005
+         decay_steps: 30
+         lowest_lr: 0.0001
+    
+prune:
+  is_prune: false
+  init_sparsity: 0.5
+  final_sparsity: 0.9
+  end_epoch: 5
+  frequency: 100
+quantize:
+  is_quantize: true
+inference:
+  infer_fn: yolo_infer
+  infer_fn_kwarg:
+    obj_thresh: 0.7
+    nms_thresh: 0.3
+    iou_method: diou
+evaluate:
+  eval_fn: yolo_eval
+  eval_fn_kwarg:
+    det_obj_thresh: 0.1
+    det_iou_thresh: 0.3
+    mAp_iou_thresh: 0.3
+    iou_method: diou
+    class_name:
+      - aeroplane
+      - bicycle
+      - bird
+      - boat
+      - bottle
+      - bus
+      - car
+      - cat
+      - chair
+      - cow
+      - diningtable
+      - dog
+      - horse
+      - motorbike
+      - person
+      - pottedplant
+      - sheep
+      - sofa
+      - train
+      - tvmonitor
+    save_result: true
+    save_result_dir: /home/zqh/Documents/mAP/input
