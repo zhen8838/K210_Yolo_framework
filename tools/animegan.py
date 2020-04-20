@@ -197,7 +197,7 @@ class AnimeGanInitLoop(GanBaseTrainingLoop):
     model = tf.keras.applications.MobileNetV2(
         include_top=False,
         alpha=1.3,
-        weights=None,  #'imagenet',
+        weights='imagenet',
         input_tensor=inputs,
         pooling=None,
         classes=1000)
@@ -227,6 +227,10 @@ class AnimeGanLoop(AnimeGanInitLoop):
         wcl: 10.0 # color loss weight 
         wg: 300.0 # generator loss weight
         wd: 300.0 # discriminator loss weight 
+        wreal: 1.0 # discriminator real anime loss weight
+        wgray: 1.0 # discriminator gray anime loss weight
+        wfake: 1.0 # discriminator generate loss weight
+        wblur: 0.1 # discriminator smooth anime loss weight
         ltype: lsgan # gan loss type in [gan, lsgan, wgan-gp, wgan-lp, dragan, hinge]
         ld: 10.0 # gradient penalty lambda
   """
@@ -431,10 +435,10 @@ class AnimeGanLoop(AnimeGanInitLoop):
         real_loss, gray_loss, fake_loss, real_blur_loss = self.discriminator_loss(
             self.hparams.ltype, anime_logit, gray_logit, gen_logit, smooth_logit)
         # discriminator loss
-        real_loss = self.hparams.wd * real_loss
-        gray_loss = self.hparams.wd * gray_loss
-        fake_loss = self.hparams.wd * fake_loss
-        real_blur_loss = self.hparams.wd * real_blur_loss * 0.1
+        real_loss = self.hparams.wd * real_loss * self.hparams.wreal
+        gray_loss = self.hparams.wd * gray_loss * self.hparams.wgray
+        fake_loss = self.hparams.wd * fake_loss * self.hparams.wfake
+        real_blur_loss = self.hparams.wd * real_blur_loss * self.hparams.wblur
         d_loss = real_loss + fake_loss + real_blur_loss + gray_loss + gp_loss
 
       scaled_g_loss = self.optimizer_minimize(g_loss, tape, self.g_optimizer,

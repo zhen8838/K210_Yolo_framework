@@ -9,7 +9,7 @@ model:
       - 256
     mixed_precision_dtype: float32
     hparams:
-      style: Hayao # use which anime style for training
+      style: SummerWar # use which anime style for training
   network: animenet
   network_kwarg:
     image_shape:
@@ -43,9 +43,9 @@ train:
     strategy: Mirrored
   augmenter: true
   batch_size: 2
-  pre_ckpt: log/default_animegan_warmup_exp/final_save # log/default_animegan_exp/final_save
+  pre_ckpt:  log/default_animegan_exp/final_save # log/default_animegan_warmup_exp/final_save
   rand_seed: 10101
-  epochs: 100
+  epochs: 50
   train_epoch_step: null
   vali_epoch_step: null
   steps_per_run: 30
@@ -62,6 +62,10 @@ train:
       wcl: 10.0 # color loss weight
       wg: 300.0 # generator loss weight
       wd: 300.0 # discriminator loss weight
+      wreal: 1.0 # discriminator real anime loss weight
+      wgray: 1.0 # discriminator gray anime loss weight
+      wfake: 0.5 # discriminator generate loss weight
+      wblur: 0.1 # discriminator smooth anime loss weight
       ltype: lsgan # gan loss type in [gan, lsgan, wgan-gp, wgan-lp, dragan, hinge]
       ld: 10.0 # gradient penalty lambda
       ema:
