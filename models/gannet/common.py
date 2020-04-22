@@ -220,3 +220,26 @@ class Conv2DSpectralNormal(ConvSpectralNormal):
         kernel_constraint=tf.keras.constraints.get(kernel_constraint),
         bias_constraint=tf.keras.constraints.get(bias_constraint),
         **kwargs)
+
+
+class ReflectionPadding2D(kl.ZeroPadding2D):
+
+  @staticmethod
+  def reflect_2d_padding(x, padding=((1, 1), (1, 1)), data_format=None):
+    assert len(padding) == 2
+    assert len(padding[0]) == 2
+    assert len(padding[1]) == 2
+    if data_format is None:
+      data_format = k.backend.image_data_format()
+    if data_format not in {'channels_first', 'channels_last'}:
+      raise ValueError('Unknown data_format: ' + str(data_format))
+
+    if data_format == 'channels_first':
+      pattern = [[0, 0], [0, 0], list(padding[0]), list(padding[1])]
+    else:
+      pattern = [[0, 0], list(padding[0]), list(padding[1]), [0, 0]]
+    return tf.pad(x, pattern, mode='REFLECT')
+
+  def call(self, inputs):
+    return self.reflect_2d_padding(
+        inputs, padding=self.padding, data_format=self.data_format)

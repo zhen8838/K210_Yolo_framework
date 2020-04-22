@@ -365,7 +365,7 @@ class VariableCheckpoint(Callback):
     self.monitor = monitor
     self.save_best_only = True
 
-    if mode not in ['auto', 'min', 'max']:
+    if mode not in ['auto', 'min', 'max', 'all']:
       raise ValueError(
           'ModelCheckpoint mode %s is unknown, '
           'fallback to auto mode.', mode)
@@ -377,6 +377,9 @@ class VariableCheckpoint(Callback):
     elif mode == 'max':
       self.monitor_op = np.greater
       self.best = -np.Inf
+    elif mode == 'all':
+      self.monitor_op = lambda a, b: True
+      self.best = 0
     else:
       if 'acc' in self.monitor or self.monitor.startswith('fmeasure'):
         self.monitor_op = np.greater
