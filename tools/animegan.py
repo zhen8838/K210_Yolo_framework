@@ -1,8 +1,13 @@
 import tensorflow as tf
+import numpy as np
+from tools.base import INFO, ERROR, NOTE
 from tools.training_engine import BaseHelperV2, EasyDict, GanBaseTrainingLoop
 import transforms.image.ops as image_ops
 import os
 from tensorflow.python.keras.losses import huber_loss
+from typing import List
+from pathlib import Path
+import matplotlib.pyplot as plt
 
 
 class AnimeGanHelper(BaseHelperV2):
@@ -84,8 +89,9 @@ class AnimeGanHelper(BaseHelperV2):
       data_dict['anime_data'] = anime
       data_dict['anime_gray_data'] = tf.tile(
           tf.image.rgb_to_grayscale(anime), [1, 1, 3])
-      data_dict['anime_smooth_data'] = tf.tile(
-          tf.image.rgb_to_grayscale(anime_smooth), [1, 1, 3])
+      # data_dict['anime_smooth_data'] = tf.tile(
+      #     tf.image.rgb_to_grayscale(anime_smooth), [1, 1, 3])
+      data_dict['anime_smooth_data'] = anime_smooth
       if is_augment:
         for key, v in data_dict.items():
           if key.startswith('real'):
@@ -140,6 +146,91 @@ class AnimeGanHelper(BaseHelperV2):
     self.val_dataset = self.build_val_datapipe(batch_size, is_normalize)
     self.train_epoch_step = self.train_total_data // self.batch_size
     self.val_epoch_step = self.val_total_data // self.batch_size
+
+  @staticmethod
+  def _reduce_hw(img_hw: List[int], min_hw: List[int]) -> List[int]:
+    im_h, im_w = img_hw
+    if im_h <= min_hw[0]:
+      im_h = min_hw[0]
+    else:
+      x = im_h % 32
+      im_h = im_h - x
+
+    if im_w < min_hw[1]:
+      im_w = min_hw[1]
+    else:
+      y = im_w % 32
+      im_w = im_w - y
+    return [im_h, im_w]
+
+  def parser_outputs(self, outputs: np.ndarray,
+                     orig_imgs: np.ndarray) -> np.ndarray:
+
+    outputs = image_ops.renormalize(outputs, 127.5, 127.5).astype('uint8')
+    return np.concatenate((orig_imgs, outputs), -2)
+
+  def infer(self, img_path: Path, infer_model: tf.keras.Model, result_path: Path,
+            batch_size: int, save_dir: str):
+    print(INFO, f'Load Images from {str(img_path)}')
+    if img_path.is_dir():
+      img_paths = []
+      for suffix in ['bmp', 'jpg', 'jpeg', 'png']:
+        img_paths += list(map(str, img_path.glob(f'*.{suffix}')))
+    elif img_path.is_file():
+      img_paths = [str(img_path)]
+    else:
+      ValueError(f'{ERROR} img_path `{str(img_path)}` is invalid')
+
+    if result_path is not None:
+      print(INFO, f'Load NNcase Results from {str(result_path)}')
+      if result_path.is_dir():
+        ncc_results: np.ndarray = np.array([
+            np.fromfile(
+                str(result_path / (Path(img_paths[i]).stem + '.bin')),
+                dtype='float32') for i in range(len(img_paths))
+        ])
+      elif result_path.is_file():
+        ncc_results = np.expand_dims(
+            np.fromfile(str(result_path), dtype='float32'), 0)  # type:np.ndarray
+      else:
+        ValueError(f'{ERROR} result_path `{str(result_path)}` is invalid')
+    else:
+      ncc_results = None
+
+    print(INFO, f'Infer Results')
+    orig_imgs = []
+    det_imgs = []
+    for img_path in img_paths:
+      img = self.imread(img_path)
+      img_hw = self._reduce_hw(img.shape[:2], self.in_hw)
+      img = tf.image.resize(img, img_hw)
+      orig_imgs.append(img.numpy().astype('uint8'))
+      det_img = self.normalize(img)
+      det_imgs.append(det_img)
+
+    det_imgs = tf.stack(det_imgs)
+    orig_imgs = np.array(orig_imgs)
+
+    outputs = infer_model.predict(det_imgs, batch_size=batch_size)
+    """ parser batch out """
+    results = self.parser_outputs(outputs, orig_imgs)
+    """ show result """
+    if result_path is None:
+      """ draw gpu result """
+      for i, res_img in enumerate(results):
+        if save_dir:
+          tf.io.write_file((Path(save_dir) / f'{i}.jpg').as_posix(),
+                           tf.image.encode_jpeg(res_img))
+        else:
+          plt.imshow(res_img)
+          plt.tight_layout()
+          plt.axis('off')
+          plt.xticks([])
+          plt.yticks([])
+          plt.show()
+    else:
+      """ draw gpu result and nncase result """
+      pass
 
 
 class AnimeGanInitLoop(GanBaseTrainingLoop):
@@ -357,11 +448,6 @@ class AnimeGanLoop(AnimeGanInitLoop):
 
   @staticmethod
   def discriminator_loss(loss_type, real, gray, fake, real_blur):
-    real_loss = 0
-    gray_loss = 0
-    fake_loss = 0
-    real_blur_loss = 0
-
     if loss_type == 'wgan-gp' or loss_type == 'wgan-lp':
       real_loss = -tf.reduce_mean(real)
       gray_loss = tf.reduce_mean(gray)
@@ -416,8 +502,10 @@ class AnimeGanLoop(AnimeGanInitLoop):
         gray_logit = self.d_model(anime_gray_data, training=True)
 
         # generator loss
+        # con_loss, sty_loss = self.con_sty_loss(self.p_model, real_data,
+        #                                        anime_gray_data, gen_output)
         con_loss, sty_loss = self.con_sty_loss(self.p_model, real_data,
-                                               anime_gray_data, gen_output)
+                                               anime_data, gen_output)
         con_loss = self.hparams.wc * con_loss
         sty_loss = self.hparams.ws * sty_loss
         col_loss = self.hparams.wcl * self.color_loss(real_data, gen_output)

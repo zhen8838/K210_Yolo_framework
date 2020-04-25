@@ -19,25 +19,25 @@ from tools.base import INFO, NOTE, ERROR
 from itertools import product
 
 
-def encode_landm(matches, anchors, variances):
-  matches = matches.reshape((-1, 5, 2))
+def encode_landm(matches, anchors, variances, nlandmark: int = 5):
+  matches = matches.reshape((-1, nlandmark, 2))
   anchors = np.concatenate([
-      np.tile(anchors[:, 0:1, None], [1, 5, 1]),
-      np.tile(anchors[:, 1:2, None], [1, 5, 1]),
-      np.tile(anchors[:, 2:3, None], [1, 5, 1]),
-      np.tile(anchors[:, 3:4, None], [1, 5, 1])
+      lambda i: np.tile(anchors[:, i:i + 1, None], [1, nlandmark, 1])
+      for i in range(4)
   ], 2)
   g_cxcy = matches[:, :, :2] - anchors[:, :, :2]
   # encode variance
   g_cxcy /= (variances[0] * anchors[:, :, 2:])
   # g_cxcy /= priors[:, :, 2:]
-  g_cxcy = g_cxcy.reshape(-1, 5 * 2)
+  g_cxcy = g_cxcy.reshape(-1, nlandmark * 2)
   # return target for smooth_l1_loss
   return g_cxcy
 
 
-def tf_encode_landm(matches: tf.Tensor, anchors: tf.Tensor,
-                    variances: np.ndarray) -> tf.Tensor:
+def tf_encode_landm(matches: tf.Tensor,
+                    anchors: tf.Tensor,
+                    variances: np.ndarray,
+                    nlandmark: int = 5) -> tf.Tensor:
   """ encode landm 
 
     Parameters
@@ -59,24 +59,23 @@ def tf_encode_landm(matches: tf.Tensor, anchors: tf.Tensor,
     tf.Tensor
         landm label
     """
-  matches = tf.reshape(matches, (-1, 5, 2))
-  anchors = tf.concat([
-      tf.tile(anchors[:, 0:1, None], [1, 5, 1]),
-      tf.tile(anchors[:, 1:2, None], [1, 5, 1]),
-      tf.tile(anchors[:, 2:3, None], [1, 5, 1]),
-      tf.tile(anchors[:, 3:4, None], [1, 5, 1])
-  ], 2)
+  matches = tf.reshape(matches, (-1, nlandmark, 2))
+  anchors = tf.concat(
+      [tf.tile(anchors[:, i:i + 1, None], [1, nlandmark, 1]) for i in range(4)],
+      2)
   g_cxcy = matches[:, :, :2] - anchors[:, :, :2]
   # encode variance
   g_cxcy = g_cxcy / (variances[0] * anchors[:, :, 2:])
   # g_cxcy /= priors[:, :, 2:]
-  g_cxcy = tf.reshape(g_cxcy, (-1, 5 * 2))
+  g_cxcy = tf.reshape(g_cxcy, (-1, nlandmark * 2))
   # return target for smooth_l1_loss
   return g_cxcy
 
 
-def decode_landm(landm: np.ndarray, anchors: np.ndarray,
-                 variances: np.ndarray) -> np.ndarray:
+def decode_landm(landm: np.ndarray,
+                 anchors: np.ndarray,
+                 variances: np.ndarray,
+                 nlandmark: int = 5) -> np.ndarray:
   """ Decode landm from predictions using anchors to undo
         the encoding we did for offset regression at train time.
 
@@ -100,19 +99,23 @@ def decode_landm(landm: np.ndarray, anchors: np.ndarray,
         decode landms n*[x1,y1,x2,y2,...x10,y10]
     """
 
-  landms = np.concatenate(
-      (anchors[:, :2] + landm[:, :2] * variances[0] * anchors[:, 2:],
-       anchors[:, :2] + landm[:, 2:4] * variances[0] * anchors[:, 2:],
-       anchors[:, :2] + landm[:, 4:6] * variances[0] * anchors[:, 2:],
-       anchors[:, :2] + landm[:, 6:8] * variances[0] * anchors[:, 2:],
-       anchors[:, :2] + landm[:, 8:10] * variances[0] * anchors[:, 2:]), 1)
+  landms = np.concatenate([
+      anchors[:, :2] + landm[:, 2 * i:2 * (i+1)] * variances[0] * anchors[:, 2:]
+      for i in range(nlandmark)
+  ], 1)
   return landms
 
 
 class RetinaFaceHelper(BaseHelper):
 
-  def __init__(self, image_ann: str, in_hw: tuple, anchor_widths: list,
-               anchor_steps: list, pos_thresh: float, variances: float):
+  def __init__(self,
+               image_ann: str,
+               in_hw: tuple,
+               anchor_widths: list,
+               anchor_steps: list,
+               pos_thresh: float,
+               variances: float,
+               nlandmark: int = 5):
     self.train_dataset: tf.data.Dataset = None
     self.val_dataset: tf.data.Dataset = None
     self.test_dataset: tf.data.Dataset = None
@@ -142,7 +145,7 @@ class RetinaFaceHelper(BaseHelper):
     self.in_hw: _EagerTensorBase = tf.Variable(self.org_in_hw, trainable=False)
     self.pos_thresh: float = pos_thresh
     self.variances: _EagerTensorBase = tf.convert_to_tensor(variances, tf.float32)
-
+    self.nlandmark: int = nlandmark
     self.iaaseq = iaa.SomeOf([1, 3], [
         iaa.Fliplr(0.5),
         iaa.Affine(
@@ -197,7 +200,8 @@ class RetinaFaceHelper(BaseHelper):
 
   @staticmethod
   def _crop_with_constraints(img: np.ndarray, bbox, landm, clses,
-                             in_hw: np.ndarray) -> List[np.ndarray]:
+                             in_hw: np.ndarray,
+                             nlandmark: int) -> List[np.ndarray]:
     """ random crop with constraints
 
             make sure that the cropped img contains at least one face > 16 pixel at training image scale
@@ -232,7 +236,7 @@ class RetinaFaceHelper(BaseHelper):
       mask_a = np.logical_and(roi[:2] < centers, centers < roi[2:]).all(axis=1)
       bbox_t = bbox[mask_a].copy()
       clses_t = clses[mask_a].copy()
-      landm_t = landm[mask_a].copy().reshape([-1, 5, 2])
+      landm_t = landm[mask_a].copy().reshape([-1, nlandmark, 2])
 
       if bbox_t.shape[0] == 0:
         continue
@@ -248,7 +252,7 @@ class RetinaFaceHelper(BaseHelper):
       landm_t[:, :, :2] = landm_t[:, :, :2] - roi[:2]
       landm_t[:, :, :2] = np.maximum(landm_t[:, :, :2], np.array([0, 0]))
       landm_t[:, :, :2] = np.minimum(landm_t[:, :, :2], roi[2:] - roi[:2])
-      landm_t = landm_t.reshape([-1, 10])
+      landm_t = landm_t.reshape([-1, nlandmark * 2])
 
       b_w_t = (bbox_t[:, 2] - bbox_t[:, 0] + 1) / new_w * in_w
       b_h_t = (bbox_t[:, 3] - bbox_t[:, 1] + 1) / new_h * in_h
@@ -269,7 +273,8 @@ class RetinaFaceHelper(BaseHelper):
     return tf.image.decode_jpeg(tf.io.read_file(img_path), 3)
 
   def resize_img(self, img: tf.Tensor, bbox: tf.Tensor, landm: tf.Tensor,
-                 clses: tf.Tensor, in_hw: tf.Tensor) -> List[tf.Tensor]:
+                 clses: tf.Tensor, in_hw: tf.Tensor,
+                 nlandmark: int) -> List[tf.Tensor]:
     img.set_shape((None, None, 3))
     """ transform factor """
     img_hw = tf.cast(tf.shape(img)[:2], tf.float32)
@@ -290,7 +295,7 @@ class RetinaFaceHelper(BaseHelper):
     """ calc the point transform """
 
     bbox = bbox*scale + tf.tile(tf.cast(yx_off[::-1], tf.float32), [2])
-    landm = landm*scale + tf.tile(tf.cast(yx_off[::-1], tf.float32), [5])
+    landm = landm*scale + tf.tile(tf.cast(yx_off[::-1], tf.float32), [nlandmark])
 
     return img, bbox, landm, clses
 
@@ -301,7 +306,7 @@ class RetinaFaceHelper(BaseHelper):
     image_aug, bbs_aug, kps_aug = self.iaaseq(
         image=img, bounding_boxes=bbs, keypoints=kps)
     new_bbox = bbs_aug.to_xyxy_array()
-    new_landm = np.reshape(kps_aug.to_xy_array(), (-1, 5 * 2))
+    new_landm = np.reshape(kps_aug.to_xy_array(), (-1, self.nlandmark * 2))
     # remove out of bound bbox
     bbs_xy = (new_bbox[:, :2] + new_bbox[:, 2:]) / 2
     bbs_x, bbs_y = bbs_xy[:, 0], bbs_xy[:, 1]
@@ -331,15 +336,19 @@ class RetinaFaceHelper(BaseHelper):
   def process_img(self, img: np.ndarray, ann: np.ndarray, in_hw: np.ndarray,
                   is_augment: bool, is_resize: bool,
                   is_normlize: bool) -> [np.ndarray, List[np.ndarray]]:
-    ann = tf.split(ann, [4, 10, 1], 1)
+    ann = tf.split(ann, [4, 2 * self.nlandmark, 1], 1)
 
     if is_resize and is_augment:
       img, *ann = tf.numpy_function(
-          self._crop_with_constraints, [img, *ann, in_hw],
+          self._crop_with_constraints,
+          [img, *ann, in_hw,
+           tf.constant(self.nlandmark, tf.int32)],
           [tf.uint8, tf.float32, tf.float32, tf.float32])
-      img, *ann = self.resize_img(img, *ann, in_hw=in_hw)
+      img, *ann = self.resize_img(
+          img, *ann, in_hw=in_hw, nlandmark=self.nlandmark)
     elif is_resize:
-      img, *ann = self.resize_img(img, *ann, in_hw=in_hw)
+      img, *ann = self.resize_img(
+          img, *ann, in_hw=in_hw, nlandmark=self.nlandmark)
 
     if is_augment:
       img, *ann = tf.numpy_function(
@@ -353,7 +362,7 @@ class RetinaFaceHelper(BaseHelper):
   def ann_to_label(self, bbox, landm, clses, in_hw: tf.Tensor) -> List[tf.Tensor]:
 
     bbox = bbox / tf.tile(tf.cast(in_hw[::-1], tf.float32), [2])
-    landm = landm / tf.tile(tf.cast(in_hw[::-1], tf.float32), [5])
+    landm = landm / tf.tile(tf.cast(in_hw[::-1], tf.float32), [self.nlandmark])
 
     overlaps = tf_bbox_iou(bbox, self.corner_anchors)
     best_prior_overlap = tf.reduce_max(overlaps, 1)
@@ -364,7 +373,7 @@ class RetinaFaceHelper(BaseHelper):
 
     def t_fn():
       label_loc = tf.zeros((self.anchors_num, 4))
-      label_landm = tf.zeros((self.anchors_num, 10))
+      label_landm = tf.zeros((self.anchors_num, 2 * self.nlandmark))
       label_conf = tf.zeros((self.anchors_num, 1))
       return label_loc, label_landm, label_conf
 
@@ -386,7 +395,8 @@ class RetinaFaceHelper(BaseHelper):
       # encode matches gt to network label
       label_loc = tf_encode_bbox(matches, self.anchors, self.variances)
       matches_landm = tf.gather(landm, best_truth_idx)
-      label_landm = tf_encode_landm(matches_landm, self.anchors, self.variances)
+      label_landm = tf_encode_landm(matches_landm, self.anchors, self.variances,
+                                    self.nlandmark)
       return label_loc, label_landm, label_conf
 
     return tf.cond(tf.less_equal(tf.size(best_prior_idx_filter), 0), t_fn, f_fn)
@@ -404,11 +414,20 @@ class RetinaFaceHelper(BaseHelper):
         cv2.rectangle(img, tuple(bbox[i][:2].astype(int)),
                       tuple(bbox[i][2:].astype(int)), (255, 0, 0))
         for ldx, ldy, color in zip(landm[i][0::2].astype(int),
-                                   landm[i][1::2].astype(int), [(255, 0, 0),
-                                                                (0, 255, 0),
-                                                                (0, 0, 255),
-                                                                (255, 255, 0),
-                                                                (255, 0, 255)]):
+                                   landm[i][1::2].astype(int), [
+                                       (255, 0, 0),
+                                       (0, 255, 0),
+                                       (0, 0, 255),
+                                       (255, 255, 0),
+                                       (255, 0, 255),
+                                       (0, 255, 255),
+                                       (128, 128, 0),
+                                       (128, 0, 128),
+                                       (0, 128, 128),
+                                       (128, 0, 0),
+                                       (0, 128, 0),
+                                       (0, 0, 128),
+                                   ]):
           cv2.circle(img, (ldx, ldy), 1, color, 1)
     if is_show:
       plt.tight_layout()
@@ -425,6 +444,7 @@ class RetinaFaceHelper(BaseHelper):
     def _wrapper(i: tf.Tensor) -> tf.Tensor:
       path, ann = tf.numpy_function(lambda idx: tuple(image_ann_list[idx]), [i],
                                     [tf.string, tf.float32])
+
       img = self.read_img(path)
       img, *ann = self.process_img(img, ann, self.in_hw, is_augment, True,
                                    is_normlize)
@@ -432,7 +452,7 @@ class RetinaFaceHelper(BaseHelper):
       label = tf.concat(self.ann_to_label(*ann, in_hw=self.in_hw), -1)
 
       img.set_shape((None, None, 3))
-      label.set_shape((None, 15))
+      label.set_shape((None, 4 + 2 * self.nlandmark + 1))
 
       return img, label
 
@@ -457,6 +477,7 @@ class RetinaFaceLoss(tf.keras.losses.Loss):
                landm_weight=1,
                conf_weight=1,
                negpos_ratio=7,
+               nlandmark: int = 5,
                reduction='auto',
                name=None):
     super().__init__(reduction=reduction, name=name)
@@ -470,6 +491,7 @@ class RetinaFaceLoss(tf.keras.losses.Loss):
     self.conf_weight = conf_weight
     self.anchors = self.h.anchors
     self.anchors_num = self.h.anchors_num
+    self.nlandmark = nlandmark
     self.op_list = []
     names = ['loc', 'landm', 'conf']
     self.lookups: Iterable[Tuple[ResourceVariable, AnyStr]] = [
@@ -479,17 +501,21 @@ class RetinaFaceLoss(tf.keras.losses.Loss):
 
   def call(self, y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
     bc_num = tf.shape(y_pred)[0]
-    loc_data, landm_data, conf_data = tf.split(y_pred, [4, 10, 2], -1)
-    loc_t, landm_t, conf_t = tf.split(y_true, [4, 10, 1], -1)
+    loc_data, landm_data, conf_data = tf.split(y_pred, [4, 2 * self.nlandmark, 2],
+                                               -1)
+    loc_t, landm_t, conf_t = tf.split(y_true, [4, 2 * self.nlandmark, 1], -1)
     # landmark loss
     pos_landm_mask = tf.greater(conf_t, 0.)  # get valid landmark num
     num_pos_landm = tf.maximum(
         tf.reduce_sum(tf.cast(pos_landm_mask, tf.float32)),
         1)  # sum pos landmark num
-    pos_landm_mask = tf.tile(pos_landm_mask, [1, 1, 10])  # 10, 16800, 10
+    pos_landm_mask = tf.tile(pos_landm_mask,
+                             [1, 1, 2 * self.nlandmark])  # 10, 16800, 10
     # filter valid lanmark
-    landm_p = tf.reshape(tf.boolean_mask(landm_data, pos_landm_mask), (-1, 10))
-    landm_t = tf.reshape(tf.boolean_mask(landm_t, pos_landm_mask), (-1, 10))
+    landm_p = tf.reshape(
+        tf.boolean_mask(landm_data, pos_landm_mask), (-1, 2 * self.nlandmark))
+    landm_t = tf.reshape(
+        tf.boolean_mask(landm_t, pos_landm_mask), (-1, 2 * self.nlandmark))
     loss_landm = tf.reduce_sum(huber_loss(landm_t, landm_p))
 
     # find have bbox but no landmark location
@@ -556,16 +582,18 @@ class RetinaFaceLoss(tf.keras.losses.Loss):
     return total_loss
 
 
-def reverse_ann(bbox: np.ndarray, landm: np.ndarray, in_hw: np.ndarray,
-                img_hw: np.ndarray) -> np.ndarray:
+def reverse_ann(bbox: np.ndarray,
+                landm: np.ndarray,
+                in_hw: np.ndarray,
+                img_hw: np.ndarray,
+                nlandmark: int = 5) -> np.ndarray:
   """rescae predict box to orginal image scale
-
-    """
+  """
   scale = np.min(in_hw / img_hw)
   xy_off = ((in_hw - img_hw*scale) / 2)[::-1]
 
   bbox = (bbox - np.tile(xy_off, [2])) / scale
-  landm = (landm - np.tile(xy_off, [5])) / scale
+  landm = (landm - np.tile(xy_off, [nlandmark])) / scale
   return bbox, landm
 
 
@@ -584,8 +612,9 @@ def parser_outputs(outputs: List[np.ndarray], orig_hws: List[np.ndarray],
     bbox = decode_bbox(bbox, h.anchors.numpy(), h.variances.numpy())
     bbox = bbox * np.tile(h.org_in_hw[::-1], [2])
     """ landmark """
-    landm = decode_landm(landm, h.anchors.numpy(), h.variances.numpy())
-    landm = landm * np.tile(h.org_in_hw[::-1], [5])
+    landm = decode_landm(landm, h.anchors.numpy(), h.variances.numpy(),
+                         h.nlandmark)
+    landm = landm * np.tile(h.org_in_hw[::-1], [h.nlandmark])
     """ filter low score """
     inds = np.where(score > obj_thresh)[0]
     bbox = bbox[inds]
@@ -602,7 +631,8 @@ def parser_outputs(outputs: List[np.ndarray], orig_hws: List[np.ndarray],
     landm = landm[keep]
     score = score[keep]
     """ reverse img """
-    bbox, landm = reverse_ann(bbox, landm, h.org_in_hw, np.array(orig_hw))
+    bbox, landm = reverse_ann(bbox, landm, h.org_in_hw, np.array(orig_hw),
+                              h.nlandmark)
     results.append([bbox, landm, score])
   return results
 
@@ -647,8 +677,9 @@ def retinaface_infer(img_path: Path,
   for img_path in img_paths:
     img = h.read_img(img_path)
     orig_hws.append(img.numpy().shape[:2])
-    det_img, *_ = h.process_img(img, np.zeros((0, 15), np.float32), h.in_hw,
-                                False, True, True)
+    det_img, *_ = h.process_img(
+        img, np.zeros((0, 4 + h.nlandmark * 2 + 1), np.float32), h.in_hw, False,
+        True, True)
     det_imgs.append(det_img)
   batch = len(det_imgs)
   outputs = infer_model.predict(tf.stack(det_imgs), batch)

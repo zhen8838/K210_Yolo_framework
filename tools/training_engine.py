@@ -215,6 +215,7 @@ class BaseSummaryHelper():
   def __init__(self,
                writer,
                write_dir: str,
+               full_write_dir: str,
                is_write_graph: bool,
                profile_batch: int,
                is_tracing: bool = False,
@@ -222,6 +223,7 @@ class BaseSummaryHelper():
                optimizer: tf.optimizers.Optimizer = None):
     self.writer = writer
     self.write_dir = write_dir
+    self.full_write_dir = full_write_dir
     self.is_write_graph = is_write_graph
     self.profile_batch = profile_batch
     self.is_tracing = is_tracing
@@ -253,7 +255,7 @@ class BaseSummaryHelper():
     step = self.current_step()
     with self.writer.as_default(), summary_ops_v2.always_record_summaries():
       tf.summary.trace_export(
-          name='profile_batch', step=step, profiler_outdir=self.write_dir)
+          name='profile_batch', step=step, profiler_outdir=self.full_write_dir)
     self.is_tracing = False
 
   def update_seen(self):
@@ -436,13 +438,13 @@ class BaseTrainingLoop():
     full_write_dir = os.path.join(write_dir, sub_dir)
     self.summary = BaseSummaryHelper(
         writer=tf.summary.create_file_writer(full_write_dir),
-        write_dir=full_write_dir,
+        write_dir=write_dir,
+        full_write_dir=full_write_dir,
         is_write_graph=is_write_graph,
         profile_batch=profile_batch,
         is_tracing=False,
         global_seen=0,
         optimizer=self.optimizer)
-
     assert self.summary.profile_batch > 1, 'NOTE: summary.profile_batch > 1'
     self.summary.write_graph(self.train_model)
 

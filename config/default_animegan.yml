@@ -9,7 +9,7 @@ model:
       - 256
     mixed_precision_dtype: float32
     hparams:
-      style: SummerWar # use which anime style for training
+      style: Hayao # use which anime style for training
   network: animenet
   network_kwarg:
     image_shape:
@@ -43,14 +43,14 @@ train:
     strategy: Mirrored
   augmenter: true
   batch_size: 2
-  pre_ckpt:  log/default_animegan_exp/final_save # log/default_animegan_warmup_exp/final_save
+  pre_ckpt: log/default_animegan_warmup_exp/final_save # log/default_animegan_exp/final_save #
   rand_seed: 10101
   epochs: 50
   train_epoch_step: null
   vali_epoch_step: null
   steps_per_run: 30
   log_dir: log
-  sub_log_dir: default_animegan_exp_2
+  sub_log_dir: default_animegan_exp_2_11
   mixed_precision:
     enable: false
     dtype: mixed_float16
@@ -58,13 +58,13 @@ train:
   trainloop_kwarg:
     hparams:
       wc: 1.5 # l1 loss with pre-trained model weight
-      ws: 30.0 # 3.0 # sty loss weight
+      ws: 20.0 # sty loss weight, default = 3.0
       wcl: 10.0 # color loss weight
       wg: 300.0 # generator loss weight
       wd: 300.0 # discriminator loss weight
       wreal: 1.0 # discriminator real anime loss weight
       wgray: 1.0 # discriminator gray anime loss weight
-      wfake: 0.5 # discriminator generate loss weight
+      wfake: 1.0 # discriminator generate loss weight
       wblur: 0.1 # discriminator smooth anime loss weight
       ltype: lsgan # gan loss type in [gan, lsgan, wgan-gp, wgan-lp, dragan, hinge]
       ld: 10.0 # gradient penalty lambda
@@ -78,7 +78,7 @@ train:
       g_optimizer: generator_optimizer
       d_optimizer: discriminator_optimizer
     monitor: train/g_loss
-    mode: min
+    mode: all
   generator_optimizer: Adam
   generator_optimizer_kwarg:
     learning_rate: 0.00016
@@ -116,3 +116,7 @@ train:
     #     decay_rate: 0.7
     #     decay_epochs: 20
     #     outside_optimizer: discriminator_optimizer
+inference:
+  infer_fn_kwarg:
+    batch_size: 1
+    save_dir: /tmp/test_photos

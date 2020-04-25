@@ -26,6 +26,7 @@ def main(config_file, new_cfg, mode, model, train):
   log_dir = (Path(train.log_dir) /
              (datetime.strftime(datetime.now(), r'%Y%m%d-%H%M%S')
               if train.sub_log_dir is None else train.sub_log_dir))  # type: Path
+  datetime_dir = datetime.strftime(datetime.now(), r'%Y%m%d-%H%M%S')
   if not log_dir.exists():
     log_dir.mkdir(parents=True)
 

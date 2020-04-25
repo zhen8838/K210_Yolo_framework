@@ -23,10 +23,10 @@ def main(config_file, new_cfg, mode, model, train):
   """ Set Golbal Paramter """
   tf.random.set_seed(train.rand_seed)
   np.random.seed(train.rand_seed)
-  log_dir = Path(train.log_dir)
-  sub_log_dir = (
-      datetime.strftime(datetime.now(), r'%Y%m%d-%H%M%S')
-      if train.sub_log_dir is None else train.sub_log_dir)
+  log_dir = (Path(train.log_dir) /
+             (datetime.strftime(datetime.now(), r'%Y%m%d-%H%M%S')
+              if train.sub_log_dir is None else train.sub_log_dir))  # type: Path
+  datetime_dir = datetime.strftime(datetime.now(), r'%Y%m%d-%H%M%S')
   if not log_dir.exists():
     log_dir.mkdir(parents=True)
 
@@ -111,8 +111,7 @@ def main(config_file, new_cfg, mode, model, train):
     cbs.append(variablecheckpoint)
 
     loop.set_callbacks(cbs)
-    loop.set_summary_writer(
-        str(log_dir), datetime.strftime(datetime.now(), r'%Y%m%d-%H%M%S'))
+    loop.set_summary_writer(str(log_dir), datetime_dir)
     initial_epoch = int(optimizer.iterations.numpy() / train_epoch_step)
 
     finally_epoch = loop.train_and_eval(
