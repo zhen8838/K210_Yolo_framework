@@ -16,3 +16,4 @@ tflite
 kmodel
 devlop
 pytest.ini
+cocoapi

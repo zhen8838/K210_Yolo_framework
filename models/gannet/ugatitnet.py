@@ -367,8 +367,8 @@ class SoftAdaLIN(nn.Module):
 
     w_gamma, w_beta = self.w_gamma.expand(x.shape[0],
                                           -1), self.w_beta.expand(x.shape[0], -1)
-    soft_gamma = (1.-w_gamma) * style_gamma + w_gamma*content_gamma
-    soft_beta = (1.-w_beta) * style_beta + w_beta*content_beta
+    soft_gamma = (1. - w_gamma) * style_gamma + w_gamma * content_gamma
+    soft_beta = (1. - w_beta) * style_beta + w_beta * content_beta
 
     out = self.norm(x, soft_gamma, soft_beta)
     return out
@@ -386,11 +386,11 @@ class adaLIN(nn.Module):
     in_mean, in_var = torch.mean(
         input, dim=[2, 3], keepdim=True), torch.var(
             input, dim=[2, 3], keepdim=True)
-    out_in = (input-in_mean) / torch.sqrt(in_var + self.eps)
+    out_in = (input - in_mean) / torch.sqrt(in_var + self.eps)
     ln_mean, ln_var = torch.mean(
         input, dim=[1, 2, 3], keepdim=True), torch.var(
             input, dim=[1, 2, 3], keepdim=True)
-    out_ln = (input-ln_mean) / torch.sqrt(ln_var + self.eps)
+    out_ln = (input - ln_mean) / torch.sqrt(ln_var + self.eps)
     out = self.rho.expand(input.shape[0], -1, -1, -1) * out_in + (
         1 - self.rho.expand(input.shape[0], -1, -1, -1)) * out_ln
     out = out * gamma.unsqueeze(2).unsqueeze(3) + beta.unsqueeze(2).unsqueeze(3)
@@ -414,11 +414,11 @@ class LIN(nn.Module):
     in_mean, in_var = torch.mean(
         input, dim=[2, 3], keepdim=True), torch.var(
             input, dim=[2, 3], keepdim=True)
-    out_in = (input-in_mean) / torch.sqrt(in_var + self.eps)
+    out_in = (input - in_mean) / torch.sqrt(in_var + self.eps)
     ln_mean, ln_var = torch.mean(
         input, dim=[1, 2, 3], keepdim=True), torch.var(
             input, dim=[1, 2, 3], keepdim=True)
-    out_ln = (input-ln_mean) / torch.sqrt(ln_var + self.eps)
+    out_ln = (input - ln_mean) / torch.sqrt(ln_var + self.eps)
     out = self.rho.expand(input.shape[0], -1, -1, -1) * out_in + (
         1 - self.rho.expand(input.shape[0], -1, -1, -1)) * out_ln
     out = out * self.gamma.expand(input.shape[0], -1, -1, -1) + self.beta.expand(

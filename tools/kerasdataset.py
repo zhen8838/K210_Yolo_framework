@@ -13,7 +13,7 @@ from functools import partial
 
 class KerasDatasetHelper(FixMatchSSLHelper, BaseHelper):
   """ KerasDatasetHelper
-  
+
   Args:
       dataset: "cifar10"
       label_ratio: 0.05 # Unlabeled sample ratio.
@@ -70,6 +70,10 @@ class KerasDatasetHelper(FixMatchSSLHelper, BaseHelper):
         unlabel_idxs.append(idxes[int(len(idxes) * label_ratio):])
       label_idxs = np.concatenate(label_idxs, 0)
       unlabel_idxs = np.concatenate(unlabel_idxs, 0)
+
+      # Make data More randomal
+      np.random.shuffle(unlabel_idxs)
+      np.random.shuffle(label_idxs)
 
       self.train_list: Tuple[np.ndarray, np.ndarray] = (x_train[label_idxs],
                                                         y_train[label_idxs])
@@ -153,15 +157,15 @@ class KerasDatasetHelper(FixMatchSSLHelper, BaseHelper):
                                           batch_size: int,
                                           is_augment: bool,
                                           is_normalize: bool = True
-                                         ) -> tf.data.Dataset:
+                                          ) -> tf.data.Dataset:
     """ 构建用于augment anchor损失的数据管道
     NOTE: 使用这个方式时，unlabel_dataset_ratio即无标签数据的batch倍数
-    
+
     Args:
         batch_size (int): 
         is_augment (bool): 
         is_normalize (bool, optional): . Defaults to True.
-    
+
     Returns:
         tf.data.Dataset: ds
     """
@@ -213,15 +217,15 @@ class KerasDatasetHelper(FixMatchSSLHelper, BaseHelper):
                                      batch_size: int,
                                      is_augment: bool,
                                      is_normalize: bool = True
-                                    ) -> tf.data.Dataset:
+                                     ) -> tf.data.Dataset:
     """ 构建用于k个增强的数据管道
     NOTE: 使用这个方式时，unlabel_dataset_ratio即k个增强
-    
+
     Args:
         batch_size (int): 
         is_augment (bool): 
         is_normalize (bool, optional): . Defaults to True.
-    
+
     Returns:
         tf.data.Dataset: ds
     """
@@ -312,7 +316,7 @@ class KerasDatasetHelper(FixMatchSSLHelper, BaseHelper):
 
 class FixMatchMixUpSslLoop(BaseTrainingLoop):
   """ FixMatch中用类似ICT中的方式给伪标签实施MixUp
-  
+
   hparams:
     nclasses: 10
     fixmatchmixup:
@@ -347,11 +351,11 @@ class FixMatchMixUpSslLoop(BaseTrainingLoop):
   @staticmethod
   def array_shuflle(n: int, beta: float) -> [tf.Tensor, tf.Tensor]:
     """ get shuffle array
-    
+
     Args:
         n (int): lens
         beta (float): beta
-    
+
     Returns:
         mix (tf.Tensor): shape [len]
         index (tf.Tensor): shape [len]
@@ -367,7 +371,7 @@ class FixMatchMixUpSslLoop(BaseTrainingLoop):
     bs = tf.gather(b, index)
     # reshape mix for broadcast
     mix = tf.reshape(mix, [-1] + [1] * (len(a.shape.as_list()) - 1))
-    mixed = a*mix + bs * (1-mix)
+    mixed = a * mix + bs * (1 - mix)
     return mixed
 
   @staticmethod
@@ -459,7 +463,7 @@ class FixMatchMixUpSslLoop(BaseTrainingLoop):
       loss_xe = tf.reduce_mean(loss_xe)
       loss_wd = tf.reduce_sum(self.val_model.losses)
       loss = loss_xe + loss_wd
-      metrics.loss.update_state(scaled_loss)
+      metrics.loss.update_state(loss)
       metrics.acc.update_state(labels, logits)
 
     for inputs in dataset:
@@ -468,7 +472,7 @@ class FixMatchMixUpSslLoop(BaseTrainingLoop):
 
 class UDASslLoop(BaseTrainingLoop):
   """ UDA
-  
+
   hparams:
     nclasses: 10
     tsa: # 训练信号退火
@@ -515,7 +519,7 @@ class UDASslLoop(BaseTrainingLoop):
     if self.hparams.tsa.mode == 'linear':
       coeff = step_ratio
     elif self.hparams.tsa.mode == 'exp':  # [exp(-5), exp(0)] = [1e-2, 1]
-      coeff = tf.exp((step_ratio-1) * self.hparams.tsa.scale)
+      coeff = tf.exp((step_ratio - 1) * self.hparams.tsa.scale)
     elif self.hparams.tsa.mode == 'log':  # [1 - exp(0), 1 - exp(-5)] = [0, 0.99]
       coeff = 1 - tf.exp((-step_ratio) * self.hparams.tsa.scale)
     elif self.hparams.tsa.mode == 'no':
@@ -524,7 +528,7 @@ class UDASslLoop(BaseTrainingLoop):
       raise NotImplementedError(self.hparams.tsa.mode)
     coeff = tf.math.minimum(coeff, 1.0)  # bound the coefficient
     p_min = 1. / self.hparams.nclasses
-    return coeff * (1-p_min) + p_min
+    return coeff * (1 - p_min) + p_min
 
   def tsa_loss_mask(self, labels, logits):
     """ 滤置信度高于训练信号退火阈值的对应样本损失 """
@@ -556,7 +560,7 @@ class UDASslLoop(BaseTrainingLoop):
     p = tf.nn.softmax(p_logits)
     log_p = tf.nn.log_softmax(p_logits)
     log_q = tf.nn.log_softmax(q_logits)
-    kl = tf.reduce_sum(p * (log_p-log_q), -1)
+    kl = tf.reduce_sum(p * (log_p - log_q), -1)
     return kl
 
   @staticmethod
@@ -608,10 +612,10 @@ class UDASslLoop(BaseTrainingLoop):
         # Model weights regularization
         loss_wd = tf.reduce_sum(self.train_model.losses)
         loss = loss_xe + loss_xeu * self.hparams.uda.wu + loss_ent * self.hparams.uda.we + loss_wd
-      
+
       scaled_loss = self.optimizer_minimize(loss, tape, self.optimizer,
                                             self.train_model)
-      
+
       if self.hparams.ema.enable:
         self.ema.update()
 
@@ -640,7 +644,7 @@ class UDASslLoop(BaseTrainingLoop):
       loss_xe = tf.reduce_mean(loss_xe)
       loss_wd = tf.reduce_sum(self.val_model.losses)
       loss = loss_xe + loss_wd
-      metrics.loss.update_state(scaled_loss)
+      metrics.loss.update_state(loss)
       metrics.acc.update_state(labels, logits)
 
     for inputs in dataset:
@@ -686,7 +690,7 @@ class PData(object):
 
   def update(self, entry, decay=0.999):
     entry = tf.reduce_mean(entry, axis=0)
-    return tf.assign(self.p_data, self.p_data * decay + entry * (1-decay))
+    return tf.assign(self.p_data, self.p_data * decay + entry * (1 - decay))
 
 
 class MixMode(object):
@@ -708,7 +712,7 @@ class MixMode(object):
     index = tf.random.shuffle(tf.range(tf.shape(x0)[0]))
     xs = tf.gather(x1, index)
     ls = tf.gather(l1, index)
-    xmix = x0*mix + xs * (1-mix)
+    xmix = x0 * mix + xs * (1 - mix)
     lmix = l0 * mix[:, :, 0, 0] + ls * (1 - mix[:, :, 0, 0])
     return xmix, lmix
 
@@ -771,7 +775,7 @@ class MixMode(object):
 
 class MixMatchSslLoop(BaseTrainingLoop):
   """ MixMatch
-  
+
   hparams:
     nclasses: 10
     mixmatch:
@@ -832,7 +836,7 @@ class MixMatchSslLoop(BaseTrainingLoop):
 
   @staticmethod
   def interleave_offsets(batch, nu):
-    groups = [batch // (nu+1)] * (nu+1)
+    groups = [batch // (nu + 1)] * (nu + 1)
     for x in range(batch - sum(groups)):
       groups[-x - 1] += 1
     offsets = [0]
@@ -893,7 +897,7 @@ class MixMatchSslLoop(BaseTrainingLoop):
         loss_wd = tf.reduce_mean(self.train_model.losses)
 
         loss = loss_xe + loss_l2u * self.hparams.mixmatch.w_match + loss_wd
-      
+
       scaled_loss = self.optimizer_minimize(loss, tape, self.optimizer,
                                             self.train_model)
 
@@ -925,7 +929,7 @@ class MixMatchSslLoop(BaseTrainingLoop):
       loss_xe = tf.reduce_mean(loss_xe)
       loss_wd = tf.reduce_sum(self.val_model.losses)
       loss = loss_xe + loss_wd
-      metrics.loss.update_state(scaled_loss)
+      metrics.loss.update_state(loss)
       metrics.acc.update_state(labels, logits)
 
     for inputs in dataset:
@@ -934,7 +938,7 @@ class MixMatchSslLoop(BaseTrainingLoop):
 
 class InfoMaxLoop(BaseTrainingLoop):
   """ InfoMax self-supervised learning
-  
+
   Args:
       update_augmenter_state: *UPDATE_AUGMENTER_STATE
       infomax:
@@ -978,12 +982,12 @@ class InfoMaxLoop(BaseTrainingLoop):
       false_label: tf.Tensor,
   ) -> tf.Tensor:
     """ information loss
-    
+
     Args:
         true_scores (tf.Tensor): shape [batch , ?] 
         false_scores (tf.Tensor): shape [batch , ?] 
         false_label (tf.Tensor): shape [batch , ?] NOTE: not equal is 1, else 0
-    
+
     Returns:
         tf.Tensor: loss, shape = scalar
     """
@@ -1070,11 +1074,11 @@ class InfoMaxLoop(BaseTrainingLoop):
               2 * np.dot(zs, zs[one])).argsort()[:topn]
       for j, k in enumerate(idxs):
         digit = img_list[k]
-        figure1[i * img_h:(i+1) * img_h, j * img_w:(j+1) * img_w] = digit
+        figure1[i * img_h:(i + 1) * img_h, j * img_w:(j + 1) * img_w] = digit
       idxs = np.dot(zs_, zs_[one]).argsort()[-n:][::-1]
       for j, k in enumerate(idxs):
         digit = img_list[k]
-        figure2[i * img_h:(i+1) * img_h, j * img_w:(j+1) * img_w] = digit
+        figure2[i * img_h:(i + 1) * img_h, j * img_w:(j + 1) * img_w] = digit
     figure1 = figure1.astype('uint8')
     figure2 = figure2.astype('uint8')
     return figure1, figure2
@@ -1097,7 +1101,7 @@ class InfoMaxLoop(BaseTrainingLoop):
 
 class InfoMaxSslV1Loop(InfoMaxLoop):
   """ InfoMax semi-supervised learning V1
-  
+
   Args:
       update_augmenter_state: *UPDATE_AUGMENTER_STATE
       infomax:
@@ -1137,11 +1141,11 @@ class InfoMaxSslV1Loop(InfoMaxLoop):
   def interior_partion_loss(model: tf.keras.Model,
                             data: tf.Tensor) -> List[tf.Tensor]:
     """ calc infomax model kl loss and information loss
-    
+
     Args:
         model (tf.keras.Model): train model
         data (tf.Tensor): data
-    
+
     Returns:
         List[tf.Tensor]: logits, kl_loss, zz_loss, zf_loss
     """
@@ -1190,9 +1194,9 @@ class InfoMaxSslV1Loop(InfoMaxLoop):
         wd_loss = tf.reduce_mean(self.train_model.losses)
         # yapf: disable
         loss = (self.hparams.infomax.ws * sup_xe_loss +
-                self.hparams.infomax.wkl * (sup_kl_loss+unsup_kl_loss) +
-                self.hparams.infomax.wginfo * (sup_zz_loss+unsup_zz_loss) +
-                self.hparams.infomax.wlinfo * (sup_zf_loss+unsup_zf_loss) +
+                self.hparams.infomax.wkl * (sup_kl_loss + unsup_kl_loss) +
+                self.hparams.infomax.wginfo * (sup_zz_loss + unsup_zz_loss) +
+                self.hparams.infomax.wlinfo * (sup_zf_loss + unsup_zf_loss) +
                 wd_loss)
         # yapf: enable
 
@@ -1227,7 +1231,7 @@ class InfoMaxSslV1Loop(InfoMaxLoop):
       loss_xe = tf.reduce_mean(loss_xe)
       loss_wd = tf.reduce_sum(self.val_model.losses)
       loss = loss_xe + loss_wd
-      metrics.loss.update_state(scaled_loss)
+      metrics.loss.update_state(loss)
       metrics.acc.update_state(labels, logits)
 
     for inputs in dataset:
@@ -1237,7 +1241,7 @@ class InfoMaxSslV1Loop(InfoMaxLoop):
 class InfoMaxSslV2Loop(InfoMaxSslV1Loop):
   """ InfoMax semi-supervised learning V2
     使用fixmatch结合infomax
-  
+
   Args:
       update_augmenter_state: *UPDATE_AUGMENTER_STATE
       infomax:
@@ -1323,12 +1327,12 @@ class InfoMaxSslV2Loop(InfoMaxSslV1Loop):
 
         xe_loss = self.hparams.infomax.ws * xe_loss
         xeu_loss = self.hparams.infomax.wu * xeu_loss
-        kl_loss = self.hparams.infomax.wkl * (kl_loss+ukl_loss+uaugkl_loss)
-        zz_loss = self.hparams.infomax.wginfo * (zz_loss+uzz_loss+uaugzz_loss)
-        zf_loss = self.hparams.infomax.wlinfo * (zf_loss+uzf_loss+uaugzf_loss)
+        kl_loss = self.hparams.infomax.wkl * (kl_loss + ukl_loss + uaugkl_loss)
+        zz_loss = self.hparams.infomax.wginfo * (zz_loss + uzz_loss + uaugzz_loss)
+        zf_loss = self.hparams.infomax.wlinfo * (zf_loss + uzf_loss + uaugzf_loss)
 
         loss = xe_loss + xeu_loss + kl_loss + zz_loss + zf_loss + wd_loss
-      
+
       scaled_loss = self.optimizer_minimize(loss, tape, self.optimizer,
                                             self.train_model)
 

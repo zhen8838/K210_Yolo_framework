@@ -31,13 +31,13 @@ class ReShuffle(kl.Layer):
                dynamic=False,
                **kwargs):
     """ ReShuffle layer
-        
+
         input = [None, 32, 128]
         return (equal label, output)
-        
+
         NOTE: equal label = (shuffle_idx != orign_idx) = [None, 1, 1]
         output = shuffle(input)
-        
+
     """
     super().__init__(
         trainable=trainable, name=name, dtype=dtype, dynamic=dynamic, **kwargs)
@@ -55,11 +55,11 @@ class ReShuffle(kl.Layer):
 
 
 def cifar_infomax_ssl_v1(
-    input_shape,
-    nclasses,
-    softmax=False,
-    z_dim=256,  # 隐变量维度
-    weight_decay=0.0005) -> [k.Model, k.Model, k.Model]:
+        input_shape,
+        nclasses,
+        softmax=False,
+        z_dim=256,  # 隐变量维度
+        weight_decay=0.0005) -> [k.Model, k.Model, k.Model]:
   """ infomax with ssl first experiment
     1.  only add classify head in last layer  
 

@@ -146,7 +146,7 @@ class Task5SupervisedLoop(BaseTrainingLoop):
       loss_xe = tf.reduce_mean(loss_xe)
       loss_wd = tf.reduce_sum(self.val_model.losses)
       loss = loss_xe + loss_wd
-      metrics.loss.update_state(scaled_loss)
+      metrics.loss.update_state(loss)
       metrics.acc.update_state(labels, tf.nn.softmax(logits))
 
     for inputs in dataset:
@@ -192,6 +192,8 @@ class FixMatchSSLHelper(object):
       output_dict['unsup_data'] = unsup_data.pop('data')
     if 'aug_data' in unsup_data:
       output_dict['unsup_aug_data'] = unsup_data.pop('aug_data')
+    if 'label' in unsup_data:
+      output_dict['unsup_label'] = unsup_data.pop('label')
 
     return output_dict
 
@@ -378,7 +380,7 @@ class Task5FixMatchSslLoop(BaseTrainingLoop):
       loss_xe = tf.reduce_mean(loss_xe)
       loss_wd = tf.reduce_sum(self.val_model.losses)
       loss = loss_xe + loss_wd
-      metrics.loss.update_state(scaled_loss)
+      metrics.loss.update_state(loss)
       metrics.acc.update_state(labels, logits)
 
     for inputs in dataset:

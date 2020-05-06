@@ -408,3 +408,25 @@ or
 ncc infer xxx.kmodel  xxx/output_dir --dataset xxx/image_dir --input-std 1 --input-mean 0.5
 make infer CKPT=log/default_retinaface_exp/auto_infer_xxx.h5 IMG=imgpath_or_imgdir RES=xxx/output_dir
 ```
+
+
+# OpenPose
+
+## Prepare dataset
+
+```sh
+wget http://images.cocodataset.org/zips/train2017.zip
+wget http://images.cocodataset.org/zips/val2017.zip
+wget http://images.cocodataset.org/annotations/annotations_trainval2017.zip
+
+unzip ./train2017.zip
+unzip ./val2017.zip
+unzip ./annotations_trainval2017.zip
+```
+
+**install cocoapi**
+
+```sh
+pip install pycocotools
+```
+

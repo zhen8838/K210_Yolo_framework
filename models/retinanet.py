@@ -155,15 +155,19 @@ def conv_dw(filters, strides):
   if strides == 2:
     return compose(kl.ZeroPadding2D(),
                    kl.DepthwiseConv2D(3, strides, 'valid', use_bias=False),
-                   kl.BatchNormalization(), kl.ReLU(),
+                   kl.BatchNormalization(),
+                   kl.ReLU(),
                    kl.Conv2D(filters, 1, 1, 'valid', use_bias=False),
-                   kl.BatchNormalization(), kl.ReLU())
+                   kl.BatchNormalization(),
+                   kl.ReLU())
   else:
     return compose(
         kl.DepthwiseConv2D(3, strides, 'same', use_bias=False),
-        kl.BatchNormalization(), kl.ReLU(),
+        kl.BatchNormalization(),
+        kl.ReLU(),
         kl.Conv2D(filters, 1, 1, 'valid', use_bias=False),
-        kl.BatchNormalization(), kl.ReLU())
+        kl.BatchNormalization(),
+        kl.ReLU())
 
 
 def retinaface_slim(input_shape: list, class_num: int,
@@ -249,10 +253,10 @@ def ullfd_slim(input_shape: list, class_num: int, anchor: List[Tuple]) -> k.Mode
           x13)
 
   region_layers = [
-      depth_conv2d(len(anchor[0]) * (4+1+class_num), 3, padding='same'),
-      depth_conv2d(len(anchor[1]) * (4+1+class_num), 3, padding='same'),
-      depth_conv2d(len(anchor[2]) * (4+1+class_num), 3, padding='same'),
-      kl.Conv2D(len(anchor[3]) * (4+1+class_num), 3, padding='same')
+      depth_conv2d(len(anchor[0]) * (4 + 1 + class_num), 3, padding='same'),
+      depth_conv2d(len(anchor[1]) * (4 + 1 + class_num), 3, padding='same'),
+      depth_conv2d(len(anchor[2]) * (4 + 1 + class_num), 3, padding='same'),
+      kl.Conv2D(len(anchor[3]) * (4 + 1 + class_num), 3, padding='same')
   ]
 
   detections = [x8, x11, x13, x14]
@@ -430,10 +434,10 @@ def ullfd_rfb(input_shape: list, class_num: int, anchor: List[Tuple]) -> k.Model
   detections = [x8, x11, x13, x14]
 
   region_layers = [
-      depth_conv2d(len(anchor[0]) * (4+1+class_num), 3, padding='same'),
-      depth_conv2d(len(anchor[1]) * (4+1+class_num), 3, padding='same'),
-      depth_conv2d(len(anchor[2]) * (4+1+class_num), 3, padding='same'),
-      kl.Conv2D(len(anchor[3]) * (4+1+class_num), 3, padding='same')
+      depth_conv2d(len(anchor[0]) * (4 + 1 + class_num), 3, padding='same'),
+      depth_conv2d(len(anchor[1]) * (4 + 1 + class_num), 3, padding='same'),
+      depth_conv2d(len(anchor[2]) * (4 + 1 + class_num), 3, padding='same'),
+      kl.Conv2D(len(anchor[3]) * (4 + 1 + class_num), 3, padding='same')
   ]
   detections = [x8, x11, x13, x14]
   regressions = []

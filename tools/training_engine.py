@@ -51,7 +51,7 @@ class EmaHelper(object):
 
   def __init__(self, orig_model: k.Model, decay: float):
     """ Helper class for exponential moving average.
-    
+
     eg. 
     ```python
     self.ema = EmaHelper(self.val_model, self.hparams.ema.decay)
@@ -60,11 +60,11 @@ class EmaHelper(object):
     .
     self.ema.model(test_data,training=False)
     ```
-    
+
     Args:
-        
+
         orig model (k.Model): usually be validation model NOTE this model variables must be auto update or update in training loop
-        
+
         decay (float): ema decay rate
     """
     self.decay = decay
@@ -79,7 +79,7 @@ class EmaHelper(object):
   @staticmethod
   def initial_ema_vars(ema_variables: dict, initial_values: dict):
     """ Assign EMA variables from initial values.
-    
+
     Args:
         ema_variables (dict): ema model variables
         initial_values (dict): training model variables
@@ -113,12 +113,12 @@ class EmaHelper(object):
   @staticmethod
   def update_ema_vars(ema_variables: dict, new_values: dict, ema_decay: float):
     """ Updates EMA variables. 
-      
+
       Update rule is following:
         ema_var := ema_var * ema_decay + var * (1 - ema_decay)
       which is equivalent to:
         ema_var -= (1 - ema_decay) * (ema_var - var)
-        
+
     Args:
         ema_variables (dict): ema model variables
         new_values (dict):  training model variables
@@ -128,7 +128,7 @@ class EmaHelper(object):
     one_minus_decay = 1.0 - ema_decay
 
     def _update_one_var_fn(ema_var, value):
-      ema_var.assign_sub((ema_var-value) * one_minus_decay)
+      ema_var.assign_sub((ema_var - value) * one_minus_decay)
 
     def _update_all_in_cross_replica_context_fn(strategy, ema_vars, values):
       for ema_var, value in zip(ema_vars, values):
@@ -263,7 +263,7 @@ class BaseSummaryHelper():
 
   def save_metrics(self, metrics: dict):
     """Saves metrics to event file.
-    
+
     Args:
         metrics (dict): {'name':scalar,'name1':scalar}
     """
@@ -274,9 +274,9 @@ class BaseSummaryHelper():
 
   def save_images(self, img_pairs: dict, max_outputs=3):
     """ Saves image to event file.
-      
+
       NOTE: image shape must be [b, h, w, c]
-      
+
     Args:
         metrics (dict): {'name':image,'name1':image1}
     """
@@ -295,12 +295,15 @@ class BaseHelperV2(object):
                hparams: dict = None):
     """ 
       BaseHelperV2
-    
+
     Args:
-        dataset_root (str): dataset dir or somethings
-        in_hw (list): default [256,256]
-        mixed_precision_dtype (str): 
-        hparams (dict): can be any things
+        `dataset_root` (str): dataset dir or somethings
+        
+        `in_hw` (list): default [256,256]
+        
+        `mixed_precision_dtype` (str): 
+        
+        `hparams` (dict): can be any things
     """
     self.train_dataset: tf.data.Dataset = None
     self.val_dataset: tf.data.Dataset = None
@@ -314,6 +317,10 @@ class BaseHelperV2(object):
     self.val_list: str = None
     self.test_list: str = None
     self.unlabel_list: str = None
+
+    self.train_total_data: int = None
+    self.val_total_data: int = None
+    self.test_total_data: int = None
 
     self.dataset_root = dataset_root
     self.in_hw: list = in_hw
@@ -356,11 +363,11 @@ class BaseTrainingLoop():
                optimizer: k.optimizers.Optimizer,
                strategy: tf.distribute.Strategy, **kwargs: dict):
     """ Training Loop initial
-      
+
       if use kwargs, must contain `hparams`, NOTE hparams contain all extra features.
-      
+
       1.  exponential moving average:
-          
+
           ema training model variable to validation model.
           NOTE if enable ema, must upate ema in `each train step function`
           Args:
@@ -368,7 +375,7 @@ class BaseTrainingLoop():
               enable (bool): true or false
               decay (float): ema decay rate, recommend 0.999
             }
-            
+
     Args:
         train_model (k.Model): training model
         val_model (k.Model): validation model
@@ -409,7 +416,7 @@ class BaseTrainingLoop():
   def optimizer_minimize(self, loss: tf.Tensor, tape: tf.GradientTape,
                          optimizer: tf.optimizers.Optimizer, model: k.Model):
     """apply gradients
-    
+
     Args:
         loss (tf.Tensor): 
         tape (tf.GradientTape): 
@@ -536,7 +543,7 @@ class BaseTrainingLoop():
 
   def save_models(self, finally_epoch: int):
     """save all models in training loop models_dict
-    
+
     Args:
         finally_epoch (int): finshed epoch
     """
@@ -555,13 +562,13 @@ class GanBaseTrainingLoop(BaseTrainingLoop):
                discriminator_optimizer: k.optimizers.Optimizer,
                strategy: tf.distribute.Strategy, **kwargs):
     """GanBaseTrainingLoop
-    
+
       NOTE: inner class, 
             self.g_model = generator_model
             self.d_model = discriminator_model
             self.g_optimizer = generator_optimizer
             self.d_optimizer = discriminator_optimizer
-    
+
     Args:
         generator_model (k.Model): generator_model
         discriminator_model (k.Model): discriminator_model
@@ -635,7 +642,7 @@ class MProgbar(Progbar):
     info = ' - %.0fs' % (now - self._start)
     if self.verbose == 1:
       if (now - self._last_update < self.interval and self.target is not None and
-          current < self.target):
+              current < self.target):
         return
 
       prev_total_width = self._total_width
@@ -651,7 +658,7 @@ class MProgbar(Progbar):
         prog = float(current) / self.target
         prog_width = int(self.width * prog)
         if prog_width > 0:
-          bar += ('=' * (prog_width-1))
+          bar += ('=' * (prog_width - 1))
           if current < self.target:
             bar += '>'
           else:
@@ -671,7 +678,7 @@ class MProgbar(Progbar):
       if self.target is not None and current < self.target:
         eta = time_per_unit * (self.target - current)
         if eta > 3600:
-          eta_format = '%d:%02d:%02d' % (eta // 3600, (eta%3600) // 60, eta % 60)
+          eta_format = '%d:%02d:%02d' % (eta // 3600, (eta % 3600) // 60, eta % 60)
         elif eta > 60:
           eta_format = '%d:%02d' % (eta // 60, eta % 60)
         else:

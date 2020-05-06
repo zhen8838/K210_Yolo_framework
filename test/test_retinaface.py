@@ -278,7 +278,7 @@ def test_tf_label_to_ann_compare():
   for number in range(10):
     with np.load(
         f"/home/zqh/workspace/Pytorch_Retinaface/loss_match_{number}.npz",
-        allow_pickle=True) as d:
+            allow_pickle=True) as d:
       anchors = d['anchors']
       loc_t = d['loc_t']
       landm_t = d['landm_t']
@@ -435,7 +435,7 @@ def dev_loss_compare():
   for number in range(10):
     with np.load(
         f'/home/zqh/workspace/Pytorch_Retinaface/loss_test_{number}.npz',
-        allow_pickle=True) as d:
+            allow_pickle=True) as d:
       loc_data: np.ndarray = d['loc_data']
       conf_data: np.ndarray = d['conf_data']
       landm_data: np.ndarray = d['landm_data']
@@ -451,7 +451,7 @@ def dev_loss_compare():
     for ann in targets:
       # NOTE 这里对比之前需要把ann_to_label里面的除img_hw给注释掉.
       for l, item in zip(
-          ll, h.ann_to_label(*tf.split(ann, [4, 10, 1], 1), in_hw=h.in_hw)):
+              ll, h.ann_to_label(*tf.split(ann, [4, 10, 1], 1), in_hw=h.in_hw)):
         l.append(item)
     loc_t, landm_t, conf_t = list(map(lambda l: np.stack(l), ll))
 
@@ -492,7 +492,7 @@ def test_loss_compare():
   for number in range(10):
     with np.load(
         f'/home/zqh/workspace/Pytorch_Retinaface/loss_test_{number}.npz',
-        allow_pickle=True) as d:
+            allow_pickle=True) as d:
       loc_data: np.ndarray = d['loc_data']
       conf_data: np.ndarray = d['conf_data']
       landm_data: np.ndarray = d['landm_data']
@@ -508,7 +508,7 @@ def test_loss_compare():
     for ann in targets:
       # NOTE 这里对比之前需要把ann_to_label里面的除img_hw给注释掉.
       for l, item in zip(
-          ll, h.ann_to_label(*tf.split(ann, [4, 10, 1], 1), in_hw=h.in_hw)):
+              ll, h.ann_to_label(*tf.split(ann, [4, 10, 1], 1), in_hw=h.in_hw)):
         l.append(item)
     loc_t, landm_t, conf_t = list(map(lambda l: np.stack(l), ll))
     y_true = tf.convert_to_tensor(
@@ -662,10 +662,10 @@ def test_retinafacenet_240_300_infer_ncc():
   obj_thresh = 0.7
   nms_thresh = 0.4
   arr = np.fromfile('tmp/face_infer/face1.bin', np.float32)
-  assert len(arr) == 3160*4 + 3160*10 + 3160*2
+  assert len(arr) == 3160 * 4 + 3160 * 10 + 3160 * 2
   bbox = arr[:3160 * 4].reshape((3160, -1))
-  landm = arr[3160 * 4:3160*4 + 3160*10].reshape((3160, -1))
-  clses = arr[3160*4 + 3160*10:].reshape((3160, -1))
+  landm = arr[3160 * 4:3160 * 4 + 3160 * 10].reshape((3160, -1))
+  clses = arr[3160 * 4 + 3160 * 10:].reshape((3160, -1))
   """ softmax class"""
 
   clses = softmax(clses, -1)
@@ -876,10 +876,10 @@ def test_generate_ssd_anchor_c():
 def test_generate_ncc_infer_c():
   """ 把k210推理的结果转换为c """
   arr = np.fromfile('tmp/face_infer/face1.bin', np.float32).astype('str')
-  assert len(arr) == 3160*4 + 3160*10 + 3160*2
+  assert len(arr) == 3160 * 4 + 3160 * 10 + 3160 * 2
   bbox = arr[:3160 * 4]
-  landm = arr[3160 * 4:3160*4 + 3160*10]
-  conf = arr[3160*4 + 3160*10:]
+  landm = arr[3160 * 4:3160 * 4 + 3160 * 10]
+  conf = arr[3160 * 4 + 3160 * 10:]
 
   with open('tmp/pred.h', 'w') as f:
     f.write(
@@ -921,3 +921,16 @@ def test_convert_to_pb():
     print(in_nodes)
     print(out_nodes)
   tf.keras.backend.relu
+
+
+def test_quantize_retinaface():
+  import tensorflow_model_optimization as tfmot
+  tfmot_sparsity = tfmot.sparsity.keras
+  tfmot_quantization = tfmot.quantization.keras
+  from tensorflow_model_optimization.python.core.quantization.keras import quantize_annotate as quantize_annotate_mod
+
+  with tfmot_quantization.quantize_scope():
+    qmodel: k.Model = k.models.load_model(
+        '/home/zqh/Downloads/log_retinaface_k210_quant_5/quantize_train_model_1479.h5')
+
+  model: k.Model = k.models.load_model()

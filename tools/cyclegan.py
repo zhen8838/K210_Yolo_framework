@@ -256,7 +256,7 @@ if __name__ == "__main__":
       for _ in range(epoch_step):
         image_x, image_y = next(train_iter)
         gx_loss, dx_loss, gx_loss, dy_loss = train_step(image_x, image_y)
-        step = epoch*epoch_step + _
+        step = epoch * epoch_step + _
         tf.summary.scalar('g_loss', gx_loss, step)
         tf.summary.scalar('l_loss', dx_loss, step)
         tf.summary.scalar('kl_loss', gx_loss, step)
