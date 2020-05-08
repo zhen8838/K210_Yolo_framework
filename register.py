@@ -1,7 +1,7 @@
 import tensorflow as tf
 from models.networks import (mbv1_facerec, mbv2_ctdet, yolo, tiny_yolo, pfld,
                              shuffle_ctdet, yolo3_nano, yolo_mbv1, mbv1_imgnet,
-                             mbv2_imgnet, retinafacenet, retinaface_slim,
+                             mbv2_imgnet, retinafacenet, retinafacenet_wflw, retinaface_slim,
                              retinaface_rfb, ullfd_slim, dcasetask5basemodel,
                              FMobileFaceNet_eager, imageclassifierCNN13)
 from models.gannet import dcgan_mnist, pix2pix_facde, animenet
@@ -224,6 +224,7 @@ network_register = {
     'mbv1_imgnet_k210': mbv1_imgnet_k210,
     'mbv2_imgnet_k210': mbv2_imgnet_k210,
     'retinafacenet_k210': retinafacenet_k210,
+    'retinafacenet_wflw': retinafacenet_wflw,
     'retinafacenet_k210_v1': retinafacenet_k210_v1,
     'retinafacenet_k210_v2': retinafacenet_k210_v2,
     'retinafacenet_k210_v3': retinafacenet_k210_v3,

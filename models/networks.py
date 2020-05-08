@@ -9,7 +9,7 @@ from models.darknet import DarknetConv2D, darknet_body, DarknetConv2D_BN_Leaky, 
     make_last_layers, make_last_layers_mobilenet, MobilenetConv2D
 from models.shufflenet import conv_bn_relu, shufflenet_block, deconv_bn_relu
 from models.yolo_nano import yolo3_nano
-from models.retinanet import retinafacenet, retinaface_rfb, retinaface_slim, ullfd_slim
+from models.retinanet import retinafacenet, retinafacenet_wflw, retinaface_rfb, retinaface_slim, ullfd_slim
 from models.facenet import mbv1_facerec, FMobileFaceNet_eager
 
 
@@ -331,12 +331,12 @@ def tiny_yolo(input_shape, anchor_num, class_num) -> [k.Model, k.Model]:
 
   y1 = compose(
       DarknetConv2D_BN_Leaky(512, (3, 3)),
-      DarknetConv2D(anchor_num * (class_num+5), (1, 1)))(
+      DarknetConv2D(anchor_num * (class_num + 5), (1, 1)))(
           x2)
 
   x2 = compose(DarknetConv2D_BN_Leaky(128, (1, 1)), kl.UpSampling2D(2))(x2)
   y2 = compose(kl.Concatenate(), DarknetConv2D_BN_Leaky(256, (3, 3)),
-               DarknetConv2D(anchor_num * (class_num+5), (1, 1)))([x2, x1])
+               DarknetConv2D(anchor_num * (class_num + 5), (1, 1)))([x2, x1])
 
   y1_reshape = kl.Activation('linear', name='l1')(y1)
   y2_reshape = kl.Activation('linear', name='l2')(y2)
@@ -347,13 +347,13 @@ def tiny_yolo(input_shape, anchor_num, class_num) -> [k.Model, k.Model]:
   yolo_weight = k.models.load_model('data/tiny_yolo_weights.h5').get_weights()
   for i, w in enumerate(yolo_weight):
     if w.shape == (1, 1, 1024, 255):
-      yolo_weight[i] = w[..., :anchor_num * (class_num+5)]
+      yolo_weight[i] = w[..., :anchor_num * (class_num + 5)]
     if w.shape == (1, 1, 512, 255):
-      yolo_weight[i] = w[..., :anchor_num * (class_num+5)]
+      yolo_weight[i] = w[..., :anchor_num * (class_num + 5)]
     if w.shape == (1, 1, 256, 255):
-      yolo_weight[i] = w[..., :anchor_num * (class_num+5)]
+      yolo_weight[i] = w[..., :anchor_num * (class_num + 5)]
     if w.shape == (255,):
-      yolo_weight[i] = w[:anchor_num * (class_num+5)]
+      yolo_weight[i] = w[:anchor_num * (class_num + 5)]
   yolo_model.set_weights(yolo_weight)
 
   return yolo_model, yolo_model_warpper
@@ -363,15 +363,15 @@ def yolo(input_shape, anchor_num, class_num) -> [k.Model, k.Model]:
   """Create YOLO_V3 model CNN body in Keras."""
   inputs = k.Input(input_shape)
   darknet = k.Model(inputs, darknet_body(inputs))
-  x, y1 = make_last_layers(darknet.output, 512, anchor_num * (class_num+5))
+  x, y1 = make_last_layers(darknet.output, 512, anchor_num * (class_num + 5))
 
   x = compose(DarknetConv2D_BN_Leaky(256, (1, 1)), kl.UpSampling2D(2))(x)
   x = kl.Concatenate()([x, darknet.layers[152].output])
-  x, y2 = make_last_layers(x, 256, anchor_num * (class_num+5))
+  x, y2 = make_last_layers(x, 256, anchor_num * (class_num + 5))
 
   x = compose(DarknetConv2D_BN_Leaky(128, (1, 1)), kl.UpSampling2D(2))(x)
   x = kl.Concatenate()([x, darknet.layers[92].output])
-  x, y3 = make_last_layers(x, 128, anchor_num * (class_num+5))
+  x, y3 = make_last_layers(x, 128, anchor_num * (class_num + 5))
 
   y1_reshape = kl.Activation('linear', name='l1')(y1)
   y2_reshape = kl.Activation('linear', name='l2')(y2)
@@ -522,7 +522,7 @@ def yolo_mbv1(input_shape: list, anchor_num: int, class_num: int,
       alpha=alpha)  # type: k.Model
 
   x, y1 = make_last_layers_mobilenet(base_model.output, 17, 512,
-                                     anchor_num * (class_num+5))
+                                     anchor_num * (class_num + 5))
 
   x = compose(
       kl.Conv2D(
@@ -541,7 +541,7 @@ def yolo_mbv1(input_shape: list, anchor_num: int, class_num: int,
                       384)(base_model.get_layer('conv_pw_11_relu').output)
   ])
 
-  x, y2 = make_last_layers_mobilenet(x, 21, 256, anchor_num * (class_num+5))
+  x, y2 = make_last_layers_mobilenet(x, 21, 256, anchor_num * (class_num + 5))
 
   x = compose(
       kl.Conv2D(
@@ -559,7 +559,7 @@ def yolo_mbv1(input_shape: list, anchor_num: int, class_num: int,
       MobilenetConv2D((1, 1), alpha,
                       128)(base_model.get_layer('conv_pw_5_relu').output)
   ])
-  x, y3 = make_last_layers_mobilenet(x, 25, 128, anchor_num * (class_num+5))
+  x, y3 = make_last_layers_mobilenet(x, 25, 128, anchor_num * (class_num + 5))
 
   y1_reshape = kl.Activation('linear', name='y1')(y1)
   y2_reshape = kl.Activation('linear', name='y2')(y2)
@@ -699,4 +699,3 @@ def imageclassifierCNN13(input_shape, nclasses, filters=32, weight_decay=0.0005)
   train_model = k.Model(x, logits)
   infer_model = val_model = train_model
   return infer_model, val_model, train_model
-

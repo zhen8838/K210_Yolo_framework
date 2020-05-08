@@ -100,7 +100,7 @@ def decode_landm(landm: np.ndarray,
     """
 
   landms = np.concatenate([
-      anchors[:, :2] + landm[:, 2 * i:2 * (i+1)] * variances[0] * anchors[:, 2:]
+      anchors[:, :2] + landm[:, 2 * i:2 * (i + 1)] * variances[0] * anchors[:, 2:]
       for i in range(nlandmark)
   ], 1)
   return landms
@@ -130,10 +130,14 @@ class RetinaFaceHelper(BaseHelper):
     self.train_list: Iterable[
         Tuple[np.ndarray, np.ndarray]] = img_ann_list['train']
     self.val_list: Iterable[Tuple[np.ndarray, np.ndarray]] = img_ann_list['val']
-    self.test_list: Iterable[Tuple[np.ndarray, np.ndarray]] = img_ann_list['test']
+    if 'test' in img_ann_list.keys():
+      self.test_list: Iterable[Tuple[np.ndarray, np.ndarray]] = img_ann_list['test']
+      self.test_total_data: int = len(self.test_list)
+    else:
+      self.test_list = self.val_list
+      self.test_total_data: int = len(self.val_list)
     self.train_total_data: int = len(self.train_list)
     self.val_total_data: int = len(self.val_list)
-    self.test_total_data: int = len(self.test_list)
     self.anchor_widths = anchor_widths
     self.anchor_steps = anchor_steps
     self.anchors: _EagerTensorBase = tf.convert_to_tensor(
@@ -282,7 +286,7 @@ class RetinaFaceHelper(BaseHelper):
     scale = tf.reduce_min(in_hw / img_hw)
 
     # NOTE calc the x,y offset
-    yx_off = tf.cast((in_hw - img_hw*scale) / 2, tf.int32)
+    yx_off = tf.cast((in_hw - img_hw * scale) / 2, tf.int32)
 
     img_hw = tf.cast(img_hw * scale, tf.int32)
 
@@ -294,8 +298,8 @@ class RetinaFaceHelper(BaseHelper):
                        [yx_off[1], in_hw[1] - img_hw[1] - yx_off[1]], [0, 0]])
     """ calc the point transform """
 
-    bbox = bbox*scale + tf.tile(tf.cast(yx_off[::-1], tf.float32), [2])
-    landm = landm*scale + tf.tile(tf.cast(yx_off[::-1], tf.float32), [nlandmark])
+    bbox = bbox * scale + tf.tile(tf.cast(yx_off[::-1], tf.float32), [2])
+    landm = landm * scale + tf.tile(tf.cast(yx_off[::-1], tf.float32), [nlandmark])
 
     return img, bbox, landm, clses
 
@@ -413,22 +417,9 @@ class RetinaFaceHelper(BaseHelper):
       if flag == 1:
         cv2.rectangle(img, tuple(bbox[i][:2].astype(int)),
                       tuple(bbox[i][2:].astype(int)), (255, 0, 0))
-        for ldx, ldy, color in zip(landm[i][0::2].astype(int),
-                                   landm[i][1::2].astype(int), [
-                                       (255, 0, 0),
-                                       (0, 255, 0),
-                                       (0, 0, 255),
-                                       (255, 255, 0),
-                                       (255, 0, 255),
-                                       (0, 255, 255),
-                                       (128, 128, 0),
-                                       (128, 0, 128),
-                                       (0, 128, 128),
-                                       (128, 0, 0),
-                                       (0, 128, 0),
-                                       (0, 0, 128),
-                                   ]):
-          cv2.circle(img, (ldx, ldy), 1, color, 1)
+        for ldx, ldy in zip(landm[i][0::2].astype(int),
+                            landm[i][1::2].astype(int)):
+          cv2.circle(img, (ldx, ldy), 3, (0, 0, 255), 1)
     if is_show:
       plt.tight_layout()
       imshow(img)
@@ -569,9 +560,9 @@ class RetinaFaceLoss(tf.keras.losses.Loss):
 
     # Sum of losses: L(x,c,l,g) = (Lconf(x, c) + αLloc(x,l,g)) / num_pos_conf
     num_pos_conf = tf.maximum(tf.reduce_sum(num_pos_conf), 1)  # 正样本个数
-    loss_loc = self.loc_weight * (loss_loc/num_pos_conf)
-    loss_landm = self.landm_weight * (loss_landm/num_pos_landm)
-    loss_conf = self.conf_weight * (loss_conf/num_pos_conf)
+    loss_loc = self.loc_weight * (loss_loc / num_pos_conf)
+    loss_landm = self.landm_weight * (loss_landm / num_pos_landm)
+    loss_conf = self.conf_weight * (loss_conf / num_pos_conf)
     self.op_list.extend([
         self.lookups[0][0].assign(loss_loc),
         self.lookups[1][0].assign(loss_landm),
@@ -590,7 +581,7 @@ def reverse_ann(bbox: np.ndarray,
   """rescae predict box to orginal image scale
   """
   scale = np.min(in_hw / img_hw)
-  xy_off = ((in_hw - img_hw*scale) / 2)[::-1]
+  xy_off = ((in_hw - img_hw * scale) / 2)[::-1]
 
   bbox = (bbox - np.tile(xy_off, [2])) / scale
   landm = (landm - np.tile(xy_off, [nlandmark])) / scale
@@ -600,7 +591,7 @@ def reverse_ann(bbox: np.ndarray,
 def parser_outputs(outputs: List[np.ndarray], orig_hws: List[np.ndarray],
                    obj_thresh: float, nms_thresh: float, batch: int,
                    h: RetinaFaceHelper
-                  ) -> List[Tuple[np.ndarray, np.ndarray, np.ndarray]]:
+                   ) -> List[Tuple[np.ndarray, np.ndarray, np.ndarray]]:
   bbox_outs, landm_outs, class_outs = outputs
   results = []
   for bbox, landm, clses, orig_hw in zip(bbox_outs, landm_outs, class_outs,

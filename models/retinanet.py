@@ -60,20 +60,32 @@ def SSH(inputs: tf.Tensor, filters: int, depth: int = 3) -> tf.Tensor:
 
 
 def FPN(inputs: List[tf.Tensor], filters: int) -> List[tf.Tensor]:
-  # conv 1*1
-  out1 = Conv2D_BN_Leaky(filters, 1, 1)(inputs[0])
-  out2 = Conv2D_BN_Leaky(filters, 1, 1)(inputs[1])
-  out3 = Conv2D_BN_Leaky(filters, 1, 1)(inputs[2])
+  if len(inputs) == 3:
+    # conv 1*1
+    out1 = Conv2D_BN_Leaky(filters, 1, 1)(inputs[0])
+    out2 = Conv2D_BN_Leaky(filters, 1, 1)(inputs[1])
+    out3 = Conv2D_BN_Leaky(filters, 1, 1)(inputs[2])
 
-  up3 = kl.UpSampling2D()(out3)
-  out2 = kl.Add()([out2, up3])
-  # conv 3*3
-  out2 = Conv2D_BN_Leaky(filters, 3, 1, padding='same')(out2)
+    up3 = kl.UpSampling2D()(out3)
+    out2 = kl.Add()([out2, up3])
+    # conv 3*3
+    out2 = Conv2D_BN_Leaky(filters, 3, 1, padding='same')(out2)
 
-  up2 = kl.UpSampling2D()(out2)
-  out1 = kl.Add()([out1, up2])
-  out1 = Conv2D_BN_Leaky(filters, 3, 1, padding='same')(out1)
-  return [out1, out2, out3]
+    up2 = kl.UpSampling2D()(out2)
+    out1 = kl.Add()([out1, up2])
+    out1 = Conv2D_BN_Leaky(filters, 3, 1, padding='same')(out1)
+    return [out1, out2, out3]
+  elif len(inputs) == 2:
+    # conv 1*1
+    out1 = Conv2D_BN_Leaky(filters, 1, 1)(inputs[0])
+    out2 = Conv2D_BN_Leaky(filters, 1, 1)(inputs[1])
+    # conv 3*3
+    out2 = Conv2D_BN_Leaky(filters, 3, 1, padding='same')(out2)
+
+    up2 = kl.UpSampling2D()(out2)
+    out1 = kl.Add()([out1, up2])
+    out1 = Conv2D_BN_Leaky(filters, 3, 1, padding='same')(out1)
+    return [out1, out2]
 
 
 def retinafacenet(input_shape: list,
@@ -96,6 +108,75 @@ def retinafacenet(input_shape: list,
   fpn = FPN([stage1, stage2, stage3], filters)
   """ ssh """
   features = [SSH(fpn[0], filters), SSH(fpn[1], filters), SSH(fpn[2], filters)]
+  """ head """
+
+  bbox_out = [
+      kl.Conv2D(len(anchor[i]) * 4, 1, 1)(feat)
+      for (i, feat) in enumerate(features)
+  ]  # BboxHead
+  class_out = [
+      kl.Conv2D(len(anchor[i]) * 2, 1, 1)(feat)
+      for (i, feat) in enumerate(features)
+  ]  # ClassHead
+  landm_out = [
+      kl.Conv2D(len(anchor[i]) * 2 * nlandmark, 1, 1)(feat)
+      for (i, feat) in enumerate(features)
+  ]  # LandmarkHead
+
+  bbox_out = [kl.Reshape((-1, 4))(b) for b in bbox_out]
+  landm_out = [kl.Reshape((-1, 2 * nlandmark))(b) for b in landm_out]
+  class_out = [kl.Reshape((-1, 2))(b) for b in class_out]
+
+  bbox_out = kl.Concatenate(1)(bbox_out)
+  landm_out = kl.Concatenate(1)(landm_out)
+  class_out = kl.Concatenate(1)(class_out)
+  out = kl.Concatenate()([bbox_out, landm_out, class_out])
+
+  infer_model = k.Model(inputs, [bbox_out, landm_out, class_out])
+  train_model = k.Model(inputs, out)
+
+  return infer_model, train_model
+
+
+def retinafacenet_wflw(input_shape: list,
+                       anchor: List[List],
+                       filters: int,
+                       alpha=0.25,
+                       nlandmark: int = 5) -> [k.Model, k.Model]:
+  """ retinaface net for wflw 98 point, now only `stage2, stage3` for featuremap concat  
+
+  Args:
+      `input_shape` (list): 
+
+      `anchor` (List[List]): 
+
+      `filters` (int): 
+
+      `alpha` (float, optional): mbnetv1 backbone alpha. Defaults to 0.25.
+
+      `nlandmark` (int, optional): nlanmdmark num. Defaults to 5.
+
+
+  Returns:
+      [k.Model, k.Model]: infer_model, train_model
+  """
+  inputs = k.Input(input_shape)
+  model: k.Model = k.applications.MobileNet(
+      input_tensor=inputs,
+      input_shape=tuple(input_shape),
+      include_top=False,
+      weights='imagenet',
+      alpha=alpha)
+
+  # stage1 = model.get_layer('conv_pw_5_relu').output
+  stage2 = model.get_layer('conv_pw_11_relu').output
+  stage3 = model.get_layer('conv_pw_13_relu').output
+  # FPN
+  # fpn = FPN([stage1, stage2, stage3], filters)
+  fpn = FPN([stage2, stage3], filters)
+  """ ssh """
+  # features = [SSH(fpn[0], filters), SSH(fpn[1], filters), SSH(fpn[2], filters)]
+  features = [SSH(fpn[0], filters), SSH(fpn[1], filters)]
   """ head """
 
   bbox_out = [

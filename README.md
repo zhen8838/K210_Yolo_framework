@@ -386,6 +386,14 @@ yourdatasetdir/
 
 4.  run `python make_retinaface_list.py --root yourdatasetdir`
 
+### RetinaFace For WFLW 68 point
+
+1. Download [WFLW](https://wywu.github.io/projects/LAB/WFLW.html) dataset, unzip:
+
+```sh
+python scripts/make_retinaface_wflw_list.py xxx/WFLW_annotations xxx/WFLW_images xxx/WfLW_new_images data/retinaface_wflw_img_ann.npy 68
+```
+
 ## Train
 
 ```sh
