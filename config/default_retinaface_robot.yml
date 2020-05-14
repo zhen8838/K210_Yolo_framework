@@ -1,0 +1,109 @@
+ANCHOR_REF: &ANCHOR_REF [[[16,16], [32,32]], [[64,64], [128,128]], [[256,256], [512,512]]]
+mode: train
+model:
+  name: retinaface
+  helper: RetinaFaceHelper
+  helper_kwarg:
+    image_ann: data/retinaface_robot_img_ann.npy
+    in_hw: 
+      - 640
+      - 640
+    anchor_widths:  *ANCHOR_REF
+    anchor_steps:
+      - 8
+      - 16
+      - 32
+    pos_thresh: 0.35
+    variances:
+      - 0.1
+      - 0.2
+    nlandmark: 8
+  network: retinafacenet
+  network_kwarg:
+    input_shape:
+      - 640
+      - 640
+      - 3
+    anchor: *ANCHOR_REF
+    filters: 64
+    alpha: 0.25
+    nlandmark: 8
+  loss: RetinaFaceLoss
+  loss_kwarg:
+    loc_weight: 1
+    landm_weight: 2
+    conf_weight: 1
+    negpos_ratio: 7
+    nlandmark: 8
+train:
+  graph_optimizer: true
+  graph_optimizer_kwarg: 
+    layout_optimizer: true
+    remapping: true
+    shape_optimization: true
+    loop_optimization: true
+    constant_folding: true
+    function_optimization: true
+    scoped_allocator_optimization: true
+  augmenter: true
+  batch_size: 16
+  pre_ckpt: null
+  rand_seed: 10101
+  epochs: 250
+  log_dir: log
+  sub_log_dir: default_retinaface_robot_exp
+  debug: false
+  verbose: 1
+  vali_step_factor: 0.5
+  optimizer: Adam
+  optimizer_kwarg:
+    learning_rate: 0.0001
+    beta_1: 0.9
+    beta_2: 0.999
+    amsgrad: false
+  Lookahead: true
+  Lookahead_kwarg:
+    k: 5
+    alpha: 0.5
+  callbacks:
+    # - name: EarlyStopping
+    #   kwarg:
+    #     monitor: val_loss
+    #     min_delta: 0
+    #     patience: 4
+    #     verbose: 0
+    #     mode: auto
+    #     baseline: null
+    #     restore_best_weights: false
+    - name: ModelCheckpoint
+      kwarg:
+        monitor: val_loss
+        verbose: 0
+        save_best_only: true
+        save_weights_only: false
+        mode: auto
+        save_freq: epoch
+        load_weights_on_restart: false
+    - name: TerminateOnNaN
+      kwarg: null
+    # - name: MultiScaleTrain
+    #   kwarg:
+    #     interval: 50
+    #     scale_range: [-3, 5]
+    - name: StepLR
+      kwarg:
+        steps: [   10  , 190 , 220  ,  250  ]
+        rates: [0.00001,0.001,0.0001,0.00001]
+prune:
+  is_prune: false
+  init_sparsity: 0.5
+  final_sparsity: 0.9
+  end_epoch: 5
+  frequency: 100
+inference:
+  infer_fn: retinaface_infer
+  infer_fn_kwarg:
+    obj_thresh: 0.6
+    nms_thresh: 0.5
+evaluate:
+  eval_fn: null

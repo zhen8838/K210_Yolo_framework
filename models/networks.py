@@ -625,12 +625,12 @@ def dcasetask5basemodel(input_shape,
 
   inputs = k.Input(input_shape)
   outputs = compose(
-      kl.Conv2D(64, (7, 1), padding='same', **conv_kwargs),
+      kl.Conv2D(64, (7, 1), padding='same', **conv_kwargs), # (None, 40, 501, 64)
       kl.BatchNormalization(**bn_kwargs),
       kl.LeakyReLU(),
-      kl.MaxPool2D((4, 1)),
+      kl.MaxPool2D((4, 1)), # 10,501,64
       kl.Dropout(0.2),
-      kl.Conv2D(128, (10, 1), **conv_kwargs),
+      kl.Conv2D(128, (10, 1), **conv_kwargs), # 1,501,128
       kl.BatchNormalization(**bn_kwargs),
       kl.LeakyReLU(),
       kl.Conv2D(256, (1, 7), padding='same', **conv_kwargs),

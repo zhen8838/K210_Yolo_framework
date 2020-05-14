@@ -1607,9 +1607,35 @@ def bbox_cutout(image, bboxes, pad_fraction, replace_with_mean):
 
 
 def normalize(image: tf.Tensor, mean: float = 0.5, std: float = 0.5) -> tf.Tensor:
+  """ normalize image NOTE image type must be float32
+
+  Args:
+      `image` (tf.Tensor): float32, value can be [0~1], [0,~255]
+      
+      `mean` (float, optional): Defaults to 0.5.
+      
+      `std` (float, optional): Defaults to 0.5.
+      
+
+  Returns:
+      tf.Tensor: image 
+  """  
   return (image-mean) / std
 
 
 def renormalize(image: tf.Tensor, mean: float = 0.5,
                 std: float = 0.5) -> tf.Tensor:
+  """ renormalize image NOTE image type must be float32
+
+  Args:
+      `image` (tf.Tensor): float32
+      
+      `mean` (float, optional): Defaults to 0.5.
+      
+      `std` (float, optional): Defaults to 0.5.
+      
+
+  Returns:
+      tf.Tensor: image 
+  """  
   return image*std + mean

@@ -8,14 +8,14 @@ def main(root, output_file):
   root = Path(root)
 
   meta = {}
-  for name in ['train', 'val', 'test']:
-    label_root: Path = root / 'label'
+  for name in ['train', 'val']:
+    label_root: Path = (root / name) / 'label'
     img_paths = []
     anns = []
     for json_file in label_root.glob('*.json'):
       with json_file.open('r') as f:
         ss = json.load(f)
-        annotation = np.zeros((1, 4 + 8*2 + 1))
+        annotation = np.zeros((1, 4 + 8 * 2 + 1))
         for shape in ss['shapes']:
           if shape['shape_type'] == 'rectangle':
             annotation[0, 0] = shape['points'][0][0]  # x1
@@ -24,8 +24,8 @@ def main(root, output_file):
             annotation[0, 3] = shape['points'][1][1]  # y2
           if shape['shape_type'] == 'point':
             idx = int(shape['label'][1:]) - 1
-            annotation[0, 4 + idx*2] = shape['points'][0][0]  # l0_x-1
-            annotation[0, 5 + idx*2] = shape['points'][0][1]  # l0_y
+            annotation[0, 4 + idx * 2] = shape['points'][0][0]  # l0_x-1
+            annotation[0, 5 + idx * 2] = shape['points'][0][1]  # l0_y
         annotation[0, -1] = 1
       anns.append(annotation)
       img_paths.append(
