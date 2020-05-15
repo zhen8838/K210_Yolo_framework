@@ -33,7 +33,7 @@ class ImageMeta(object):
     if target_hw:
       heatmap = cv2.resize(heatmap, target_hw[::-1], interpolation=cv2.INTER_LINEAR)
 
-    return heatmap.astype(np.float16)
+    return heatmap
 
   @staticmethod
   def put_heatmap(heatmap, plane_idx, center, sigma):
@@ -88,7 +88,7 @@ class ImageMeta(object):
     if target_hw:
       vectormap = cv2.resize(vectormap, target_hw[::-1], interpolation=cv2.INTER_LINEAR)
 
-    return vectormap.astype(np.float16)
+    return vectormap
 
   @staticmethod
   def put_vectormap(vectormap, countmap, plane_idx, center_from, center_to, threshold=8):

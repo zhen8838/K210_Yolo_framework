@@ -421,20 +421,30 @@ make infer CKPT=log/default_retinaface_exp/auto_infer_xxx.h5 IMG=imgpath_or_imgd
 # OpenPose
 
 ## Prepare dataset
+1.  download dataset
+    ```sh
+    wget http://images.cocodataset.org/zips/train2017.zip
+    wget http://images.cocodataset.org/zips/val2017.zip
+    wget http://images.cocodataset.org/annotations/annotations_trainval2017.zip
+
+    unzip ./train2017.zip
+    unzip ./val2017.zip
+    unzip ./annotations_trainval2017.zip
+    ```
+
+2.  install cocoapi
+
+    ```sh
+    pip install pycocotools
+    ```
+3.  make dataset
+    ```sh
+    make_openpose_coco.py --input_train_path xxxx/coco --output_file data/openpose_coco_img_ann.npy
+    ```
+
+
+## Train
 
 ```sh
-wget http://images.cocodataset.org/zips/train2017.zip
-wget http://images.cocodataset.org/zips/val2017.zip
-wget http://images.cocodataset.org/annotations/annotations_trainval2017.zip
-
-unzip ./train2017.zip
-unzip ./val2017.zip
-unzip ./annotations_trainval2017.zip
+make eager_train CFG=config/default_openposembv1.yml
 ```
-
-**install cocoapi**
-
-```sh
-pip install pycocotools
-```
-

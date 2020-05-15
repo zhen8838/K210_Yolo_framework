@@ -69,7 +69,7 @@ class EmaHelper(object):
     """
     self.decay = decay
     self.orig_model = orig_model
-    self.model = k.models.clone_model(orig_model)
+    self.model: k.Model = k.models.clone_model(orig_model)
     self.initial_ema_vars(self.model.variables, self.orig_model.variables)
 
   def update(self):
@@ -298,11 +298,11 @@ class BaseHelperV2(object):
 
     Args:
         `dataset_root` (str): dataset dir or somethings
-        
+
         `in_hw` (list): default [256,256]
-        
+
         `mixed_precision_dtype` (str): 
-        
+
         `hparams` (dict): can be any things
     """
     self.train_dataset: tf.data.Dataset = None

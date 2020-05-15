@@ -1,0 +1,98 @@
+mode: train
+model:
+  name: openpose
+  helper: OpenPoseHelper
+  helper_kwarg:
+    dataset_root: "data/openpose_coco_img_ann.npy"
+    in_hw: [368, 432]
+    mixed_precision_dtype: float32
+    hparams:
+      scale: 4 # output height width reduce scale, for mbv1 is 4
+      sigma: 8. # heatmap gaussian sigma
+      parts: 19 # dataset point part number, for coco is 19
+      vecs: [
+          [2, 9],
+          [9, 10],
+          [10, 11],
+          [2, 12],
+          [12, 13],
+          [13, 14],
+          [2, 3],
+          [3, 4],
+          [4, 5],
+          [3, 17],
+          [2, 6],
+          [6, 7],
+          [7, 8],
+          [6, 18],
+          [2, 1],
+          [1, 15],
+          [1, 16],
+          [15, 17],
+          [16, 18],
+        ] # dataset point line vector
+  network: MobileNetV1OpenPose
+  network_kwarg:
+    input_shape: [368, 432, 3]
+    alpha: 0.75
+    alpha2: 1.
+    num_refine: 4
+train:
+  graph_optimizer: true
+  graph_optimizer_kwarg:
+    layout_optimizer: true
+    remapping: true
+    shape_optimization: true
+    loop_optimization: true
+    constant_folding: true
+    function_optimization: true
+    scoped_allocator_optimization: true
+  distributionstrategy_kwarg:
+    tpu: null
+    strategy: Mirrored
+  augmenter: true
+  batch_size: 4
+  pre_ckpt: null
+  rand_seed: 10101
+  epochs: 100
+  train_epoch_step: 600
+  vali_epoch_step: null
+  steps_per_run: 30
+  log_dir: log
+  sub_log_dir: default_openposembv1_exp
+  mixed_precision:
+    enable: false
+    dtype: float32
+  trainloop: OpenPoseLoop
+  trainloop_kwarg:
+    hparams:
+      ema:
+        enable: false
+        decay: 0.999
+  variablecheckpoint_kwarg:
+    variable_dict:
+      model: train_model
+      optimizer: optimizer
+    monitor: val/loss
+    mode: min
+  optimizer: Adam
+  optimizer_kwarg:
+    learning_rate: 0.001
+    beta_1: 0.9
+    beta_2: 0.999
+    amsgrad: false
+  callbacks:
+    - name: EarlyStopping
+      kwarg:
+        monitor: val/loss
+        min_delta: 0
+        patience: 10
+        verbose: 0
+        mode: min
+        baseline: null
+        restore_best_weights: false
+    - name: StepLR
+      kwarg:
+        outside_optimizer: optimizer
+        steps: [10, 80, 120]
+        rates: [0.0001, 0.0008, 0.0004]

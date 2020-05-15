@@ -1,5 +1,5 @@
 import tensorflow as tf
-from typing import List
+from typing import List, Tuple
 from models.darknet import compose
 
 k = tf.keras
@@ -46,7 +46,26 @@ class depthwise_conv(object):
       return x
 
 
-def MobileNetV1OpenPose(input_shape: List[int], alpha: float = 0.75, alpha2: float = None, num_refine: int = 4):
+def MobileNetV1OpenPose(input_shape: List[int], alpha: float = 0.75,
+                        alpha2: float = None, num_refine: int = 4
+                        ) -> Tuple[k.Model, k.Model, k.Model]:
+  """MobileNetV1OpenPose
+
+  Args:
+      `input_shape` (List[int]): [height,width,channls]
+
+      `alpha` (float, optional): Defaults to 0.75.
+
+      `alpha2` (float, optional): external branch alpha Defaults to None.
+
+      `num_refine` (int, optional): external branch number. Defaults to 4.
+
+
+  Returns:
+      Tuple[k.Model, k.Model, k.Model]: `infer_model`, `val_model`, `train_model`
+      NOTE train model outputs: [`l1_vectmap`,`l1_heatmap`,`l2_vectmap`,`l2_heatmap`, ...]
+      NOTE infer model outputs: [`l5_vectmap`,`l5_heatmap`]
+  """
   channel_axis = 1 if k.backend.image_data_format() == 'channels_first' else -1
   inputs = k.Input(input_shape)
   basemodel: k.Model = k.applications.MobileNet(input_tensor=inputs, alpha=alpha, include_top=False)
@@ -118,7 +137,7 @@ def MobileNetV1OpenPose(input_shape: List[int], alpha: float = 0.75, alpha2: flo
       if '_L2_5' in key:
         l2s.append(nodes[key])
 
-    train_model = k.Model(inputs, [*l1s, *l2s])
+    train_model = k.Model(inputs, list(zip(l1s, l2s)))
 
     infer_model = k.Model(inputs, [nodes[f'MConv_Stage{num_refine+1}_L1_5'],
                                    nodes[f'MConv_Stage{num_refine+1}_L2_5']])

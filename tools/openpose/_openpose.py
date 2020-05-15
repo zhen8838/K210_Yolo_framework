@@ -15,6 +15,14 @@ from transforms.image import ops as image_ops
 
 
 class OpenPoseHelper(BaseHelperV2):
+  """OpenPoseHelper
+
+    hparams:
+      scale: 8 # output height width reduce scale, for mbv1 is 8
+      sigma: 8. # heatmap gaussian sigma
+      parts: 19 # dataset point part number, for coco is 19
+      vecs: [[2, 9],[9, 10],[10, 11],[2, 12],[12, 13], [13, 14], [2, 3], [3, 4], [4, 5], [3, 17], [2, 6], [6, 7], [7, 8], [6, 18], [2, 1], [1, 15], [1, 16], [15, 17], [16, 18]] # dataset point line vector
+  """
 
   def set_datasetlist(self):
     meta = np.load(self.dataset_root, allow_pickle=True)[()]
@@ -76,7 +84,10 @@ class OpenPoseHelper(BaseHelperV2):
       img, heatmap, vectormap = tf.numpy_function(
           np_process,
           [img, joint_list],
-          [tf.uint8, tf.float16, tf.float16])
+          [tf.uint8, tf.float32, tf.float32])
+      img.set_shape([self.in_hw[0], self.in_hw[1], 3])
+      heatmap.set_shape([self.target_hw[0], self.target_hw[1], self.hparams.parts])
+      vectormap.set_shape([self.target_hw[0], self.target_hw[1], self.hparams.parts * 2])
       if is_normalize:
         img = image_ops.normalize(tf.cast(img, tf.float32), 127.5, 127.5)
       return img, heatmap, vectormap
@@ -207,40 +218,64 @@ class OpenPoseLoop(BaseTrainingLoop):
     def step_fn(inputs: List[tf.Tensor]):
       """Per-Replica training step function."""
       image, heatmap, vectormap = inputs
-
+      batch_size = tf.cast(tf.shape(image)[0], tf.float32)
       with tf.GradientTape() as tape:
-        logit_sup = self.train_model(image, training=True)
+        outputs: List[tf.Tensor] = self.train_model(image, training=True)
+        # outputs is [l1_vectmap,l1_vectmap,l2_vectmap,l2_vectmap,...]
+        loss = []
+        for (l1, l2) in outputs:
+          loss_l1 = tf.nn.l2_loss(l1 - vectormap)
+          loss_l2 = tf.nn.l2_loss(l2 - heatmap)
+          loss.append(tf.reduce_mean([loss_l1, loss_l2]))
+        loss_wd = tf.reduce_sum(self.train_model.losses)
+        loss = tf.reduce_sum(loss) + loss_wd
 
-        loss = (
-            loss_xe + self.hparams.fixmatchmixup.wu * loss_xeu +
-            self.hparams.fixmatchmixup.wmu * loss_xeu_mix + loss_wd)
-
-      scaled_loss = self.optimizer_minimize(loss, tape, self.optimizer,
+      scaled_loss = self.optimizer_minimize(loss, tape,
+                                            self.optimizer,
                                             self.train_model)
 
       if self.hparams.ema.enable:
         self.ema.update()
-
-
+      # loss metric
+      loss_ll_paf = tf.reduce_sum(loss_l1) / batch_size
+      loss_ll_heat = tf.reduce_sum(loss_l2) / batch_size
+      loss_ll = tf.reduce_sum([loss_ll_paf, loss_ll_heat])
       metrics.loss.update_state(scaled_loss)
-      metrics.acc.update_state(sup_label, logit_sup)
+      metrics.loss_lastlayer.update_state(loss_ll)
+      metrics.loss_lastlayer_paf.update_state(loss_ll_paf)
+      metrics.loss_lastlayer_heat.update_state(loss_ll_heat)
 
     for _ in tf.range(num_steps_to_run):
       self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))
 
   @tf.function
   def val_step(self, dataset, metrics):
+    if self.hparams.ema.enable:
+      val_model = self.ema.model
+    else:
+      val_model = self.val_model
 
     def step_fn(inputs: dict):
       """Per-Replica training step function."""
-      datas, labels = inputs['data'], inputs['label']
-      logits = self.val_model(datas, training=False)
-      loss_xe = tf.nn.sparse_softmax_cross_entropy_with_logits(labels, logits)
-      loss_xe = tf.reduce_mean(loss_xe)
-      loss_wd = tf.reduce_sum(self.val_model.losses)
-      loss = loss_xe + loss_wd
+      image, heatmap, vectormap = inputs
+      batch_size = tf.cast(tf.shape(image)[0], tf.float32)
+      outputs: List[tf.Tensor] = val_model(image, training=False)
+      loss = []
+      for (l1, l2) in outputs:
+        loss_l1 = tf.nn.l2_loss(l1 - vectormap)
+        loss_l2 = tf.nn.l2_loss(l2 - heatmap)
+        loss.append(tf.reduce_mean([loss_l1, loss_l2]))
+
+      loss_wd = tf.reduce_sum(val_model.losses)
+      loss = tf.reduce_sum(loss) + loss_wd
       metrics.loss.update_state(loss)
-      metrics.acc.update_state(labels, logits)
+      loss_ll_paf = tf.reduce_sum(loss_l1) / batch_size
+      loss_ll_heat = tf.reduce_sum(loss_l2) / batch_size
+      loss_ll = tf.reduce_sum([loss_ll_paf, loss_ll_heat])
+      metrics.loss.update_state(loss)
+      metrics.loss_lastlayer.update_state(loss_ll)
+      metrics.loss_lastlayer_paf.update_state(loss_ll_paf)
+      metrics.loss_lastlayer_heat.update_state(loss_ll_heat)
 
     for inputs in dataset:
       self.strategy.experimental_run_v2(step_fn, args=(inputs,))
