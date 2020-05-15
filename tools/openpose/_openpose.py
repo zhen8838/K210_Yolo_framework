@@ -10,7 +10,9 @@ import random
 from tools.openpose.openopse_agument import (ImageMeta, pose_random_scale,
                                              pose_flip,
                                              pose_resize_shortestedge_random,
-                                             pose_crop_random)
+                                             pose_crop_random,
+                                             pose_resize_shortestedge_fixed,
+                                             pose_crop_center)
 from transforms.image import ops as image_ops
 
 
@@ -34,19 +36,20 @@ class OpenPoseHelper(BaseHelperV2):
     self.test_list: str = None
     self.unlabel_list: str = None
 
-    self.train_list: Tuple[tf.Tensor, tf.RaggedTensor] = (
-        tf.constant(meta['train_list'][0], tf.string),
-        tf.ragged.constant(meta['train_list'][1],
-                           inner_shape=(19, 2),
-                           dtype=tf.float32))
+    self.train_list: str = meta['train_list']
+    # self.train_list: Tuple[tf.Tensor, tf.RaggedTensor] = (
+    #     tf.constant(meta['train_list'][0], tf.string),
+    #     tf.ragged.constant(meta['train_list'][1],
+    #                        inner_shape=(19, 2),
+    #                        dtype=tf.float32))
 
     self.train_total_data: int = meta['train_num']
-
-    self.val_list: Tuple[tf.Tensor, tf.RaggedTensor] = (
-        tf.constant(meta['val_list'][0], tf.string),
-        tf.ragged.constant(meta['val_list'][1],
-                           inner_shape=(19, 2),
-                           dtype=tf.float32))
+    self.val_list: str = meta['val_list']
+    # self.val_list: Tuple[tf.Tensor, tf.RaggedTensor] = (
+    #     tf.constant(meta['val_list'][0], tf.string),
+    #     tf.ragged.constant(meta['val_list'][1],
+    #                        inner_shape=(19, 2),
+    #                        dtype=tf.float32))
 
     self.val_total_data: int = meta['val_num']
 
@@ -63,7 +66,8 @@ class OpenPoseHelper(BaseHelperV2):
   def build_train_datapipe(self,
                            batch_size: int,
                            is_augment: bool,
-                           is_normalize: bool = True) -> tf.data.Dataset:
+                           is_normalize: bool = True,
+                           is_train: bool = True) -> tf.data.Dataset:
 
     def np_process(img, joint_list):
       meta = ImageMeta(img, joint_list, self.in_hw,
@@ -74,13 +78,28 @@ class OpenPoseHelper(BaseHelperV2):
         meta = pose_flip(meta)
         meta = pose_resize_shortestedge_random(meta)
         meta = pose_crop_random(meta)
+      else:
+        meta = pose_resize_shortestedge_fixed(meta)
+        meta = pose_crop_center(meta)
+
       heatmap = meta.get_heatmap(self.target_hw)
       vectormap = meta.get_vectormap(self.target_hw)
       # NOTE meta.img, heatmap, vectormap type: uint8, float16, float16
       return meta.img, heatmap, vectormap
 
-    def parser(path, joint_list):
-      img = tf.image.decode_jpeg(tf.io.read_file(path), channels=3)
+    # NOTE 还是有必要使用filter_fn过滤一些没必要训练的图像。
+    def filter_fn(img_str, joint_list):
+      return tf.logical_not(tf.logical_and(tf.shape(joint_list)[0] == 0, tf.random.uniform([]) > 0.2))
+
+    def parse_example(raw_example):
+      example = tf.io.parse_single_example(raw_example, {
+          'img': tf.io.FixedLenFeature([], dtype=tf.string),
+          'joint': tf.io.VarLenFeature(dtype=tf.float32)
+      })
+      return example['img'], tf.reshape(example['joint'].values, [-1, self.hparams.parts, 2])
+
+    def parser(img_str, joint_list):
+      img = tf.image.decode_jpeg(img_str, channels=3)
       img, heatmap, vectormap = tf.numpy_function(
           np_process,
           [img, joint_list],
@@ -92,12 +111,23 @@ class OpenPoseHelper(BaseHelperV2):
         img = image_ops.normalize(tf.cast(img, tf.float32), 127.5, 127.5)
       return img, heatmap, vectormap
 
-    ds = (tf.data.Dataset.from_tensor_slices(self.train_list).
-          shuffle(batch_size * 200).
-          repeat().
-          map(parser, num_parallel_calls=-1).
-          batch(batch_size).
-          prefetch(tf.data.experimental.AUTOTUNE))
+    if is_train:
+      ds = (tf.data.TFRecordDataset(self.train_list, num_parallel_reads=4).
+            shuffle(batch_size * 200).
+            repeat().
+            map(parse_example, num_parallel_calls=-1).
+            filter(filter_fn).
+            map(parser, num_parallel_calls=-1).
+            batch(batch_size).
+            prefetch(tf.data.experimental.AUTOTUNE))
+    else:
+      ds = (tf.data.TFRecordDataset(self.val_list, num_parallel_reads=4).
+            shuffle(batch_size * 200).
+            map(parse_example, num_parallel_calls=-1).
+            map(parser, num_parallel_calls=-1).
+            batch(batch_size).
+            prefetch(tf.data.experimental.AUTOTUNE))
+
     options = tf.data.Options()
     options.experimental_deterministic = False
     ds = ds.with_options(options)
@@ -106,50 +136,119 @@ class OpenPoseHelper(BaseHelperV2):
   def build_val_datapipe(self, batch_size: int,
                          is_normalize: bool = True) -> tf.data.Dataset:
 
-    return self.build_train_datapipe(batch_size, False, is_normalize)
+    return self.build_train_datapipe(batch_size, False, is_normalize, is_train=False)
 
-  # def get_heatmap(self, im_h, im_w, joint_list, th=4.6052, sigma=8.):
+  def get_heatmap(self, im_h, im_w, joint_list, th=4.6052, sigma=8.):
 
-  #   target_size = (self.in_hw[0] // self.hparams.scale, self.in_hw[1] // self.hparams.scale)
+    heatmap: tf.Variable = tf.Variable(tf.zeros((self.hparams.parts, im_h, im_w)), trainable=False)
 
-  #   heatmap: tf.Variable = tf.Variable(tf.zeros((self.hparams.parts, im_h, im_w)), trainable=False)
+    for joints in joint_list:
+      for i, center in enumerate(joints):
+        if center[0] < 0 or center[1] < 0:
+          continue
 
-  #   for joints in joint_list:
-  #     for i, center in enumerate(joints):
-  #       if center[0] < 0 or center[1] < 0:
-  #         continue
+        delta = tf.sqrt(th * 2)
+        # p0 -> x,y    p1 -> x,y
+        im_wh = tf.cast((im_w, im_h), tf.float32)
+        p0 = tf.cast(tf.maximum(0., center - delta * sigma), tf.int32)
+        p1 = tf.cast(tf.minimum(im_wh, center + delta * sigma), tf.int32)
 
-  #       delta = tf.sqrt(th * 2)
-  #       # p0 -> x,y    p1 -> x,y
-  #       im_wh = tf.cast((im_w, im_h), tf.float32)
-  #       p0 = tf.cast(tf.maximum(0., center - delta * sigma), tf.int32)
-  #       p1 = tf.cast(tf.minimum(im_wh, center + delta * sigma), tf.int32)
+        x = tf.range(p0[0], p1[0])[None, :, None]
+        y = tf.range(p0[1], p1[1])[:, None, None]
 
-  #       x = tf.range(p0[0], p1[0])[None, :, None]
-  #       y = tf.range(p0[1], p1[1])[:, None, None]
+        p = tf.concat([x + tf.zeros_like(y), tf.zeros_like(x) + y], axis=-1)
+        exp = tf.reduce_sum(tf.square(tf.cast(p, tf.float32) - center), -1) / (2. * sigma * sigma)
+        # use indices update point area
+        indices = tf.concat([tf.ones(p.shape[:-1] + [1], tf.int32) * i,
+                             p[..., ::-1]], -1)
+        # NOTE p is [x,y] , but `gather_nd` and `scatter_nd` require [y,x]
+        old_center_area = tf.gather_nd(heatmap, indices)
+        center_area = tf.minimum(tf.maximum(old_center_area, tf.exp(-exp)), 1.0)
+        center_area = tf.where(exp > th, old_center_area, center_area)
 
-  #       p = tf.concat([x + tf.zeros_like(y), tf.zeros_like(x) + y], axis=-1)
-  #       exp = tf.reduce_sum(tf.square(tf.cast(p, tf.float32) - center), -1) / (2. * sigma * sigma)
-  #       # use indices update point area
-  #       indices = tf.concat([tf.ones(p.shape[:-1] + [1], tf.int32) * i,
-  #                            p[..., ::-1]], -1)
-  #       # NOTE p is [x,y] , but `gather_nd` and `scatter_nd` require [y,x]
-  #       old_center_area = tf.gather_nd(heatmap, indices)
-  #       center_area = tf.minimum(tf.maximum(old_center_area, tf.exp(-exp)), 1.0)
-  #       center_area = tf.where(exp > th, old_center_area, center_area)
+        heatmap.scatter_nd_update(indices, center_area)
+    # use indices update heatmap background NOTE scatter_nd can't use -1
+    heatmap.scatter_update(tf.IndexedSlices(
+        tf.clip_by_value(1. - tf.reduce_max(heatmap, axis=0), 0., 1.),
+        self.hparams.parts - 1))
 
-  #       heatmap.scatter_nd_update(indices, center_area)
-  #   # use indices update heatmap background NOTE scatter_nd can't use -1
-  #   heatmap.scatter_update(tf.IndexedSlices(
-  #       tf.clip_by_value(1. - tf.reduce_max(heatmap, axis=0), 0., 1.),
-  #       self.hparams.parts - 1))
+    heatmap_tensor = tf.transpose(heatmap, (1, 2, 0))
 
-  #   heatmap_tensor = tf.transpose(heatmap, (1, 2, 0))
+    if self.target_hw:
+      heatmap_tensor = tf.image.resize(heatmap_tensor, self.target_hw)
 
-  #   if target_size:
-  #     heatmap_tensor = tf.image.resize(heatmap_tensor, target_size)
+    return heatmap_tensor
 
-  #   return tf.cast(heatmap_tensor, tf.float16)
+  def get_vectormap(self, im_h, im_w, joint_list):
+    vectormap = tf.Variable(np.zeros((self.hparams.parts * 2, im_h, im_w),
+                                     dtype=np.float32), trainable=False)
+    countmap = tf.Variable(np.zeros((self.hparams.parts, im_h, im_w),
+                                    dtype=np.float32), trainable=False)
+
+    for joints in joint_list:
+      for plane_idx, (j_idx1, j_idx2) in enumerate(self.hparams.vecs):
+        j_idx1 -= 1
+        j_idx2 -= 1
+
+        center_from = joints[j_idx1]
+        center_to = joints[j_idx2]
+
+        if center_from[0] < -100 or center_from[1] < -100 or center_to[0] < -100 or center_to[1] < -100:
+          continue
+
+        self.put_vectormap(vectormap, countmap, plane_idx, center_from, center_to)
+
+    # 通过countmap减小vectormap的数量级
+    tile_countmap = tf.repeat(tf.cast(countmap.value(), tf.float32), 2, axis=0)
+    div_vectormap = tf.math.divide_no_nan(vectormap.value(), tile_countmap)
+    vectormap_tensor = tf.transpose(div_vectormap, [1, 2, 0])
+
+    if self.target_hw:
+      vectormap_tensor = tf.image.resize(vectormap_tensor, self.target_hw)
+
+    return vectormap_tensor
+
+  @staticmethod
+  def put_vectormap(tfvectormap: tf.Variable, tfcountmap: tf.Variable,
+                    plane_idx, center_from, center_to, threshold=8):
+    """ tf版 """
+    _, height, width = tfvectormap.shape[:3]
+
+    # p0,p1,vector --> x,y
+    vector = center_to - center_from
+    p0 = tf.maximum(0, tf.cast(tf.minimum(center_from, center_to) - threshold, tf.int32))
+    p1 = tf.minimum([width, height], tf.cast(
+        tf.maximum(center_from, center_to) + threshold, tf.int32))
+
+    norm = tf.sqrt(tf.reduce_sum(tf.square(vector), axis=-1))
+
+    if norm == 0:
+      return
+    vector = vector / norm
+    # p --> x,y
+    x = tf.range(p0[0], p1[0])[None, :, None]
+    y = tf.range(p0[1], p1[1])[:, None, None]
+    p = tf.concat([x + tf.zeros_like(y), tf.zeros_like(x) + y], axis=-1)
+    bec = tf.cast(p - center_from, tf.float32)
+
+    dist = tf.abs((bec[..., 0] * vector[..., 1]) - (bec[..., 1] * vector[..., 0]))
+
+    plane_indices = tf.ones(p.shape[:-1] + [1], tf.int32)  # [h,w,1]
+    # vmap_indices --> [2,area_h,area_w,3]  b,y,x
+    vmap_indices = tf.stack([
+        tf.concat([plane_indices * (plane_idx * 2 + 0), p[..., ::-1]], -1),
+        tf.concat([plane_indices * (plane_idx * 2 + 1), p[..., ::-1]], -1)], -2)
+
+    old_vamp_area = tf.gather_nd(tfvectormap, vmap_indices)
+    # 通过boolean_mask过滤不满足要求的点,并进行更新
+    valid_vmap_indices = tf.boolean_mask(vmap_indices, tf.less_equal(dist, threshold))
+    tfvectormap.scatter_nd_update(valid_vmap_indices, tf.tile(
+        vector[None, :], [valid_vmap_indices.shape[0], 1]))
+
+    count_indices = tf.concat([tf.ones(p.shape[:-1] + [1], tf.int32) * plane_idx,
+                               p[..., ::-1]], -1)
+    valid_count_indices = tf.boolean_mask(count_indices, dist > threshold)
+    tfcountmap.scatter_nd_add(valid_count_indices, tf.ones(valid_count_indices.shape[0]))
 
   @staticmethod
   def draw_test_image(inp, heatmap, vectmap):

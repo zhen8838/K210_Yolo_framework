@@ -439,7 +439,7 @@ make infer CKPT=log/default_retinaface_exp/auto_infer_xxx.h5 IMG=imgpath_or_imgd
     ```
 3.  make dataset
     ```sh
-    make_openpose_coco.py --input_train_path xxxx/coco --output_file data/openpose_coco_img_ann.npy
+    python scripts/make_openpose_coco.py --input_train_path xxx/cocodataset --output_tfrecord_path xxx/cocodataset --output_file data/openpose_coco_img_ann.npy
     ```
 
 

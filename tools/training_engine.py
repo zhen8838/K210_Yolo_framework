@@ -353,7 +353,7 @@ class BaseHelperV2(object):
     self.train_dataset = self.build_train_datapipe(batch_size, is_augment,
                                                    is_normalize)
     self.val_dataset = self.build_val_datapipe(batch_size, is_normalize)
-    self.epoch_step = self.train_total_data // self.batch_size
+    self.train_epoch_step = self.train_total_data // self.batch_size
     self.val_epoch_step = self.val_total_data // self.batch_size
 
 

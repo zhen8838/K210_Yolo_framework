@@ -10,8 +10,20 @@ from pycocotools.coco import COCO
 from tqdm import tqdm
 
 
-def main(coco_root: str, outfile: str):
+def serialize_example(img_str, joints):
+  stream = tf.train.Example(
+      features=tf.train.Features(
+          feature={
+              'img': tf.train.Feature(bytes_list=tf.train.BytesList(value=[img_str])),
+              'joint': tf.train.Feature(float_list=tf.train.FloatList(value=joints)),
+
+          })).SerializeToString()
+  return stream
+
+
+def main(coco_root: str, tfrecord_root: str, outfile: str):
   root = Path(coco_root)
+  tfrecord_root = Path(tfrecord_root)
   meta = {}
   for data_name, meta_name in [('train2017', 'train'), ('val2017', 'val')]:
     coco = COCO(f'{root.as_posix()}/annotations/person_keypoints_{data_name}.json')
@@ -60,8 +72,22 @@ def main(coco_root: str, outfile: str):
 
       # final keypoint ann will be [n,19,2] or []
       img_kps.append(self_joint_list)
+    img_paths, img_kps = np.array(img_paths), np.array(img_kps)
+    max_num = 10000
+    print(INFO, f'Make {meta_name} tfrecord')
+    tfrecord_paths = []
+    for i, j in enumerate(range(0, len(img_paths), max_num)):
+      tfrecord_path = tfrecord_root / f'{meta_name}_{i}.tfrecords'
+      tfrecord_paths.append(tfrecord_path.as_posix())
+      with tf.io.TFRecordWriter(tfrecord_path.as_posix()) as writer:
+        img_path_part = img_paths[j:j + max_num]
+        img_kps_part = img_kps[j:j + max_num]
+        for img_path, img_kp in tqdm(zip(img_path_part, img_kps_part), total=len(img_path_part)):
+          stream = serialize_example(tf.io.read_file(img_path).numpy(),
+                                     tf.reshape(img_kp, [-1]).numpy())
+          writer.write(stream)
 
-    meta[meta_name + '_list'] = (np.array(img_paths), np.array(img_kps))
+    meta[meta_name + '_list'] = tfrecord_paths
     meta[meta_name + '_num'] = len(img_paths)
 
   print(INFO, f'Save Dataset meta file in {outfile}')
@@ -76,9 +102,14 @@ if __name__ == "__main__":
       help='coco 2017 dataset path',
       default='/home/zqh/workspace/pysot/training_dataset/coco')
   parser.add_argument(
+      '--output_tfrecord_path',
+      type=str,
+      help='tfrecord path',
+      default='/home/zqh/workspace/pysot/training_dataset/coco')
+  parser.add_argument(
       '--output_file',
       type=str,
       help='output file path',
       default='data/openpose_coco_img_ann.npy')
   args = parser.parse_args()
-  main(args.input_train_path, args.output_file)
+  main(args.input_train_path, args.output_tfrecord_path, args.output_file)
