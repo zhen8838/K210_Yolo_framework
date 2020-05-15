@@ -259,12 +259,10 @@ class OpenPoseLoop(BaseTrainingLoop):
       """Per-Replica training step function."""
       image, heatmap, vectormap = inputs
       batch_size = tf.cast(tf.shape(image)[0], tf.float32)
-      outputs: List[tf.Tensor] = val_model(image, training=False)
-      loss = []
-      for (l1, l2) in outputs:
-        loss_l1 = tf.nn.l2_loss(l1 - vectormap)
-        loss_l2 = tf.nn.l2_loss(l2 - heatmap)
-        loss.append(tf.reduce_mean([loss_l1, loss_l2]))
+      l1, l2 = val_model(image, training=False)
+      loss_l1 = tf.nn.l2_loss(l1 - vectormap)
+      loss_l2 = tf.nn.l2_loss(l2 - heatmap)
+      loss = tf.reduce_mean([loss_l1, loss_l2])
 
       loss_wd = tf.reduce_sum(val_model.losses)
       loss = tf.reduce_sum(loss) + loss_wd
