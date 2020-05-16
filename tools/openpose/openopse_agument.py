@@ -1,17 +1,18 @@
-import math
-import random
 import numpy as np
 import cv2
+import math
 
 
 class ImageMeta(object):
   def __init__(self, img, joint_list, in_hw, coco_parts, coco_vecs, sigma):
     super().__init__()
-    self.joint_list = joint_list
-    self.img = img
+    self.joint_list: np.ndarray = joint_list
+    self.joint_list_mask: np.ndarray = np.logical_not(
+        np.all(joint_list == -1000, -1, keepdims=True))
+    self.img: np.ndarray = img
     self.height, self.width = img.shape[:2]
-    self.coco_parts = coco_parts
-    self.coco_vecs = coco_vecs
+    self.coco_parts: np.ndarray = coco_parts
+    self.coco_vecs: np.ndarray = coco_vecs
     self.network_h = in_hw[0]
     self.network_w = in_hw[1]
     self.sigma = sigma
@@ -24,6 +25,44 @@ class ImageMeta(object):
         if point[0] < 0 or point[1] < 0:
           continue
         ImageMeta.put_heatmap(heatmap, idx, point, self.sigma)
+
+    heatmap = heatmap.transpose((1, 2, 0))
+
+    # background
+    heatmap[:, :, -1] = np.clip(1 - np.amax(heatmap, axis=2), 0.0, 1.0)
+
+    if target_hw:
+      heatmap = cv2.resize(heatmap, target_hw[::-1], interpolation=cv2.INTER_LINEAR)
+
+    return heatmap
+
+  def get_heatmap_v(self, target_hw):
+    # NOTE channel first will be faster
+    heatmap = np.zeros((self.coco_parts, self.height, self.width), dtype=np.float32)
+    for (joints, masks) in zip(self.joint_list, self.joint_list_mask):
+      for idx, (point, mask) in enumerate(zip(joints, masks)):
+        if mask:
+          th = 4.6052
+          delta = np.sqrt(th * 2)
+          p0 = np.maximum(0., point - delta * self.sigma).astype('int32')
+          p1 = np.minimum([self.width, self.height], point + delta * self.sigma).astype('int32')
+
+          x = np.arange(p0[0], p1[0])
+          y = np.arange(p0[1], p1[1])
+
+          xv, yv = np.meshgrid(x, y, sparse=False, indexing='xy')
+
+          exp = (((xv - point[0]) ** 2 + (yv - point[1]) ** 2) /
+                 (2.0 * self.sigma * self.sigma))
+
+          boolmask = exp < th
+          yidx = yv[boolmask]
+          xidx = xv[boolmask]
+          exp_valid = exp[boolmask]
+
+          heatmap[idx, yidx, xidx] = np.minimum(
+              np.maximum(heatmap[idx, yidx, xidx],
+                         np.exp(-exp_valid)), 1.0)
 
     heatmap = heatmap.transpose((1, 2, 0))
 
@@ -61,13 +100,56 @@ class ImageMeta(object):
         heatmap[plane_idx][y][x] = max(heatmap[plane_idx][y][x], math.exp(-exp))
         heatmap[plane_idx][y][x] = min(heatmap[plane_idx][y][x], 1.0)
 
+  def get_vectormap_v(self, target_hw):
+    vectormap = np.zeros((self.coco_parts * 2, self.height, self.width), dtype=np.float32)
+    countmap = np.zeros((self.coco_parts, self.height, self.width), dtype=np.int16)
+    threshold = 8.
+    for joints, masks in zip(self.joint_list, self.joint_list_mask):
+      for idx, jidx in enumerate(self.coco_vecs):
+        if np.alltrue(masks[jidx]):
+          center_from, center_to = joints[jidx]
+          # put_vectormap
+          vector = center_to - center_from
+          p0 = np.maximum(0,
+                          (np.minimum(center_from, center_to) - threshold).astype(np.int32))
+          p1 = np.minimum([self.width, self.height],
+                          (np.maximum(center_from, center_to) + threshold).astype(np.int32))
+
+          norm = np.sqrt(np.sum(np.square(vector), axis=-1))
+          if norm == 0:
+            continue
+          vector = vector / norm
+          # p --> x,y
+          x = np.arange(p0[0], p1[0])
+          y = np.arange(p0[1], p1[1])
+          xv, yv = np.meshgrid(x, y, sparse=False, indexing='xy')
+          bec_x = xv - center_from[0]
+          bec_y = yv - center_from[1]
+          dist = np.abs(bec_x * vector[1] - bec_y * vector[0])
+          boolmask = dist <= threshold
+          yidx = yv[boolmask]
+          xidx = xv[boolmask]
+          countmap[idx, yidx, xidx] += 1
+          vectormap[idx * 2 + 0, yidx, xidx] = vector[0]
+          vectormap[idx * 2 + 1, yidx, xidx] = vector[1]
+
+    countmap = np.repeat(countmap, 2, axis=0)
+    boolmask = (countmap > 0)
+    vectormap[boolmask] = vectormap[boolmask] / countmap[boolmask]
+    vectormap = vectormap.transpose((1, 2, 0))
+
+    if target_hw:
+      vectormap = cv2.resize(vectormap, target_hw[::-1], interpolation=cv2.INTER_LINEAR)
+
+    return vectormap
+
   def get_vectormap(self, target_hw):
     vectormap = np.zeros((self.coco_parts * 2, self.height, self.width), dtype=np.float32)
     countmap = np.zeros((self.coco_parts, self.height, self.width), dtype=np.int16)
     for joints in self.joint_list:
       for plane_idx, (j_idx1, j_idx2) in enumerate(self.coco_vecs):
-        j_idx1 -= 1
-        j_idx2 -= 1
+        # j_idx1 -= 1
+        # j_idx2 -= 1
 
         center_from = joints[j_idx1]
         center_to = joints[j_idx2]
@@ -145,31 +227,33 @@ class CocoPart(object):
   REar = 16
   LEar = 17
   Background = 18
+  flip_list = np.array([
+      Nose, Neck, LShoulder, LElbow, LWrist,
+      RShoulder, RElbow, RWrist,
+      LHip, LKnee, LAnkle, RHip, RKnee, RAnkle,
+      LEye, REye, LEar, REar, Background], dtype=np.int32)
 
 
 def pose_random_scale(meta: ImageMeta):
-  scalew = random.uniform(0.8, 1.2)
-  scaleh = random.uniform(0.8, 1.2)
+  scalew = np.random.uniform(0.8, 1.2)
+  scaleh = np.random.uniform(0.8, 1.2)
   neww = int(meta.width * scalew)
   newh = int(meta.height * scaleh)
   dst = cv2.resize(meta.img, (neww, newh), interpolation=cv2.INTER_AREA)
 
   # adjust meta data
-  adjust_joint_list = []
-  for joint in meta.joint_list:
-    adjust_joint = []
-    for point in joint:
-      if point[0] < -100 or point[1] < -100:
-        adjust_joint.append((-1000, -1000))
-        continue
-      # if point[0] <= 0 or point[1] <= 0 or int(point[0] * scalew + 0.5) > neww or int(
-      #                         point[1] * scaleh + 0.5) > newh:
-      #     adjust_joint.append((-1, -1))
-      #     continue
-      adjust_joint.append((int(point[0] * scalew + 0.5), int(point[1] * scaleh + 0.5)))
-    adjust_joint_list.append(adjust_joint)
+  # adjust_joint_list = []
+  # for joint in meta.joint_list:
+  #   adjust_joint = []
+  #   for point in joint:
+  #     if point[0] < -100 or point[1] < -100:
+  #       adjust_joint.append((-1000, -1000))
+  #       continue
+  #     adjust_joint.append((int(point[0] * scalew + 0.5), int(point[1] * scaleh + 0.5)))
+  #   adjust_joint_list.append(adjust_joint)
+  # meta.joint_list = adjust_joint_list
 
-  meta.joint_list = adjust_joint_list
+  meta.joint_list = meta.joint_list * np.array([scalew, scaleh], dtype=np.float32) + 0.5
   meta.width, meta.height = neww, newh
   meta.img = dst
   return meta
@@ -187,7 +271,7 @@ def pose_resize_shortestedge_random(meta: ImageMeta):
   ratio_h = meta.network_h / meta.height
   ratio = min(ratio_w, ratio_h)
   target_size = int(min(meta.width * ratio + 0.5, meta.height * ratio + 0.5))
-  target_size = int(target_size * random.uniform(0.95, 1.6))
+  target_size = int(target_size * np.random.uniform(0.95, 1.6))
   # target_size = int(min(meta.network_w, meta.network_h) * random.uniform(0.7, 1.5))
   return pose_resize_shortestedge(meta, target_size)
 
@@ -210,25 +294,23 @@ def pose_resize_shortestedge(meta, target_size):
     ph = max(0, (meta.network_h - newh) // 2)
     mw = (meta.network_w - neww) % 2
     mh = (meta.network_h - newh) % 2
-    color = random.randint(0, 255)
+    color = np.random.randint(0, 255)
     dst = cv2.copyMakeBorder(dst, ph, ph + mh, pw, pw + mw,
                              cv2.BORDER_CONSTANT, value=(color, 0, 0))
 
   # adjust meta data
-  adjust_joint_list = []
-  for joint in meta.joint_list:
-    adjust_joint = []
-    for point in joint:
-      if point[0] < -100 or point[1] < -100:
-        adjust_joint.append((-1000, -1000))
-        continue
-      # if point[0] <= 0 or point[1] <= 0 or int(point[0]*scale+0.5) > neww or int(point[1]*scale+0.5) > newh:
-      #     adjust_joint.append((-1, -1))
-      #     continue
-      adjust_joint.append((int(point[0] * scale + 0.5) + pw, int(point[1] * scale + 0.5) + ph))
-    adjust_joint_list.append(adjust_joint)
+  # adjust_joint_list = []
+  # for joint in meta.joint_list:
+  #   adjust_joint = []
+  #   for point in joint:
+  #     if point[0] < -100 or point[1] < -100:
+  #       adjust_joint.append((-1000, -1000))
+  #       continue
+  #     adjust_joint.append((int(point[0] * scale + 0.5) + pw, int(point[1] * scale + 0.5) + ph))
+  #   adjust_joint_list.append(adjust_joint)
 
-  meta.joint_list = adjust_joint_list
+  # meta.joint_list = adjust_joint_list
+  meta.joint_list = meta.joint_list * scale + 0.5 + np.array([pw, ph], dtype=np.float32)
   meta.width, meta.height = neww + pw * 2, newh + ph * 2
   meta.img = dst
   return meta
@@ -246,8 +328,8 @@ def pose_crop_random(meta: ImageMeta):
   target_size = (meta.network_w, meta.network_h)
 
   for _ in range(50):
-    x = random.randrange(0, meta.width - target_size[0]) if meta.width > target_size[0] else 0
-    y = random.randrange(0, meta.height - target_size[1]) if meta.height > target_size[1] else 0
+    x = np.random.randint(0, meta.width - target_size[0]) if meta.width > target_size[0] else 0
+    y = np.random.randint(0, meta.height - target_size[1]) if meta.height > target_size[1] else 0
 
     # check whether any face is inside the box to generate a reasonably-balanced datasets
     for joint in meta.joint_list:
@@ -265,56 +347,52 @@ def pose_crop(meta, x, y, w, h):
   resized = img[y:y + target_size[1], x:x + target_size[0], :]
 
   # adjust meta data
-  adjust_joint_list = []
-  for joint in meta.joint_list:
-    adjust_joint = []
-    for point in joint:
-      if point[0] < -100 or point[1] < -100:
-        adjust_joint.append((-1000, -1000))
-        continue
-      # if point[0] <= 0 or point[1] <= 0:
-      #     adjust_joint.append((-1000, -1000))
-      #     continue
-      new_x, new_y = point[0] - x, point[1] - y
-      # if new_x <= 0 or new_y <= 0 or new_x > target_size[0] or new_y > target_size[1]:
-      #     adjust_joint.append((-1, -1))
-      #     continue
-      adjust_joint.append((new_x, new_y))
-    adjust_joint_list.append(adjust_joint)
+  # adjust_joint_list = []
+  # for joint in meta.joint_list:
+  #   adjust_joint = []
+  #   for point in joint:
+  #     if point[0] < -100 or point[1] < -100:
+  #       adjust_joint.append((-1000, -1000))
+  #       continue
+  #     new_x, new_y = point[0] - x, point[1] - y
+  #     adjust_joint.append((new_x, new_y))
+  #   adjust_joint_list.append(adjust_joint)
 
-  meta.joint_list = adjust_joint_list
+  meta.joint_list = meta.joint_list - np.array([x, y], dtype=np.float32)
   meta.width, meta.height = target_size
   meta.img = resized
   return meta
 
 
 def pose_flip(meta: ImageMeta):
-  r = random.uniform(0, 1.0)
+  r = np.random.uniform(0, 1.0)
   if r > 0.5:
     return meta
   img = meta.img
   img = cv2.flip(img, 1)
 
   # flip meta
-  flip_list = [CocoPart.Nose, CocoPart.Neck, CocoPart.LShoulder, CocoPart.LElbow, CocoPart.LWrist,
-               CocoPart.RShoulder, CocoPart.RElbow, CocoPart.RWrist,
-               CocoPart.LHip, CocoPart.LKnee, CocoPart.LAnkle, CocoPart.RHip, CocoPart.RKnee, CocoPart.RAnkle,
-               CocoPart.LEye, CocoPart.REye, CocoPart.LEar, CocoPart.REar, CocoPart.Background]
-  adjust_joint_list = []
-  for joint in meta.joint_list:
-    adjust_joint = []
-    for cocopart in flip_list:
-      point = joint[cocopart]
-      if point[0] < -100 or point[1] < -100:
-        adjust_joint.append((-1000, -1000))
-        continue
-      # if point[0] <= 0 or point[1] <= 0:
-      #     adjust_joint.append((-1, -1))
-      #     continue
-      adjust_joint.append((meta.width - point[0], point[1]))
-    adjust_joint_list.append(adjust_joint)
 
-  meta.joint_list = adjust_joint_list
+  # adjust_joint_list = []
+  # for joint in meta.joint_list:
+  #   adjust_joint = []
+  #   for cocopart in flip_list:
+  #     point = joint[cocopart]
+  #     if point[0] < -100 or point[1] < -100:
+  #       adjust_joint.append((-1000, -1000))
+  #       continue
+  #     # if point[0] <= 0 or point[1] <= 0:
+  #     #     adjust_joint.append((-1, -1))
+  #     #     continue
+  #     adjust_joint.append((meta.width - point[0], point[1]))
+  #   adjust_joint_list.append(adjust_joint)
+  if meta.joint_list.shape[0] > 0:
+    adjust_joint_list = np.array([joint[CocoPart.flip_list]
+                                  for joint in meta.joint_list], dtype=np.float32)
+    adjust_joint_list[..., 0] = meta.width - adjust_joint_list[..., 0]
+    meta.joint_list = adjust_joint_list
+    meta.joint_list_mask = np.array([joint[CocoPart.flip_list]
+                                     for joint in meta.joint_list_mask], dtype=np.float32)
   meta.img = img
   return meta
 
