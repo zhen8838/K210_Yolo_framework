@@ -8,9 +8,11 @@ from tensorflow.python.framework import tensor_shape
 from tensorflow.python.ops import nn_ops
 from tensorflow.python.ops import array_ops
 from tensorflow.python.keras.utils import conv_utils, tf_utils
-from tensorflow.python.ops import state_ops
+from tensorflow.python.ops import gen_math_ops, sparse_ops, standard_ops, state_ops
 from tensorflow.python.framework import ops
 from tensorflow.python.keras.layers.convolutional import Conv
+from tensorflow.python.keras.layers.core import Dense
+from tensorflow.python.eager import context
 
 
 class InstanceNormalization(kl.Layer):
@@ -36,7 +38,7 @@ class InstanceNormalization(kl.Layer):
   def call(self, x):
     mean, variance = tf.nn.moments(x, axes=[1, 2], keepdims=True)
     inv = tf.math.rsqrt(variance + self.epsilon)
-    normalized = (x-mean) * inv
+    normalized = (x - mean) * inv
     return self.scale * normalized + self.offset
 
   def get_config(self):
@@ -45,6 +47,84 @@ class InstanceNormalization(kl.Layer):
     }
     base_config = super().get_config()
     return dict(list(base_config.items()) + list(config.items()))
+
+
+class DenseSpectralNormal(Dense):
+  def build(self, input_shape):
+    super().build(input_shape)
+    try:
+        # Disable variable partitioning when creating the variable
+      if hasattr(self, '_scope') and self._scope:
+        partitioner = self._scope.partitioner
+        self._scope.set_partitioner(None)
+      else:
+        partitioner = None
+
+      self.u = self.add_weight(
+          name='sn_u',
+          shape=(1, tf.reduce_prod(self.kernel.shape[:-1])),
+          dtype=self.dtype,
+          initializer=tf.keras.initializers.ones,
+          synchronization=tf.VariableSynchronization.ON_READ,
+          trainable=False,
+          aggregation=tf.VariableAggregation.MEAN)
+    finally:
+      if partitioner:
+        self._scope.set_partitioner(partitioner)
+
+  def call(self, inputs, training=None):
+    if training is None:
+      training = K.learning_phase()
+
+    # Update SpectralNormalization variable
+    u, v, w = self.calc_u(self.kernel)
+
+    def u_update():
+      # TODO u_update maybe need `training control`
+      return tf_utils.smart_cond(training, lambda: self._assign_new_value(
+          self.u, u), lambda: array_ops.identity(u))
+
+    # NOTE add update must in call function scope
+    self.add_update(u_update)
+
+    sigma = self.calc_sigma(u, v, w)
+    new_kernel = tf_utils.smart_cond(
+        training, lambda: self.kernel / sigma, lambda: self.kernel)
+
+    rank = len(inputs.shape)
+    if rank > 2:
+      # Broadcasting is required for the inputs.
+      outputs = standard_ops.tensordot(inputs, self.kernel, [[rank - 1], [0]])
+      # Reshape the output back to the original ndim of the input.
+      if not context.executing_eagerly():
+        shape = inputs.shape.as_list()
+        output_shape = shape[:-1] + [self.units]
+        outputs.set_shape(output_shape)
+    else:
+      inputs = tf.cast(inputs, self._compute_dtype)
+      if K.is_sparse(inputs):
+        outputs = sparse_ops.sparse_tensor_dense_matmul(inputs, new_kernel)
+      else:
+        outputs = gen_math_ops.mat_mul(inputs, new_kernel)
+    if self.use_bias:
+      outputs = nn.bias_add(outputs, self.bias)
+    if self.activation is not None:
+      return self.activation(outputs)  # pylint: disable=not-callable
+    return outputs
+
+  def calc_u(self, w):
+    w = K.reshape(w, (-1, w.shape[-1]))
+    v = K.l2_normalize(K.dot(self.u, w))
+    u = K.l2_normalize(K.dot(v, K.transpose(w)))
+    return u, v, w
+
+  def calc_sigma(self, u, v, w):
+    return K.sum(K.dot(K.dot(u, w), K.transpose(v)))
+
+  def _assign_new_value(self, variable, value):
+    with K.name_scope('AssignNewValue') as scope:
+      with ops.colocate_with(variable):
+        return state_ops.assign(variable, value, name=scope)
 
 
 class ConvSpectralNormal(Conv):

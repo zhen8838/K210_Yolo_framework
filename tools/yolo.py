@@ -247,7 +247,8 @@ class YOLOHelper(BaseHelper):
     def __init__(self, image_ann: str, class_num: int, anchors: str,
                  in_hw: tuple, out_hw: tuple,
                  resize_method: str = 'origin',
-                 augment_method: str = 'origin'):
+                 augment_method: str = 'origin',
+                 num_parallel_calls:int=-1):
         """ yolo helper
 
         Parameters
@@ -278,6 +279,10 @@ class YOLOHelper(BaseHelper):
 
             train image augment method, ['origin','iaa']
 
+        num_parallel_calls : int, optional
+
+            tf.dataset.map(num_parallel_calls)
+
         """
         self.train_dataset: tf.data.Dataset = None
         self.val_dataset: tf.data.Dataset = None
@@ -302,6 +307,7 @@ class YOLOHelper(BaseHelper):
             self.test_total_data: int = img_ann_list['test_num']
         self.resize_method = resize_method
         self.augment_method = augment_method
+        self.num_parallel_calls = num_parallel_calls
         self.org_in_hw = np.array(in_hw)
         self.org_out_hw = np.array(out_hw)
         assert self.org_in_hw.ndim == 1
@@ -881,7 +887,7 @@ class YOLOHelper(BaseHelper):
             dataset = (tf.data.TFRecordDataset(image_ann_list, num_parallel_reads=4).
                        shuffle(batch_size * 500).
                        repeat().
-                       map(_parser_wrapper, -1).
+                       map(_parser_wrapper, self.num_parallel_calls).
                        batch(batch_size, True).
                        prefetch(-1))
         else:
@@ -895,7 +901,9 @@ class YOLOHelper(BaseHelper):
                        map(_parser_wrapper, -1).
                        batch(batch_size, True).
                        prefetch(-1))
-
+        options = tf.data.Options()
+        options.experimental_deterministic = False
+        dataset = dataset.with_options(options)
         return dataset
 
     def draw_image(self, img: np.ndarray, ann: np.ndarray, is_show=True, scores=None) -> np.ndarray:
@@ -1273,6 +1281,16 @@ class YOLOIouLoss(YOLOLoss):
         self.xy_offset: ResourceVariable = self.h.xy_offsets[self.layer]
         self.op_list = []
         self.lookups: Iterable[Tuple[ResourceVariable, AnyStr]] = []
+        if self.verbose > 1:
+            with tf.compat.v1.variable_scope(f'lookups_{self.layer}',
+                                            reuse=tf.compat.v1.AUTO_REUSE):
+                names = ['bbox', 'obj', 'noobj', 'cls']
+                self.lookups.extend([
+                    (tf.compat.v1.get_variable(name, (), tf.float32,
+                                                tf.zeros_initializer(),
+                                                trainable=False),
+                        name)
+                    for name in names])
 
     def call(self, y_true: tf.Tensor, y_pred: tf.Tensor):
         """ reshape y pred """
@@ -1337,7 +1355,15 @@ class YOLOIouLoss(YOLOLoss):
                 labels=true_cls, logits=pred_cls), [1, 2, 3, 4])
 
         """ sum loss """
-        total_loss = obj_loss + noobj_loss + cls_loss + bbox_loss
+        if self.verbose > 1:
+            lknm = len(self.lookups)
+            self.op_list.extend([self.lookups[-4][0].assign(tf.reduce_mean(bbox_loss)),
+                                 self.lookups[-3][0].assign(tf.reduce_mean(obj_loss)),
+                                 self.lookups[-2][0].assign(tf.reduce_mean(noobj_loss)),
+                                 self.lookups[-1][0].assign(tf.reduce_mean(cls_loss))])
+
+        with tf.control_dependencies(self.op_list):
+            total_loss = obj_loss + noobj_loss + cls_loss + bbox_loss
         return total_loss
 
 

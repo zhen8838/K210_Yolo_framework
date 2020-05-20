@@ -82,17 +82,17 @@ train:
     beta_2: 0.999
     amsgrad: false
   callbacks:
-    - name: EarlyStopping
-      kwarg:
-        monitor: val/loss
-        min_delta: 0
-        patience: 10
-        verbose: 0
-        mode: min
-        baseline: null
-        restore_best_weights: false
+    # - name: EarlyStopping
+    #   kwarg:
+    #     monitor: val/loss
+    #     min_delta: 0
+    #     patience: 10
+    #     verbose: 0
+    #     mode: min
+    #     baseline: null
+    #     restore_best_weights: false
     - name: StepLR
       kwarg:
         outside_optimizer: optimizer
-        steps: [10, 80, 120]
+        steps: [10, 30, 100]
         rates: [0.0001, 0.0008, 0.0004]

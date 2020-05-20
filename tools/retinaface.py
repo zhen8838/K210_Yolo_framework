@@ -115,7 +115,8 @@ class RetinaFaceHelper(BaseHelper):
                anchor_steps: list,
                pos_thresh: float,
                variances: float,
-               nlandmark: int = 5):
+               nlandmark: int = 5,
+               num_parallel_calls: int = -1):
     self.train_dataset: tf.data.Dataset = None
     self.val_dataset: tf.data.Dataset = None
     self.test_dataset: tf.data.Dataset = None
@@ -140,6 +141,7 @@ class RetinaFaceHelper(BaseHelper):
     self.val_total_data: int = len(self.val_list)
     self.anchor_widths = anchor_widths
     self.anchor_steps = anchor_steps
+    self.num_parallel_calls = num_parallel_calls
     self.anchors: _EagerTensorBase = tf.convert_to_tensor(
         self._get_anchors(in_hw, anchor_widths, anchor_steps), tf.float32)
     self.corner_anchors: _EagerTensorBase = tf_center_to_corner(
@@ -448,15 +450,20 @@ class RetinaFaceHelper(BaseHelper):
       return img, label
 
     if is_training:
-      dataset = (
-          tf.data.Dataset.from_tensor_slices(tf.range(
-              len(image_ann_list))).shuffle(batch_size * 500).repeat().map(
-                  _wrapper, -1).batch(batch_size, True).prefetch(-1))
+      dataset = (tf.data.Dataset.from_tensor_slices(tf.range(len(image_ann_list))).
+                 shuffle(batch_size * 500).
+                 repeat().
+                 map(_wrapper, self.num_parallel_calls).
+                 batch(batch_size, True).
+                 prefetch(-1))
     else:
-      dataset = (
-          tf.data.Dataset.from_tensor_slices(tf.range(len(image_ann_list))).map(
-              _wrapper, -1).batch(batch_size, True).prefetch(-1))
-
+      dataset = (tf.data.Dataset.from_tensor_slices(tf.range(len(image_ann_list))).
+                 map(_wrapper, -1).
+                 batch(batch_size, True).
+                 prefetch(-1))
+    options = tf.data.Options()
+    options.experimental_deterministic = False
+    dataset = dataset.with_options(options)
     return dataset
 
 
