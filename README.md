@@ -265,6 +265,25 @@ python3 ./keras_inference.py log/xxxxx/infer_model_100.h5 xxxxx/images --results
 ```
 
 
+# Face Landmark 68 Points
+
+## Prepare dataset
+
+Download [WFLW](https://wywu.github.io/projects/LAB/WFLW.html) dataset and [300W](https://ibug.doc.ic.ac.uk/resources/300-W/)
+
+```sh
+python scripts/make_pfld_v2_list.py --w300_img_dir xxx/300W --wflw_img_dir xxx/WFLW_images --wflw_ann_dir xxx/WFLW_annotations --output_file data/pfld_68_img_ann_list.npy
+```
+
+## Train
+
+1.  start train
+
+```sh
+make train CFG=config/default_pfldv2.yml
+```
+
+
 
 # FACE Recognition
 

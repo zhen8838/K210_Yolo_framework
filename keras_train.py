@@ -122,7 +122,7 @@ def main(config_file, new_cfg, mode, model, train, prune, quantize):
     l = [DummyMetric(var, name) for (var, name) in loss_obj.lookups]
     metrics.append(l)
 
-  elif model.name == 'pfld':
+  elif 'pfld' in model.name:
     loss_fn = loss_register[model.loss]  # type:PFLDLoss
     losses = [loss_fn(h=h, **model.loss_kwarg)]
     # NOTE share the variable avoid more repeated calculation
@@ -237,18 +237,18 @@ def main(config_file, new_cfg, mode, model, train, prune, quantize):
 
   if prune.is_prune == True:
     final_model = tfmot_sparsity.strip_pruning(train_model)
-    prune_ckpt = log_dir / ('prune'+model_name)
+    prune_ckpt = log_dir / ('prune' + model_name)
     k.models.save_model(train_model, str(prune_ckpt), include_optimizer=False)
     print()
     print(INFO, f' Save Pruned Model as {str(prune_ckpt)}')
   elif quantize.is_quantize == True:
-    train_ckpt = log_dir / ('quantize_'+model_name)
+    train_ckpt = log_dir / ('quantize_' + model_name)
     k.models.save_model(train_model, str(train_ckpt))
     print()
     print(INFO, f' Save Train Model as {str(train_ckpt)}')
 
     infer_model_name = f'infer_model_{initial_epoch+int(train_model.optimizer.iterations / train_epoch_step)}.h5'
-    infer_ckpt = log_dir / ('quantize_'+infer_model_name)
+    infer_ckpt = log_dir / ('quantize_' + infer_model_name)
     k.models.save_model(infer_model, str(infer_ckpt))
     print(INFO, f' Save Infer Model as {str(infer_ckpt)}')
   else:

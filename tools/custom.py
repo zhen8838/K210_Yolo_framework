@@ -112,10 +112,18 @@ class PFLDMetric(Metric):
                                                2))), [2])), 1)
 
       # use interocular distance calc landmark error
+      if self.landmark_num == 98:
+        left_eye = 60
+        right_eye = 72
+      else:
+        left_eye = 36
+        right_eye = 45
       interocular_distance = sqrt(
           reduce_sum(
-              square((true_landmarks[:, 120:122] - true_landmarks[:, 144:146])),
+              square((true_landmarks[:, left_eye * 2:(left_eye + 1) * 2] -
+                      true_landmarks[:, right_eye * 2:(right_eye + 1) * 2])),
               1))
+
       error_norm = error_all_points / (interocular_distance * self.landmark_num)
 
       self.landmark_error.assign_add(reduce_sum(error_norm))
@@ -294,14 +302,14 @@ class ScheduleLR(LRCallback):
 
       When warmup is used, LR will increase linearly from 0 to the peak value of warmup epochs. 
       After that, LR is reduced once per decade according to the decade rate.
-      
+
       eg. ScheduleLR(
             base_lr=0.1,
             use_warmup=True,
             warmup_epochs=5,
             decay_rate=0.5,
             decay_epochs=5)
-            
+
       lr will be :
            0.1   |         _____
                  |       /      |
@@ -309,7 +317,7 @@ class ScheduleLR(LRCallback):
            0.25  |   /                |_____
             0    | /
           epochs : 0       5     10    10
-    
+
     Args:
         base_lr (float): base learning rate
         use_warmup (bool): if `True` will use warmup
@@ -427,7 +435,7 @@ def focal_sigmoid_cross_entropy_with_logits(labels: tf.Tensor,
                                             gamma: float = 2.0,
                                             alpha: float = 0.25):
   pred_sigmoid = tf.nn.sigmoid(logits)
-  pt = (1-pred_sigmoid) * labels + pred_sigmoid * (1-labels)
-  focal_weight = (alpha*labels + (1-alpha) * (1-labels)) * tf.math.pow(pt, gamma)
+  pt = (1 - pred_sigmoid) * labels + pred_sigmoid * (1 - labels)
+  focal_weight = (alpha * labels + (1 - alpha) * (1 - labels)) * tf.math.pow(pt, gamma)
   loss = tf.nn.sigmoid_cross_entropy_with_logits(labels, logits) * focal_weight
   return loss

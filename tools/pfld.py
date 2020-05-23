@@ -204,8 +204,9 @@ def calculate_pitch_yaw_roll(landmarks_2D, cam_w=256, cam_h=256, radians=False):
     pose_mat = cv2.hconcat((rmat, tvec))
 
     _, _, _, _, _, _, euler_angles = cv2.decomposeProjectionMatrix(pose_mat)
-    pitch, yaw, roll = map(lambda temp: temp[0], euler_angles)
-    return pitch, yaw, roll
+    
+    # pitch, yaw, roll = map(lambda temp: temp[0], euler_angles)
+    return euler_angles.ravel().astype(np.float32) # pitch, yaw, roll
 
 
 def rotationMatrixToEulerAngles(R):

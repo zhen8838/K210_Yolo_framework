@@ -20,6 +20,7 @@ from tools.yolo import (YOLOHelper, YOLOLoss, yolo_infer, yolo_eval,
                         MultiScaleTrain, YOLOIouLoss, YOLOMap)
 from tools.yoloalign import YOLOAlignHelper, YOLOAlignLoss, yoloalgin_infer
 from tools.pfld import PFLDHelper, PFLDLoss, pfld_infer
+from tools.pfld_v2 import PFLDV2Helper
 from tools.ctdet import CtdetHelper, CtdetLoss, ctdet_infer
 from tools.lffd import LFFDHelper, LFFDLoss
 from tools.ssd import SSDHelper, SSDLoss, ssd_infer
@@ -185,6 +186,7 @@ helper_register = {
     'YOLOHelper': YOLOHelper,
     'YOLOAlignHelper': YOLOAlignHelper,
     'PFLDHelper': PFLDHelper,
+    'PFLDV2Helper': PFLDV2Helper,
     'CtdetHelper': CtdetHelper,
     'FcaeRecHelper': FcaeRecHelper,
     'LFFDHelper': LFFDHelper,
