@@ -1,0 +1,91 @@
+mode: train
+model:
+  name: pfldv2
+  helper: PFLDV2Helper
+  helper_kwarg:
+    image_ann: data/pfld_68_img_ann_list.npy
+    in_hw:
+      - 112
+      - 112
+    landmark_num: 68
+    attribute_num: 6
+    validation_split: 0.3
+    num_parallel_calls: -1
+  network: pfld
+  network_kwarg:
+    input_shape:
+    - 112
+    - 112
+    - 3
+    landmark_num: 68
+    alpha: 1.
+    weight_decay: 0.00005
+  loss: PFLDLoss
+  loss_kwarg:
+    landmark_weight: 1.
+    eular_weight: 1.
+train:
+  graph_optimizer: true
+  graph_optimizer_kwarg: 
+    layout_optimizer: true
+    remapping: true
+    shape_optimization: true
+    loop_optimization: true
+    constant_folding: true
+    function_optimization: true
+    scoped_allocator_optimization: true
+  augmenter: true
+  batch_size: 32
+  pre_ckpt: null
+  rand_seed: 10101
+  epochs: 150
+  log_dir: log
+  sub_log_dir: default_pfldv2_exp
+  debug: false
+  verbose: 1
+  vali_step_factor: 0.5
+  optimizer: Adam
+  optimizer_kwarg:
+    learning_rate: 0.001
+    beta_1: 0.9
+    beta_2: 0.999
+    amsgrad: false
+  Lookahead: true
+  Lookahead_kwarg:
+    k: 5
+    alpha: 0.5
+  callbacks:
+    - name: EarlyStopping
+      kwarg:
+        monitor: val_loss
+        min_delta: 0
+        patience: 20
+        verbose: 0
+        mode: auto
+        baseline: null
+        restore_best_weights: false
+    - name: ModelCheckpoint
+      kwarg:
+        monitor: val_loss
+        verbose: 0
+        save_best_only: true
+        save_weights_only: false
+        mode: auto
+        save_freq: epoch
+        load_weights_on_restart: false
+    - name: TerminateOnNaN
+      kwarg: null
+    - name: StepLR
+      kwarg:
+        steps: [ 10  ,  20   ]
+        rates: [0.001, 0.0001]
+prune:
+  is_prune: false
+  init_sparsity: 0.5
+  final_sparsity: 0.9
+  end_epoch: 5
+  frequency: 100
+inference:
+  infer_fn: pfld_infer
+  infer_fn_kwarg:
+    radius: 1
