@@ -281,7 +281,7 @@ class AnimeGanInitLoop(GanBaseTrainingLoop):
       metrics.g_loss.update_state(scaled_loss)
 
     for _ in tf.range(num_steps_to_run):
-      self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))
+      self.run_step_fn(step_fn, args=(next(iterator),))
 
   def local_variables_init(self):
     inputs = tf.keras.Input([256, 256, 3])
@@ -551,7 +551,7 @@ class AnimeGanLoop(AnimeGanInitLoop):
       self.metrics.debug.d_gray_loss.update_state(gray_loss)
 
     for _ in tf.range(num_steps_to_run):
-      self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))
+      self.run_step_fn(step_fn, args=(next(iterator),))
 
   def val_step(self, dataset, metrics):
     for inputs in dataset:

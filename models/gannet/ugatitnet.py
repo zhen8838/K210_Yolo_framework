@@ -3,7 +3,11 @@ k = tf.keras
 K = tf.keras.backend
 kl = tf.keras.layers
 from models.darknet import compose
-from models.gannet.common import ReflectionPadding2D, InstanceNormalization, Conv2DSpectralNormal, DenseSpectralNormal
+from models.gannet.common import (ReflectionPadding2D,
+                                  InstanceNormalization,
+                                  Conv2DSpectralNormal,
+                                  DenseSpectralNormal,
+                                  ConstraintMinMax)
 
 
 class ResnetGenerator(object):
@@ -315,12 +319,12 @@ class ResnetSoftAdaLINBlock(object):
   def __call__(self, x, content_features, style_features):
     out = self.pad1(x)
     out = self.conv1(out)
-    out = self.norm1(out, content_features, style_features)
+    out = self.norm1([out, content_features, style_features])
     out = self.relu1(out)
 
     out = self.pad2(out)
     out = self.conv2(out)
-    out = self.norm2(out, content_features, style_features)
+    out = self.norm2([out, content_features, style_features])
     return kl.Add()([out, x])
 
 
@@ -349,21 +353,25 @@ class ResnetAdaLINBlock(object):
     return kl.Add()([out, x])
 
 
-class SoftAdaLIN(object):
+class SoftAdaLIN(k.layers.Layer):
 
-  def __init__(self, num_features, eps=1e-5):
+  def __init__(self, num_features, w_min=0, w_max=1.0, eps=1e-5):
     super(SoftAdaLIN, self).__init__()
     self.num_features = num_features
     self.norm = adaLIN(num_features, eps)
 
-    self.w_gamma = tf.Variable(name='w_gamma',
-                               dtype=tf.float32,
-                               trainable=True,
-                               initial_value=tf.zeros((num_features)))
-    self.w_beta = tf.Variable(name='w_beta',
-                              dtype=tf.float32,
-                              trainable=True,
-                              initial_value=tf.zeros((num_features)))
+    self.w_gamma = self.add_weight(
+        name='w_gamma',
+        dtype=tf.float32,
+        trainable=True,
+        shape=[num_features],
+        initializer=tf.zeros_initializer())
+    self.w_beta = self.add_weight(
+        name='w_beta',
+        dtype=tf.float32,
+        trainable=True,
+        shape=[num_features],
+        initializer=tf.zeros_initializer())
 
     self.c_gamma = compose(
         kl.Dense(num_features),
@@ -376,32 +384,34 @@ class SoftAdaLIN(object):
     self.s_gamma = kl.Dense(num_features)
     self.s_beta = kl.Dense(num_features)
 
-  def __call__(self, x, content_features, style_features):
+  def call(self, inputs, **kwargs):
+    x, content_features, style_features = inputs
     content_gamma, content_beta = self.c_gamma(content_features), self.c_beta(
         content_features)
     style_gamma, style_beta = self.s_gamma(style_features), self.s_beta(
         style_features)
-    # print(style_gamma,self.w_gamma)
-    # w_gamma, w_beta = self.w_gamma.expand(x.shape[0],
-    #                                       -1), self.w_beta.expand(x.shape[0], -1)
+
     soft_gamma = (1. - self.w_gamma) * style_gamma + self.w_gamma * content_gamma
     soft_beta = (1. - self.w_beta) * style_beta + self.w_beta * content_beta
 
-    out = self.norm(x, soft_gamma, soft_beta)
+    out = self.norm([x, soft_gamma, soft_beta])
     return out
 
 
-class adaLIN(object):
+class adaLIN(k.layers.Layer):
 
-  def __init__(self, num_features, eps=1e-5):
+  def __init__(self, num_features, rho_min=0, rho_max=1.0, eps=1e-5):
     super(adaLIN, self).__init__()
     self.eps = eps
-    self.rho = tf.Variable(name='rho',
-                           dtype=tf.float32,
-                           trainable=True,
-                           initial_value=tf.ones((num_features)) * 0.9)
+    self.rho = self.add_weight(name='rho',
+                               dtype=tf.float32,
+                               trainable=True,
+                               shape=[num_features],
+                               initializer=k.initializers.Constant(0.9),
+                               constraint=ConstraintMinMax(rho_min, rho_max))
 
-  def __call__(self, inputs, gamma, beta):
+  def call(self, inputs, **kwargs):
+    inputs, gamma, beta = inputs
     in_mean, in_var = K.mean(inputs, axis=[1, 2], keepdims=True), K.var(
         inputs, axis=[1, 2], keepdims=True)
     out_in = (inputs - in_mean) / K.sqrt(in_var + self.eps)
@@ -416,35 +426,35 @@ class adaLIN(object):
     return out
 
 
-class LIN(object):
+class LIN(k.layers.Layer):
 
-  def __init__(self, num_features, eps=1e-5):
+  def __init__(self, num_features, rho_min=0, rho_max=1.0, eps=1e-5):
     super(LIN, self).__init__()
     self.eps = eps
-    self.rho = tf.Variable(name='rho',
-                           dtype=tf.float32,
-                           trainable=True,
-                           initial_value=tf.zeros((num_features)))
-    self.gamma = tf.Variable(name='gamma',
-                             dtype=tf.float32,
-                             trainable=True,
-                             initial_value=tf.ones((num_features)))
-    self.beta = tf.Variable(name='beta',
-                            dtype=tf.float32,
-                            trainable=True,
-                            initial_value=tf.zeros((num_features)))
+    self.rho = self.add_weight(name='rho',
+                               dtype=tf.float32,
+                               trainable=True,
+                               shape=[num_features],
+                               initializer=k.initializers.Constant(0.),
+                               constraint=ConstraintMinMax(rho_min, rho_max))
+    self.gamma = self.add_weight(name='gamma',
+                                 dtype=tf.float32,
+                                 trainable=True,
+                                 shape=[num_features],
+                                 initializer=k.initializers.Ones())
+    self.beta = self.add_weight(name='beta',
+                                dtype=tf.float32,
+                                trainable=True,
+                                shape=[num_features],
+                                initializer=k.initializers.Zeros())
 
-  def __call__(self, inputs):
+  def call(self, inputs, **kwargs):
     in_mean, in_var = K.mean(inputs, axis=[1, 2], keepdims=True), K.var(
         inputs, axis=[1, 2], keepdims=True)
     out_in = (inputs - in_mean) / K.sqrt(in_var + self.eps)
     ln_mean, ln_var = K.mean(inputs, axis=[1, 2, 3], keepdims=True), K.var(
         inputs, axis=[1, 2, 3], keepdims=True)
     out_ln = (inputs - ln_mean) / K.sqrt(ln_var + self.eps)
-    # out = tf.tile(self.rho, (inputs.shape[0], 1, 1, 1)) * out_in + \
-    #     (1 - tf.tile(self.rho, (inputs.shape[0], 1, 1, 1))) * out_ln
-    # out = out * tf.tile(self.gamma, (inputs.shape[0], 1, 1, 1)) + \
-    #     tf.tile(self.beta, (inputs.shape[0], 1, 1, 1))
     out = self.rho * out_in + (1 - self.rho) * out_ln
     out = out * self.gamma + self.beta
 
@@ -514,34 +524,3 @@ class Discriminator(object):
     out = self.conv(x)
 
     return out, cam_logit, heatmap
-
-
-class RhoClipper(object):
-  def __init__(self, min, max):
-    self.clip_min = min
-    self.clip_max = max
-    assert min < max
-
-  def __call__(self, module):
-    if hasattr(module, 'rho'):
-      w = module.rho.data
-      w = w.clamp(self.clip_min, self.clip_max)
-      module.rho.data = w
-
-
-class WClipper(object):
-  def __init__(self, min, max):
-    self.clip_min = min
-    self.clip_max = max
-    assert min < max
-
-  def __call__(self, module):
-    if hasattr(module, 'w_gamma'):
-      w = module.w_gamma.data
-      w = w.clamp(self.clip_min, self.clip_max)
-      module.w_gamma.data = w
-
-    if hasattr(module, 'w_beta'):
-      w = module.w_beta.data
-      w = w.clamp(self.clip_min, self.clip_max)
-      module.w_beta.data = w

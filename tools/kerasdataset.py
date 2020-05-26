@@ -450,7 +450,7 @@ class FixMatchMixUpSslLoop(BaseTrainingLoop):
       metrics.acc.update_state(sup_label, logit_sup)
 
     for _ in tf.range(num_steps_to_run):
-      self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))
+      self.run_step_fn(step_fn, args=(next(iterator),))
 
   @tf.function
   def val_step(self, dataset, metrics):
@@ -467,7 +467,7 @@ class FixMatchMixUpSslLoop(BaseTrainingLoop):
       metrics.acc.update_state(labels, logits)
 
     for inputs in dataset:
-      self.strategy.experimental_run_v2(step_fn, args=(inputs,))
+      self.run_step_fn(step_fn, args=(inputs,))
 
 
 class UDASslLoop(BaseTrainingLoop):
@@ -631,7 +631,7 @@ class UDASslLoop(BaseTrainingLoop):
       metrics.acc.update_state(sup_label, logit_sup)
 
     for _ in tf.range(num_steps_to_run):
-      self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))
+      self.run_step_fn(step_fn, args=(next(iterator),))
 
   @tf.function
   def val_step(self, dataset, metrics):
@@ -648,7 +648,7 @@ class UDASslLoop(BaseTrainingLoop):
       metrics.acc.update_state(labels, logits)
 
     for inputs in dataset:
-      self.strategy.experimental_run_v2(step_fn, args=(inputs,))
+      self.run_step_fn(step_fn, args=(inputs,))
 
 
 class PMovingAverage(object):
@@ -916,7 +916,7 @@ class MixMatchSslLoop(BaseTrainingLoop):
       metrics.acc.update_state(lx, tf.nn.softmax(logits_x))
 
     for _ in tf.range(num_steps_to_run):
-      self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))
+      self.run_step_fn(step_fn, args=(next(iterator),))
 
   @tf.function
   def val_step(self, dataset, metrics):
@@ -933,7 +933,7 @@ class MixMatchSslLoop(BaseTrainingLoop):
       metrics.acc.update_state(labels, logits)
 
     for inputs in dataset:
-      self.strategy.experimental_run_v2(step_fn, args=(inputs,))
+      self.run_step_fn(step_fn, args=(inputs,))
 
 
 class InfoMaxLoop(BaseTrainingLoop):
@@ -1058,7 +1058,7 @@ class InfoMaxLoop(BaseTrainingLoop):
       metrics.l_loss.update_state(unsup_zf_loss)
 
     for _ in tf.range(num_steps_to_run):
-      self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))
+      self.run_step_fn(step_fn, args=(next(iterator),))
 
   @staticmethod
   def sample_knn(zs: np.ndarray, img_list: np.ndarray):
@@ -1218,7 +1218,7 @@ class InfoMaxSslV1Loop(InfoMaxLoop):
       metrics.acc.update_state(sup_label, sup_logits)
 
     for _ in tf.range(num_steps_to_run):
-      self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))
+      self.run_step_fn(step_fn, args=(next(iterator),))
 
   @tf.function
   def val_step(self, dataset, metrics):
@@ -1235,7 +1235,7 @@ class InfoMaxSslV1Loop(InfoMaxLoop):
       metrics.acc.update_state(labels, logits)
 
     for inputs in dataset:
-      self.strategy.experimental_run_v2(step_fn, args=(inputs,))
+      self.run_step_fn(step_fn, args=(inputs,))
 
 
 class InfoMaxSslV2Loop(InfoMaxSslV1Loop):
@@ -1357,4 +1357,4 @@ class InfoMaxSslV2Loop(InfoMaxSslV1Loop):
       metrics.acc.update_state(label, logits)
 
     for _ in tf.range(num_steps_to_run):
-      self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))
+      self.run_step_fn(step_fn, args=(next(iterator),))

@@ -345,7 +345,7 @@ class OpenPoseLoop(BaseTrainingLoop):
       metrics.loss_lastlayer_heat.update_state(loss_ll_heat)
 
     for _ in tf.range(num_steps_to_run):
-      self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))
+      self.run_step_fn(step_fn, args=(next(iterator),))
 
   @tf.function
   def val_step(self, dataset, metrics):
@@ -375,4 +375,4 @@ class OpenPoseLoop(BaseTrainingLoop):
       metrics.loss_lastlayer_heat.update_state(loss_ll_heat)
 
     for inputs in dataset:
-      self.strategy.experimental_run_v2(step_fn, args=(inputs,))
+      self.run_step_fn(step_fn, args=(inputs,))

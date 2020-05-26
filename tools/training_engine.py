@@ -13,6 +13,7 @@ import os
 import time
 import numpy as np
 import sys
+from itertools import chain
 
 
 class EasyDict(object):
@@ -388,6 +389,10 @@ class BaseTrainingLoop():
         'train_model': self.train_model,
         'val_model': self.val_model,
     }
+    self.__init_kwargs(kwargs)
+    self.__init_metrics()
+
+  def __init_kwargs(self, kwargs: dict):
     if kwargs:
       assert 'hparams' in kwargs.keys(), 'if use kwargs, must contain hparams !'
       # NOTE hparams contain all extra features
@@ -396,6 +401,8 @@ class BaseTrainingLoop():
         if self.hparams.ema.enable:
           self.ema = EmaHelper(self.val_model, self.hparams.ema.decay)
           self.models_dict.setdefault('ema_model', self.ema.model)
+
+  def __init_metrics(self):
     self.metrics = EasyDict(self.set_metrics_dict_wraper())
 
   @abc.abstractclassmethod
@@ -424,16 +431,21 @@ class BaseTrainingLoop():
         model (k.Model):
     """
     with tape:
-      scaled_loss = loss / self.strategy.num_replicas_in_sync
+      scaled_loss = (loss / self.strategy.num_replicas_in_sync if self.strategy else loss)
+
       if isinstance(optimizer,
                     tf.keras.mixed_precision.experimental.LossScaleOptimizer):
         scaled_loss = optimizer.get_scaled_loss(loss)
 
-    grad = tape.gradient(scaled_loss, model.trainable_variables)
+    trainable_variables = (
+        chain([md.trainable_variables for md in model])
+        if isinstance(model, list) else model.trainable_variables)
+        
+    grad = tape.gradient(scaled_loss, trainable_variables)
     if isinstance(optimizer,
                   tf.keras.mixed_precision.experimental.LossScaleOptimizer):
       grad = optimizer.get_unscaled_gradients(grad)
-    optimizer.apply_gradients(zip(grad, model.trainable_variables))
+    optimizer.apply_gradients(zip(grad, trainable_variables))
     return scaled_loss
 
   def set_summary_writer(self,
@@ -471,6 +483,12 @@ class BaseTrainingLoop():
     callback_list.set_model(self.train_model if model == None else model)
     callback_list.model.stop_training = False
     self.callback_list = callback_list
+
+  def run_step_fn(self, fn, args=()):
+    if self.strategy:
+      self.strategy.experimental_run_v2(fn=fn, args=args)
+    else:
+      fn(*args)
 
   @staticmethod
   def _make_logs(prefix: str, metrics: EasyDict) -> dict:
@@ -588,15 +606,8 @@ class GanBaseTrainingLoop(BaseTrainingLoop):
         'discriminator_model': self.d_model,
         'val_model': self.val_model,
     }
-    if kwargs:
-      assert 'hparams' in kwargs.keys(), 'if use kwargs, must contain hparams !'
-      # NOTE hparams contain all extra features
-      self.hparams = EasyDict(kwargs['hparams'])
-      if 'ema' in self.hparams.keys():
-        if self.hparams.ema.enable:
-          self.ema = EmaHelper(self.val_model, self.hparams.ema.decay)
-          self.models_dict.setdefault('ema_model', self.ema.model)
-    self.metrics = EasyDict(self.set_metrics_dict_wraper())
+    self.__init_kwargs(kwargs)
+    self.__init_metrics()
 
 
 class MProgbar(Progbar):

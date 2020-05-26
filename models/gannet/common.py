@@ -323,3 +323,28 @@ class ReflectionPadding2D(kl.ZeroPadding2D):
   def call(self, inputs):
     return self.reflect_2d_padding(
         inputs, padding=self.padding, data_format=self.data_format)
+
+
+class ConstraintMinMax(k.constraints.Constraint):
+  """MinMax weight constraint.
+
+  Constrains the weights incident to each hidden unit
+  to have the norm between a lower bound and an upper bound.
+
+  Arguments:
+      min_value: the minimum norm for the incoming weights.
+      max_value: the maximum norm for the incoming weights.
+  """
+
+  def __init__(self, min_value=0.0, max_value=1.0):
+    self.min_value = min_value
+    self.max_value = max_value
+    assert self.min_value < self.max_value
+
+  def __call__(self, w):
+    desired = tf.clip_by_value(w, self.min_value, self.max_value)
+    return desired
+
+  def get_config(self):
+    return {'min_value': self.min_value,
+            'max_value': self.max_value}

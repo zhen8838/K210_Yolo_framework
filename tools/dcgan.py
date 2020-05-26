@@ -161,7 +161,7 @@ class DCGanLoop(GanBaseTrainingLoop):
       metrics.d_loss.update_state(tf.reduce_mean(scaled_d_loss))
 
     for _ in tf.range(num_steps_to_run):
-      self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))
+      self.run_step_fn(step_fn, args=(next(iterator),))
 
   def local_variables_init(self):
     self.val_seed: tf.Tensor = tf.random.normal(

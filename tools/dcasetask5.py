@@ -133,7 +133,7 @@ class Task5SupervisedLoop(BaseTrainingLoop):
       metrics.acc.update_state(labels, tf.nn.softmax(logits))
 
     for _ in tf.range(num_steps_to_run):
-      self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))
+      self.run_step_fn(step_fn, args=(next(iterator),))
 
   @tf.function
   def val_step(self, dataset, metrics):
@@ -150,7 +150,7 @@ class Task5SupervisedLoop(BaseTrainingLoop):
       metrics.acc.update_state(labels, tf.nn.softmax(logits))
 
     for inputs in dataset:
-      self.strategy.experimental_run_v2(step_fn, args=(inputs,))
+      self.run_step_fn(step_fn, args=(inputs,))
 
 
 class FixMatchSSLHelper(object):
@@ -367,7 +367,7 @@ class Task5FixMatchSslLoop(BaseTrainingLoop):
       metrics.acc.update_state(sup_label, logit_sup)
 
     for _ in tf.range(num_steps_to_run):
-      self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))
+      self.run_step_fn(step_fn, args=(next(iterator),))
 
   @tf.function
   def val_step(self, dataset, metrics):
@@ -384,4 +384,4 @@ class Task5FixMatchSslLoop(BaseTrainingLoop):
       metrics.acc.update_state(labels, logits)
 
     for inputs in dataset:
-      self.strategy.experimental_run_v2(step_fn, args=(inputs,))
+      self.run_step_fn(step_fn, args=(inputs,))

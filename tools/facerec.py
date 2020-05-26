@@ -95,6 +95,10 @@ class FcaeRecHelper(BaseHelper):
         l[3] == 1, lambda: img, lambda: tf.image.random_contrast(img, 0.7, 1.3))
     return img, ann
 
+  def normlize_img(self, img: tf.Tensor) -> tf.Tensor:
+    """ normlize img """
+    return (tf.cast(img, tf.float32) - 127.5) / 127.5
+
   def build_train_datapipe(self, image_ann_list: List[str], batch_size: int,
                            is_augment: bool, is_normlize: bool,
                            is_training: bool) -> tf.data.Dataset:
@@ -171,7 +175,10 @@ class FcaeRecHelper(BaseHelper):
           ds_trans, cycle_length=nclass,
           block_length=2).batch(2, True).shuffle(batch_size * 400).batch(
               2, True).map(parser, -1).batch(batch_size, True).prefetch(-1)
-
+    
+    options = tf.data.Options()
+    options.experimental_deterministic = False
+    ds = ds.with_options(options)
     return ds
 
   def build_val_datapipe(self, image_ann_list: str, batch_size: int,
@@ -205,15 +212,19 @@ class FcaeRecHelper(BaseHelper):
       return (img_a, img_b), (label)
 
     if is_training:
-      ds_trans = lambda x: tf.data.TFRecordDataset(x)
-      ds = (
-          tf.data.Dataset.from_tensor_slices(image_ann_list).interleave(
-              ds_trans).map(parser, -1).batch(batch_size, True).prefetch(-1))
+      def ds_trans(x): return tf.data.TFRecordDataset(x)
+      ds = (tf.data.Dataset.from_tensor_slices(image_ann_list).
+            interleave(ds_trans).
+            map(parser, -1).
+            batch(batch_size, True).
+            prefetch(-1))
     else:
-      ds_trans = lambda x: tf.data.TFRecordDataset(x)
-      ds = (
-          tf.data.Dataset.from_tensor_slices(image_ann_list).interleave(
-              ds_trans).map(parser, -1).batch(batch_size, True).prefetch(-1))
+      def ds_trans(x): return tf.data.TFRecordDataset(x)
+      ds = (tf.data.Dataset.from_tensor_slices(image_ann_list).
+            interleave(ds_trans).
+            map(parser, -1).
+            batch(batch_size, True).
+            prefetch(-1))
 
     return ds
 
@@ -268,7 +279,38 @@ def l2distance(embedd_a: tf.Tensor, embedd_b: tf.Tensor,
   return tf.reduce_sum(tf.square(tf.math.subtract(embedd_a, embedd_b)), -1)
 
 
-distance_register = {'l2': l2distance}
+def cosdistance(embedd_a: tf.Tensor, embedd_b: tf.Tensor,
+                is_norm: bool = True) -> tf.Tensor:
+  """ cos distance
+
+    Parameters
+    ----------
+    embedd_a : tf.Tensor
+
+        shape : [batch,embedding size]
+
+    embedd_b : tf.Tensor
+
+        shape : [batch,embedding size]
+
+    is_norm : bool
+
+        is norm == True will normilze(embedd_a)
+
+    Returns
+    -------
+    [tf.Tensor]
+
+        distance shape : [batch]
+    """
+  if is_norm:
+    embedd_a = tf.math.l2_normalize(embedd_a, -1)
+    embedd_b = tf.math.l2_normalize(embedd_b, -1)
+
+  return tf.squeeze(k.backend.batch_dot(embedd_a, embedd_b, -1))
+
+
+distance_register = {'l2': l2distance, 'cos': cosdistance}
 
 
 class TripletLoss(kls.Loss):
@@ -444,7 +486,7 @@ class SparseAsoftmaxLoss(kls.Loss):
     _Z = _Z * self.scale  # use scale expand value range
     logZ = tf.math.reduce_logsumexp(_Z, 1, keepdims=True)
     logZ = logZ + tf.math.log(1 - tf.math.exp(self.scale * y_true_pred - logZ)
-                             )  # Z - exp(scale * y_true_pred)
+                              )  # Z - exp(scale * y_true_pred)
     return -y_true_pred_margin * self.scale + logZ
 
 
@@ -470,11 +512,11 @@ class CircleLoss(kls.Loss):
 
   def call(self, y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
     """ NOTE : y_pred must be cos similarity
-    
+
     Args:
         y_true (tf.Tensor): shape [batch,ndim]
         y_pred (tf.Tensor): shape [batch,ndim]
-    
+
     Returns:
         tf.Tensor: loss
     """
@@ -482,7 +524,7 @@ class CircleLoss(kls.Loss):
     alpha_n = tf.nn.relu(tf.stop_gradient(y_pred) - self.O_n)
     # yapf: disable
     y_pred = (y_true * (alpha_p * (y_pred - self.Delta_p)) +
-          (1-y_true) * (alpha_n * (y_pred - self.Delta_n))) * self.gamma
+              (1 - y_true) * (alpha_n * (y_pred - self.Delta_n))) * self.gamma
     # yapf: enable
     return tf.nn.softmax_cross_entropy_with_logits(labels=y_true, logits=y_pred)
 
@@ -491,11 +533,11 @@ class SparseCircleLoss(CircleLoss):
 
   def call(self, y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
     """ NOTE : y_pred must be cos similarity
-    
+
     Args:
         y_true (tf.Tensor): shape [batch,ndim]
         y_pred (tf.Tensor): shape [batch,ndim]
-    
+
     Returns:
         tf.Tensor: loss
     """
@@ -551,11 +593,11 @@ class PairCircleLoss(CircleLoss):
 
   def call(self, sp: tf.Tensor, sn: tf.Tensor) -> tf.Tensor:
     """ use within-class similarity and between-class similarity for loss
-    
+
     Args:
         sp (tf.Tensor): within-class similarity  shape [batch, K]
         sn (tf.Tensor): between-class similarity shape [batch, L]
-    
+
     Returns:
         tf.Tensor: loss
     """
@@ -613,7 +655,7 @@ class FacerecValidation(k.callbacks.Callback):
 
         tpr = tf.math.divide_no_nan(tp, tp + fn)
         fpr = tf.math.divide_no_nan(fp, fp + tn)
-        return (tp+tn) / tf.cast(tf.shape(dist)[0], tf.float32)
+        return (tp + tn) / tf.cast(tf.shape(dist)[0], tf.float32)
 
       k.backend.set_value(
           self.acc_var,
@@ -622,25 +664,30 @@ class FacerecValidation(k.callbacks.Callback):
 
 class FaceSoftmaxTrainingLoop(BaseTrainingLoop):
 
-  def __init__(self, train_model, val_model, **kwargs):
+  """ 
     """ 
-    
-    1.  loss hparams:
-    
-        Args:
-          loss:
-            name (str) : SparseSoftmaxLoss,SparseAmsoftmaxLoss,SparseAsoftmaxLoss
-            kwarg (dict) : 
-              batch_size (int) : NOTE SparseSoftmaxLoss not have `batch_size`
-              scale (float) :  30
-              margin (float) :  0.35 NOTE SparseSoftmaxLoss not have `margin`
-              
-    """
-    super().__init__(train_model, val_model, **kwargs)
+  """ 
+    """ 
+  """ 
+
+  1.  loss hparams:
+
+      Args:
+        loss:
+          name (str) : SparseSoftmaxLoss,SparseAmsoftmaxLoss,SparseAsoftmaxLoss
+          kwarg (dict) : 
+            batch_size (int) : NOTE SparseSoftmaxLoss not have `batch_size`
+            scale (float) :  30
+            margin (float) :  0.35 NOTE SparseSoftmaxLoss not have `margin`
+
+  """
+
+  def local_variables_init(self):
     loss_dict = {
         'SparseSoftmaxLoss': SparseSoftmaxLoss,
         'SparseAmsoftmaxLoss': SparseAmsoftmaxLoss,
-        'SparseAsoftmaxLoss': SparseAsoftmaxLoss
+        'SparseAsoftmaxLoss': SparseAsoftmaxLoss,
+        'SparseCircleLoss': SparseCircleLoss
     }
     self.loss_fn: SparseAmsoftmaxLoss = loss_dict[self.hparams.loss.name](
         **self.hparams.loss.kwarg.dicts())
@@ -670,29 +717,29 @@ class FaceSoftmaxTrainingLoop(BaseTrainingLoop):
         loss = self.loss_fn.call(y_true, y_pred)
         loss_wd = tf.reduce_sum(self.train_model.losses)
         total_loss = loss + loss_wd
-        
+
       scaled_loss = self.optimizer_minimize(loss, tape, self.optimizer,
                                             self.train_model)
-      
+
       metrics.loss.update_state(scaled_loss)
       metrics.acc.update_state(y_true, y_pred)
 
     for _ in tf.range(num_steps_to_run):
-      self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))
+      self.run_step_fn(step_fn, args=(next(iterator),))
 
 
 class FaceTripletTrainingLoop(BaseTrainingLoop):
 
   def __init__(self, train_model, val_model, **kwargs):
     """ 
-    
+
     1.  triplet loss hparams:
-    
+
         Args:
           loss:
             target_distance (float): 0 ~ 4
             distance_fn (str): 'l2'
-          
+
     """
     super().__init__(train_model, val_model, **kwargs)
 
@@ -727,7 +774,7 @@ class FaceTripletTrainingLoop(BaseTrainingLoop):
               tf.nn.relu(ap - an + self.hparams.loss.target_distance))
         loss_wd = tf.reduce_sum(self.train_model.losses)
         total_loss = loss + loss_wd
-    
+
       scaled_loss = self.optimizer_minimize(loss, tape, self.optimizer,
                                             self.train_model)
 
@@ -739,7 +786,7 @@ class FaceTripletTrainingLoop(BaseTrainingLoop):
       metrics.acc.update_state(acc)
 
     for _ in tf.range(num_steps_to_run):
-      self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))
+      self.run_step_fn(step_fn, args=(next(iterator),))
 
   def val_step(self, dataset, metrics):
 
@@ -915,7 +962,7 @@ def facerec_eval(infer_model: k.Model,
   embedds_b = []
   issame = []
   for (img_a, img_b), y_true in tqdm(
-      h.test_dataset, total=int(h.test_epoch_step)):
+          h.test_dataset, total=int(h.test_epoch_step)):
     embedds_a.append(infer_model.predict(img_a))
     embedds_b.append(infer_model.predict(img_b))
     issame.append(y_true.numpy())

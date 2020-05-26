@@ -42,7 +42,7 @@ def mbv1_facerec(input_shape: list,
        encoder,train_model
 
     """
-  loss_list = ['softmax', 'asoftmax', 'amsoftmax', 'triplet']
+  loss_list = ['softmax', 'asoftmax', 'amsoftmax', 'circlesoftmax', 'triplet']
   if loss not in loss_list:
     raise ValueError(f"loss not valid! must in {' '.join(loss_list)}")
 
@@ -65,7 +65,7 @@ def mbv1_facerec(input_shape: list,
       base_model.output)
 
   if 'softmax' in loss:
-    if loss in ['amsoftmax', 'asoftmax']:
+    if loss in ['amsoftmax', 'asoftmax', 'circlesoftmax']:
       # normalize Classification vector len = 1
       embedds = kl.Lambda(lambda x: tf.math.l2_normalize(x, 1))(embedds)
       outputs = kl.Dense(
@@ -104,15 +104,15 @@ def mbv1_facerec(input_shape: list,
 
 
 def FMobileFaceNet_eager(input_shape: list,
-                   class_num: int,
-                   embedding_size: int,
-                   blocks:list,
-                   loss: str,
-                   act_type='prelu',
-                   bn_mom=0.9):
+                         class_num: int,
+                         embedding_size: int,
+                         blocks: list,
+                         loss: str,
+                         act_type='prelu',
+                         bn_mom=0.9):
 
   def Act(act_type, name):
-    #ignore param act_type, set it in this function
+    # ignore param act_type, set it in this function
     if act_type == 'prelu':
       return kl.PReLU(name=name)
     elif act_type == 'leakyrelu':

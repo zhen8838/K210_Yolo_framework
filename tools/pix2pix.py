@@ -248,7 +248,7 @@ class Pix2PixLoop(GanBaseTrainingLoop):
       metrics.d_loss.update_state(scaled_d_loss)
 
     for _ in tf.range(num_steps_to_run):
-      self.strategy.experimental_run_v2(step_fn, args=(next(iterator),))
+      self.run_step_fn(step_fn, args=(next(iterator),))
 
   @staticmethod
   @tf.function
@@ -266,6 +266,6 @@ class Pix2PixLoop(GanBaseTrainingLoop):
   def val_step(self, dataset, metrics):
     inputs = next(self.val_iterator)
     example_input, example_target = inputs['input_data'], inputs['real_data']
-    img = self.strategy.experimental_run_v2(
+    img = self.run_step_fn(
         self.val_generate_images, (self.g_model, example_input, example_target))
     self.summary.save_images({'img': img})
