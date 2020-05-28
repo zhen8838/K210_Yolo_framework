@@ -14,6 +14,7 @@ from tools.openpose.openopse_agument import (ImageMeta, pose_random_scale,
                                              pose_resize_shortestedge_fixed,
                                              pose_crop_center)
 from transforms.image import ops as image_ops
+from tools.openpose.estimator import Smoother, estimate_paf, draw_humans
 
 
 class OpenPoseHelper(BaseHelperV2):
@@ -376,3 +377,71 @@ class OpenPoseLoop(BaseTrainingLoop):
 
     for inputs in dataset:
       self.run_step_fn(step_fn, args=(inputs,))
+
+
+def openpose_infer(img_path: Path, infer_model: tf.keras.Model,
+                   result_path: Path, h: OpenPoseHelper):
+
+  print(f'Load Images from {str(img_path)}')
+  if img_path.is_dir():
+    img_paths = []
+    for suffix in ['bmp', 'jpg', 'jpeg', 'png']:
+      img_paths += list(map(str, img_path.glob(f'*.{suffix}')))
+  elif img_path.is_file():
+    img_paths = [str(img_path)]
+  else:
+    ValueError(f'img_path `{str(img_path)}` is invalid')
+
+  if result_path is not None:
+    raise NotImplementedError
+  else:
+    ncc_results = None
+
+  print(f'Infer Results')
+  orig_hws = []
+  det_imgs = []
+  for img_path in img_paths:
+    img = tf.image.decode_image(tf.io.read_file(img_path), channels=3)
+    orig_hws.append(img.numpy().shape[:2])
+    meta = ImageMeta(img, None, h.in_hw, h.hparams.parts,
+                     h.hparams.vecs, h.hparams.sigma)
+    meta = pose_resize_shortestedge_fixed(meta)
+    meta = pose_crop_center(meta)
+    det_img = image_ops.normalize(meta.img, 127.5, 127.5)
+    det_imgs.append(det_img)
+  batch = len(det_imgs)
+  outputs = infer_model.predict(tf.stack(det_imgs), batch)
+
+  """ parser batch out """
+  results = parser_outputs(outputs, orig_hws, batch, h)
+
+  if result_path is None:
+    """ draw gpu result """
+    for img_path, (bbox, score) in zip(img_paths, results):
+      draw_img = h.read_img(img_path)
+      h.draw_image(draw_img.numpy(), [bbox, np.ones_like(score[:, None])])
+  else:
+    """ draw gpu result and nncase result """
+    raise NotImplementedError
+
+
+def parser_outputs(outputs, orig_hws, batch, h: OpenPoseHelper):
+  vectmaps, heatmaps = outputs
+  humanss = []
+  for b in range(batch):
+    heatmap, vectormap = vectmaps[i], heatmaps[i]
+    heatMat_up = tf.image.resize(heatmap, h.in_hw)
+    pafMat_up = tf.image.resize(vectormap, h.in_hw)
+    smoother = Smoother({'data': heatMat_up}, 25, 3.0, 19)
+    gaussian_heatMat = smoother.get_output()
+    max_pooled_in_tensor = tf.nn.pool(
+        gaussian_heatMat, window_shape=(3, 3), pooling_type='MAX', padding='SAME')
+    peaks = tf.where(tf.equal(gaussian_heatMat, max_pooled_in_tensor),
+                     gaussian_heatMat, tf.zeros_like(gaussian_heatMat))
+    peaks = peaks.numpy()
+    heatMat = heatMat_up.numpy()
+    pafMat = pafMat_up.numpy()
+    humans = estimate_paf(peaks, heatMat_up, pafMat_up)
+    humanss.append(humans)
+  return humanss
+

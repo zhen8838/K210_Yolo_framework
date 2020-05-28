@@ -4,7 +4,7 @@ from models.networks import (mbv1_facerec, mbv2_ctdet, yolo, tiny_yolo, pfld,
                              mbv2_imgnet, retinafacenet, retinafacenet_wflw, retinaface_slim,
                              retinaface_rfb, ullfd_slim, dcasetask5basemodel,
                              FMobileFaceNet_eager, imageclassifierCNN13)
-from models.gannet import dcgan_mnist, pix2pix_facde, animenet
+from models.gannet import dcgan_mnist, pix2pix_facde, animenet, ugatitnet
 from models.openpose import MobileNetV1OpenPose
 from models.receptivefieldnet import rffacedetnet
 from models.audionet import dualmbv2net
@@ -42,6 +42,7 @@ from tools.dcgan import KerasDatasetGanHelper, DCGanLoop
 from tools.pix2pix import CMPFacadeHelper, Pix2PixLoop
 from tools.animegan import AnimeGanHelper, AnimeGanInitLoop, AnimeGanLoop
 from tools.openpose import OpenPoseHelper, OpenPoseLoop
+from tools.phototransfer import PhotoTransferHelper, PhotoTransferLoop
 from tools.training_engine import BaseTrainingLoop
 from yaml import safe_dump
 
@@ -201,7 +202,8 @@ helper_register = {
     'KerasDatasetGanHelper': KerasDatasetGanHelper,
     'AnimeGanHelper': AnimeGanHelper,
     'CMPFacadeHelper': CMPFacadeHelper,
-    'OpenPoseHelper': OpenPoseHelper
+    'OpenPoseHelper': OpenPoseHelper,
+    'PhotoTransferHelper': PhotoTransferHelper,
 }
 
 network_register = {
@@ -246,7 +248,8 @@ network_register = {
     'pix2pix_facde': pix2pix_facde,
     'animenet': animenet,
     'cifar_infomax_ssl_v1': cifar_infomax_ssl_v1,
-    'MobileNetV1OpenPose': MobileNetV1OpenPose
+    'MobileNetV1OpenPose': MobileNetV1OpenPose,
+    'ugatitnet': ugatitnet
 }
 
 loss_register = {
@@ -321,7 +324,8 @@ trainloop_register = {
     'Pix2PixLoop': Pix2PixLoop,
     'AnimeGanInitLoop': AnimeGanInitLoop,
     'AnimeGanLoop': AnimeGanLoop,
-    'OpenPoseLoop': OpenPoseLoop
+    'OpenPoseLoop': OpenPoseLoop,
+    'PhotoTransferLoop': PhotoTransferLoop,
 }
 
 if __name__ == "__main__":

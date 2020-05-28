@@ -8,6 +8,7 @@ from models.gannet.common import (ReflectionPadding2D,
                                   Conv2DSpectralNormal,
                                   DenseSpectralNormal,
                                   ConstraintMinMax)
+from typing import List, Tuple
 
 
 class ResnetGenerator(object):
@@ -358,7 +359,10 @@ class SoftAdaLIN(k.layers.Layer):
   def __init__(self, num_features, w_min=0, w_max=1.0, eps=1e-5):
     super(SoftAdaLIN, self).__init__()
     self.num_features = num_features
-    self.norm = adaLIN(num_features, eps)
+    self.eps = eps
+    self.w_min = w_min
+    self.w_max = w_max
+    self.norm = adaLIN(num_features, self.eps)
 
     self.w_gamma = self.add_weight(
         name='w_gamma',
@@ -397,18 +401,32 @@ class SoftAdaLIN(k.layers.Layer):
     out = self.norm([x, soft_gamma, soft_beta])
     return out
 
+  def get_config(self):
+    config = {
+        'num_features': self.num_features,
+        'eps': self.eps,
+        'w_min': self.w_min,
+        'w_max': self.w_max,
+    }
+    base_config = super().get_config()
+    return dict(list(base_config.items()) + list(config.items()))
+
 
 class adaLIN(k.layers.Layer):
 
   def __init__(self, num_features, rho_min=0, rho_max=1.0, eps=1e-5):
     super(adaLIN, self).__init__()
     self.eps = eps
+    self.num_features = num_features
+    self.rho_min = rho_min
+    self.rho_max = rho_max
     self.rho = self.add_weight(name='rho',
                                dtype=tf.float32,
                                trainable=True,
-                               shape=[num_features],
+                               shape=[self.num_features],
                                initializer=k.initializers.Constant(0.9),
-                               constraint=ConstraintMinMax(rho_min, rho_max))
+                               constraint=ConstraintMinMax(self.rho_min,
+                                                           self.rho_max))
 
   def call(self, inputs, **kwargs):
     inputs, gamma, beta = inputs
@@ -425,27 +443,41 @@ class adaLIN(k.layers.Layer):
 
     return out
 
+  def get_config(self):
+    config = {
+        'num_features': self.num_features,
+        'eps': self.eps,
+        'rho_min': self.rho_min,
+        'rho_max': self.rho_max
+    }
+    base_config = super().get_config()
+    return dict(list(base_config.items()) + list(config.items()))
+
 
 class LIN(k.layers.Layer):
 
   def __init__(self, num_features, rho_min=0, rho_max=1.0, eps=1e-5):
     super(LIN, self).__init__()
     self.eps = eps
+    self.num_features = num_features
+    self.rho_min = rho_min
+    self.rho_max = rho_max
     self.rho = self.add_weight(name='rho',
                                dtype=tf.float32,
                                trainable=True,
-                               shape=[num_features],
+                               shape=[self.num_features],
                                initializer=k.initializers.Constant(0.),
-                               constraint=ConstraintMinMax(rho_min, rho_max))
+                               constraint=ConstraintMinMax(self.rho_min,
+                                                           self.rho_max))
     self.gamma = self.add_weight(name='gamma',
                                  dtype=tf.float32,
                                  trainable=True,
-                                 shape=[num_features],
+                                 shape=[self.num_features],
                                  initializer=k.initializers.Ones())
     self.beta = self.add_weight(name='beta',
                                 dtype=tf.float32,
                                 trainable=True,
-                                shape=[num_features],
+                                shape=[self.num_features],
                                 initializer=k.initializers.Zeros())
 
   def call(self, inputs, **kwargs):
@@ -459,6 +491,16 @@ class LIN(k.layers.Layer):
     out = out * self.gamma + self.beta
 
     return out
+
+  def get_config(self):
+    config = {
+        'num_features': self.num_features,
+        'eps': self.eps,
+        'rho_min': self.rho_min,
+        'rho_max': self.rho_max,
+    }
+    base_config = super().get_config()
+    return dict(list(base_config.items()) + list(config.items()))
 
 
 class Discriminator(object):
@@ -524,3 +566,40 @@ class Discriminator(object):
     out = self.conv(x)
 
     return out, cam_logit, heatmap
+
+
+def ugatitnet(image_shape: list, filters: int = 32,
+              discriminator_layers: int = 5, light: bool = True
+              ) -> Tuple[List[k.Model], List[k.Model], k.Model]:
+  """ ugatitent
+
+  Args:
+      image_shape (list): 
+      filters (int, optional): . Defaults to 32.
+      discriminator_layers (int, optional): . Defaults to 5.
+      light (bool, optional): . Defaults to True.
+
+  Returns:
+      [List[k.Model], List[k.Model], k.Model]: generator_model, discriminator_model, val_model
+  """
+  assert image_shape[0] == image_shape[1], 'image must be square'
+  genA2B = ResnetGenerator(ngf=filters, img_size=image_shape[0], light=light)
+  genB2A = ResnetGenerator(ngf=filters, img_size=image_shape[0], light=light)
+  disGA = Discriminator(3, filters, n_layers=discriminator_layers)
+  disGB = Discriminator(3, filters, n_layers=discriminator_layers)
+  disLA = Discriminator(3, filters, n_layers=discriminator_layers)
+  disLB = Discriminator(3, filters, n_layers=discriminator_layers)
+
+  def modeling(body):
+    x = k.Input(image_shape)
+    outputs = body(x)
+    return k.Model(x, outputs)
+
+  model_genA2B = modeling(genA2B)
+  model_genB2A = modeling(genB2A)
+  model_disGA = modeling(disGA)
+  model_disGB = modeling(disGB)
+  model_disLA = modeling(disLA)
+  model_disLB = modeling(disLB)
+
+  return [model_genA2B, model_genB2A], [model_disGA, model_disGB, model_disLA, model_disLB], model_genA2B

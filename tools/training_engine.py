@@ -13,7 +13,6 @@ import os
 import time
 import numpy as np
 import sys
-from itertools import chain
 
 
 class EasyDict(object):
@@ -438,9 +437,9 @@ class BaseTrainingLoop():
         scaled_loss = optimizer.get_scaled_loss(loss)
 
     trainable_variables = (
-        chain([md.trainable_variables for md in model])
+        sum([md.trainable_variables for md in model], [])
         if isinstance(model, list) else model.trainable_variables)
-        
+
     grad = tape.gradient(scaled_loss, trainable_variables)
     if isinstance(optimizer,
                   tf.keras.mixed_precision.experimental.LossScaleOptimizer):
@@ -606,8 +605,8 @@ class GanBaseTrainingLoop(BaseTrainingLoop):
         'discriminator_model': self.d_model,
         'val_model': self.val_model,
     }
-    self.__init_kwargs(kwargs)
-    self.__init_metrics()
+    self._BaseTrainingLoop__init_kwargs(kwargs)
+    self._BaseTrainingLoop__init_metrics()
 
 
 class MProgbar(Progbar):
