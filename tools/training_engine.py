@@ -357,6 +357,28 @@ class BaseHelperV2(object):
     self.val_epoch_step = self.val_total_data // self.batch_size
 
 
+class BaseImageHelperV2(BaseHelperV2):
+  @abc.abstractclassmethod
+  def read_img(self, img_path):
+    raise NotImplementedError
+
+  @abc.abstractclassmethod
+  def resize_img(self, img):
+    raise NotImplementedError
+
+  @abc.abstractclassmethod
+  def augment_img(self, img):
+    raise NotImplementedError
+
+  @abc.abstractclassmethod
+  def norm_img(self, img):
+    raise NotImplementedError
+
+  @abc.abstractclassmethod
+  def renorm_img(self, img):
+    raise NotImplementedError
+
+
 class BaseTrainingLoop():
 
   def __init__(self, train_model: k.Model, val_model: k.Model,

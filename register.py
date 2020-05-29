@@ -1,64 +1,19 @@
 import tensorflow as tf
-from models.networks import (mbv1_facerec, mbv2_ctdet, yolo, tiny_yolo, pfld,
-                             shuffle_ctdet, yolo3_nano, yolo_mbv1, mbv1_imgnet,
-                             mbv2_imgnet, retinafacenet, retinafacenet_wflw, retinaface_slim,
-                             retinaface_rfb, ullfd_slim, dcasetask5basemodel,
-                             FMobileFaceNet_eager, imageclassifierCNN13)
-from models.gannet import dcgan_mnist, pix2pix_facde, animenet, ugatitnet
-from models.openpose import MobileNetV1OpenPose
-from models.receptivefieldnet import rffacedetnet
-from models.audionet import dualmbv2net
-from models.networks4k210 import (
-    yolo_mbv1_k210, yolo_mbv2_k210, yolo2_mbv1_k210, yolov2algin_mbv1_k210,
-    pfld_k210, mbv1_imgnet_k210, mbv2_imgnet_k210, yoloalgin_mbv1_k210,
-    retinafacenet_k210, retinafacenet_k210_v1, retinafacenet_k210_v2,
-    retinafacenet_k210_v3, ullfd_k210, ullfd_k210_v1, ullfd_k210_v2,
-    ullfd_k210_v3, mbv1_facerec_k210, mbv1_facerec_k210_eager)
-from models.semisupervised import cifar_infomax_ssl_v1
-from tools.custom import StepLR, CosineLR, ScheduleLR
-from tools.yolo import (YOLOHelper, YOLOLoss, yolo_infer, yolo_eval,
-                        MultiScaleTrain, YOLOIouLoss, YOLOMap)
-from tools.yoloalign import YOLOAlignHelper, YOLOAlignLoss, yoloalgin_infer
-from tools.pfld import PFLDHelper, PFLDLoss, pfld_infer
-from tools.pfld_v2 import PFLDV2Helper
-from tools.ctdet import CtdetHelper, CtdetLoss, ctdet_infer
-from tools.lffd import LFFDHelper, LFFDLoss
-from tools.ssd import SSDHelper, SSDLoss, ssd_infer
-from tools.retinaface import RetinaFaceHelper, RetinaFaceLoss, retinaface_infer
-from tools.tinyimgnet import TinyImgnetHelper
-from tools.imgnet import ImgnetHelper, ClassifyLoss, imgnet_infer, imgnet_eval
-from tools.facerec import (FcaeRecHelper, TripletLoss, SparseSoftmaxLoss,
-                           SparseAmsoftmaxLoss, SparseAsoftmaxLoss,
-                           FacerecValidation, facerec_eval,
-                           FaceTripletTrainingLoop, FaceSoftmaxTrainingLoop)
-from tools.dcasetask2 import DCASETask2Helper, SemiBCELoss, LwlrapValidation
-from tools.dcasetask5 import (DCASETask5Helper, Task5SupervisedLoop,
-                              DCASETask5FixMatchSSLHelper, Task5FixMatchSslLoop,
-                              AugmenterStateSync)
-from tools.kerasdataset import (KerasDatasetHelper, UDASslLoop, MixMatchSslLoop,
-                                FixMatchMixUpSslLoop, InfoMaxLoop,
-                                InfoMaxSslV1Loop, InfoMaxSslV2Loop)
-from tools.dcgan import KerasDatasetGanHelper, DCGanLoop
-from tools.pix2pix import CMPFacadeHelper, Pix2PixLoop
-from tools.animegan import AnimeGanHelper, AnimeGanInitLoop, AnimeGanLoop
-from tools.openpose import OpenPoseHelper, OpenPoseLoop
-from tools.phototransfer import PhotoTransferHelper, PhotoTransferLoop
-from tools.training_engine import BaseTrainingLoop
 from yaml import safe_dump
+from importlib import import_module
 
 
 class dict2obj(object):
 
   def __init__(self, dicts):
     """ convert dict to object , NOTE the `**kwargs` will not be convert 
+      Parameters
+      ----------
+      object : [type]
 
-        Parameters
-        ----------
-        object : [type]
-
-        dicts : dict
-            dict
-        """
+      dicts : dict
+          dict
+      """
     for name, value in dicts.items():
       if isinstance(value, (list, tuple)):
         setattr(self, name,
@@ -80,6 +35,31 @@ class dict2obj(object):
 
   def values(self):
     return self.__dict__.values()
+
+
+class dict_warp():
+  """ dict_warp for dynamic load class or function """
+  __slots__ = ('d')
+
+  def __init__(self, d):
+    assert isinstance(d, dict)
+    self.d: dict = d
+
+  @staticmethod
+  def dynamic_load(module):
+    if isinstance(module, tuple):
+      return getattr(import_module(module[0]), module[1])
+    else:
+      return module
+
+  def __getitem__(self, idx):
+    return self.dynamic_load(self.d[idx])
+
+  def __str__(self):
+    return self.d.__str__()
+
+  def __repr__(self):
+    return self.d.__repr__()
 
 
 ArgDict = {
@@ -183,150 +163,151 @@ ArgDict = {
     }
 }
 
-helper_register = {
-    'YOLOHelper': YOLOHelper,
-    'YOLOAlignHelper': YOLOAlignHelper,
-    'PFLDHelper': PFLDHelper,
-    'PFLDV2Helper': PFLDV2Helper,
-    'CtdetHelper': CtdetHelper,
-    'FcaeRecHelper': FcaeRecHelper,
-    'LFFDHelper': LFFDHelper,
-    'TinyImgnetHelper': TinyImgnetHelper,
-    'ImgnetHelper': ImgnetHelper,
-    'RetinaFaceHelper': RetinaFaceHelper,
-    'DCASETask2Helper': DCASETask2Helper,
-    'DCASETask5Helper': DCASETask5Helper,
-    'SSDHelper': SSDHelper,
-    'DCASETask5FixMatchSSLHelper': DCASETask5FixMatchSSLHelper,
-    'KerasDatasetHelper': KerasDatasetHelper,
-    'KerasDatasetGanHelper': KerasDatasetGanHelper,
-    'AnimeGanHelper': AnimeGanHelper,
-    'CMPFacadeHelper': CMPFacadeHelper,
-    'OpenPoseHelper': OpenPoseHelper,
-    'PhotoTransferHelper': PhotoTransferHelper,
-}
+helper_register = dict_warp({
+    'YOLOHelper': ('tools.yolo', 'YOLOHelper'),
+    'YOLOAlignHelper': ('tools.yoloalign', 'YOLOAlignHelper'),
+    'PFLDHelper': ('tools.pfld', 'PFLDHelper'),
+    'PFLDV2Helper': ('tools.pfld_v2', 'PFLDV2Helper'),
+    'CtdetHelper': ('tools.ctdet', 'CtdetHelper'),
+    'FcaeRecHelper': ('tools.facerec', 'FcaeRecHelper'),
+    'LFFDHelper': ('tools.lffd', 'LFFDHelper'),
+    'TinyImgnetHelper': ('tools.tinyimgnet', 'TinyImgnetHelper'),
+    'ImgnetHelper': ('tools.imgnet', 'ImgnetHelper'),
+    'RetinaFaceHelper': ('tools.retinaface', 'RetinaFaceHelper'),
+    'DCASETask2Helper': ('tools.dcasetask2', 'DCASETask2Helper'),
+    'DCASETask5Helper': ('tools.dcasetask5', 'DCASETask5Helper'),
+    'SSDHelper': ('tools.ssd', 'SSDHelper'),
+    'DCASETask5FixMatchSSLHelper': ('tools.dcasetask5', 'DCASETask5FixMatchSSLHelper'),
+    'KerasDatasetHelper': ('tools.kerasdataset', 'KerasDatasetHelper'),
+    'KerasDatasetGanHelper': ('tools.dcgan', 'KerasDatasetGanHelper'),
+    'AnimeGanHelper': ('tools.animegan', 'AnimeGanHelper'),
+    'CMPFacadeHelper': ('tools.pix2pix', 'CMPFacadeHelper'),
+    'OpenPoseHelper': ('tools.openpose', 'OpenPoseHelper'),
+    'PhotoTransferHelper': ('tools.phototransfer', 'PhotoTransferHelper'),
+})
 
-network_register = {
-    'mbv1_facerec': mbv1_facerec,
-    'mbv1_facerec_k210': mbv1_facerec_k210,
-    'mbv1_facerec_k210_eager': mbv1_facerec_k210_eager,
-    'FMobileFaceNet_eager': FMobileFaceNet_eager,
-    'mbv2_ctdet': mbv2_ctdet,
-    'mbv1_imgnet': mbv1_imgnet,
-    'mbv2_imgnet': mbv2_imgnet,
-    'yolo': yolo,
-    'tiny_yolo': tiny_yolo,
-    'yolo3_nano': yolo3_nano,
-    'yolo_mbv1': yolo_mbv1,
-    'pfld': pfld,
-    'rffacedetnet': rffacedetnet,
-    'retinafacenet': retinafacenet,
-    'shuffle_ctdet': shuffle_ctdet,
-    'yolo_mbv1_k210': yolo_mbv1_k210,
-    'yolo_mbv2_k210': yolo_mbv2_k210,
-    'yolo2_mbv1_k210': yolo2_mbv1_k210,
-    'yolov2algin_mbv1_k210': yolov2algin_mbv1_k210,
-    'yoloalgin_mbv1_k210': yoloalgin_mbv1_k210,
-    'pfld_k210': pfld_k210,
-    'mbv1_imgnet_k210': mbv1_imgnet_k210,
-    'mbv2_imgnet_k210': mbv2_imgnet_k210,
-    'retinafacenet_k210': retinafacenet_k210,
-    'retinafacenet_wflw': retinafacenet_wflw,
-    'retinafacenet_k210_v1': retinafacenet_k210_v1,
-    'retinafacenet_k210_v2': retinafacenet_k210_v2,
-    'retinafacenet_k210_v3': retinafacenet_k210_v3,
-    'retinaface_slim': retinaface_slim,
-    'ullfd_slim': ullfd_slim,
-    'ullfd_k210': ullfd_k210,
-    'ullfd_k210_v1': ullfd_k210_v1,
-    'ullfd_k210_v2': ullfd_k210_v2,
-    'ullfd_k210_v3': ullfd_k210_v3,
-    'dualmbv2net': dualmbv2net,
-    'dcasetask5basemodel': dcasetask5basemodel,
-    'imageclassifierCNN13': imageclassifierCNN13,
-    'dcgan_mnist': dcgan_mnist,
-    'pix2pix_facde': pix2pix_facde,
-    'animenet': animenet,
-    'cifar_infomax_ssl_v1': cifar_infomax_ssl_v1,
-    'MobileNetV1OpenPose': MobileNetV1OpenPose,
-    'ugatitnet': ugatitnet
-}
+network_register = dict_warp({
+    'mbv1_facerec': ('models.networks', 'mbv1_facerec'),
+    'mbv1_facerec_k210': ('models.networks4k210', 'mbv1_facerec_k210'),
+    'mbv1_facerec_k210_eager': ('models.networks4k210', 'mbv1_facerec_k210_eager'),
+    'FMobileFaceNet_eager': ('models.networks', 'FMobileFaceNet_eager'),
+    'mbv2_ctdet': ('models.networks', 'mbv2_ctdet'),
+    'mbv1_imgnet': ('models.networks', 'mbv1_imgnet'),
+    'mbv2_imgnet': ('models.networks', 'mbv2_imgnet'),
+    'yolo': ('models.networks', 'yolo'),
+    'tiny_yolo': ('models.networks', 'tiny_yolo'),
+    'yolo3_nano': ('models.networks', 'yolo3_nano'),
+    'yolo_mbv1': ('models.networks', 'yolo_mbv1'),
+    'pfld': ('models.networks', 'pfld'),
+    'rffacedetnet': ('models.receptivefieldnet', 'rffacedetnet'),
+    'retinafacenet': ('models.networks', 'retinafacenet'),
+    'shuffle_ctdet': ('models.networks', 'shuffle_ctdet'),
+    'yolo_mbv1_k210': ('models.networks4k210', 'yolo_mbv1_k210'),
+    'yolo_mbv2_k210': ('models.networks4k210', 'yolo_mbv2_k210'),
+    'yolo2_mbv1_k210': ('models.networks4k210', 'yolo2_mbv1_k210'),
+    'yolov2algin_mbv1_k210': ('models.networks4k210', 'yolov2algin_mbv1_k210'),
+    'yoloalgin_mbv1_k210': ('models.networks4k210', 'yoloalgin_mbv1_k210'),
+    'pfld_k210': ('models.networks4k210', 'pfld_k210'),
+    'mbv1_imgnet_k210': ('models.networks4k210', 'mbv1_imgnet_k210'),
+    'mbv2_imgnet_k210': ('models.networks4k210', 'mbv2_imgnet_k210'),
+    'retinafacenet_k210': ('models.networks4k210', 'retinafacenet_k210'),
+    'retinafacenet_wflw': ('models.networks', 'retinafacenet_wflw'),
+    'retinafacenet_k210_v1': ('models.networks4k210', 'retinafacenet_k210_v1'),
+    'retinafacenet_k210_v2': ('models.networks4k210', 'retinafacenet_k210_v2'),
+    'retinafacenet_k210_v3': ('models.networks4k210', 'retinafacenet_k210_v3'),
+    'retinaface_slim': ('models.networks', 'retinaface_slim'),
+    'ullfd_slim': ('models.networks', 'ullfd_slim'),
+    'ullfd_k210': ('models.networks4k210', 'ullfd_k210'),
+    'ullfd_k210_v1': ('models.networks4k210', 'ullfd_k210_v1'),
+    'ullfd_k210_v2': ('models.networks4k210', 'ullfd_k210_v2'),
+    'ullfd_k210_v3': ('models.networks4k210', 'ullfd_k210_v3'),
+    'dualmbv2net': ('models.audionet', 'dualmbv2net'),
+    'dcasetask5basemodel': ('models.networks', 'dcasetask5basemodel'),
+    'imageclassifierCNN13': ('models.networks', 'imageclassifierCNN13'),
+    'dcgan_mnist': ('models.gannet', 'dcgan_mnist'),
+    'pix2pix_facde': ('models.gannet', 'pix2pix_facde'),
+    'animenet': ('models.gannet', 'animenet'),
+    'cifar_infomax_ssl_v1': ('models.semisupervised', 'cifar_infomax_ssl_v1'),
+    'MobileNetV1OpenPose': ('models.openpose', 'MobileNetV1OpenPose'),
+    'ugatitnet': ('models.gannet', 'ugatitnet')
+})
 
-loss_register = {
-    'YOLOLoss': YOLOLoss,
-    'YOLOIouLoss': YOLOIouLoss,
-    'YOLOAlignLoss': YOLOAlignLoss,
-    'PFLDLoss': PFLDLoss,
-    'CtdetLoss': CtdetLoss,
-    'TripletLoss': TripletLoss,
-    'SparseSoftmaxLoss': SparseSoftmaxLoss,
-    'SparseAmsoftmaxLoss': SparseAmsoftmaxLoss,
-    'SparseAsoftmaxLoss': SparseAsoftmaxLoss,
-    'LFFDLoss': LFFDLoss,
-    'ClassifyLoss': ClassifyLoss,
-    'RetinaFaceLoss': RetinaFaceLoss,
-    'SemiBCELoss': SemiBCELoss,
-    'SSDLoss': SSDLoss
-}
+loss_register = dict_warp({
+    'YOLOLoss': ('tools.yolo', 'YOLOLoss'),
+    'YOLOIouLoss': ('tools.yolo', 'YOLOIouLoss'),
+    'YOLOAlignLoss': ('tools.yoloalign', 'YOLOAlignLoss'),
+    'PFLDLoss': ('tools.pfld', 'PFLDLoss'),
+    'CtdetLoss': ('tools.ctdet', 'CtdetLoss'),
+    'TripletLoss': ('tools.facerec', 'TripletLoss'),
+    'SparseSoftmaxLoss': ('tools.facerec', 'SparseSoftmaxLoss'),
+    'SparseAmsoftmaxLoss': ('tools.facerec', 'SparseAmsoftmaxLoss'),
+    'SparseAsoftmaxLoss': ('tools.facerec', 'SparseAsoftmaxLoss'),
+    'LFFDLoss': ('tools.lffd', 'LFFDLoss'),
+    'ClassifyLoss': ('tools.imgnet', 'ClassifyLoss'),
+    'RetinaFaceLoss': ('tools.retinaface', 'RetinaFaceLoss'),
+    'SemiBCELoss': ('tools.dcasetask2', 'SemiBCELoss'),
+    'SSDLoss': ('tools.ssd', 'SSDLoss')
+})
 
-callback_register = {
-    'MultiScaleTrain': MultiScaleTrain,
+callback_register = dict_warp({
+    'MultiScaleTrain': ('tools.yolo', 'MultiScaleTrain'),
     'EarlyStopping': tf.keras.callbacks.EarlyStopping,
     'ModelCheckpoint': tf.keras.callbacks.ModelCheckpoint,
     'TerminateOnNaN': tf.keras.callbacks.TerminateOnNaN,
-    'YOLOMap': YOLOMap,
-    'StepLR': StepLR,
-    'CosineLR': CosineLR,
-    'ScheduleLR': ScheduleLR,
-    'FacerecValidation': FacerecValidation,
-    'LwlrapValidation': LwlrapValidation,
-    'AugmenterStateSync': AugmenterStateSync
-}
+    'YOLOMap': ('tools.yolo', 'YOLOMap'),
+    'StepLR': ('tools.custom', 'StepLR'),
+    'CosineLR': ('tools.custom', 'CosineLR'),
+    'ScheduleLR': ('tools.custom', 'ScheduleLR'),
+    'FacerecValidation': ('tools.facerec', 'FacerecValidation'),
+    'LwlrapValidation': ('tools.dcasetask2', 'LwlrapValidation'),
+    'AugmenterStateSync': ('tools.dcasetask5', 'AugmenterStateSync')
+})
 
-optimizer_register = {
+optimizer_register = dict_warp({
     'Adam': tf.keras.optimizers.Adam,
     'SGD': tf.keras.optimizers.SGD,
     'RMSprop': tf.keras.optimizers.RMSprop,
     'Adamax': tf.keras.optimizers.Adamax,
     'Nadam': tf.keras.optimizers.Nadam,
     'Ftrl': tf.keras.optimizers.Ftrl,
-}
+})
 
-infer_register = {
-    'yolo_infer': yolo_infer,
-    'yoloalgin_infer': yoloalgin_infer,
-    'pfld_infer': pfld_infer,
-    'ctdet_infer': ctdet_infer,
-    'retinaface_infer': retinaface_infer,
-    'ssd_infer': ssd_infer,
-    'imgnet_infer': imgnet_infer,
-}
+infer_register = dict_warp({
+    'yolo_infer': ('tools.yolo', 'yolo_infer'),
+    'yoloalgin_infer': ('tools.yoloalign', 'yoloalgin_infer'),
+    'pfld_infer': ('tools.pfld', 'pfld_infer'),
+    'ctdet_infer': ('tools.ctdet', 'ctdet_infer'),
+    'retinaface_infer': ('tools.retinaface', 'retinaface_infer'),
+    'ssd_infer': ('tools.ssd', 'ssd_infer'),
+    'imgnet_infer': ('tools.imgnet', 'imgnet_infer'),
+    'openpose_infer': ('tools.openpose', 'openpose_infer'),
+})
 
-eval_register = {
-    'yolo_eval': yolo_eval,
-    'facerec_eval': facerec_eval,
-    'imgnet_eval': imgnet_eval
-}
+eval_register = dict_warp({
+    'yolo_eval': ('tools.yolo', 'yolo_eval'),
+    'facerec_eval': ('tools.facerec', 'facerec_eval'),
+    'imgnet_eval': ('tools.imgnet', 'imgnet_eval')
+})
 
-trainloop_register = {
-    'BaseTrainingLoop': BaseTrainingLoop,
-    'Task5SupervisedLoop': Task5SupervisedLoop,
-    'FaceTripletTrainingLoop': FaceTripletTrainingLoop,
-    'FaceSoftmaxTrainingLoop': FaceSoftmaxTrainingLoop,
-    'Task5FixMatchSslLoop': Task5FixMatchSslLoop,
-    'UDASslLoop': UDASslLoop,
-    'MixMatchSslLoop': MixMatchSslLoop,
-    'FixMatchMixUpSslLoop': FixMatchMixUpSslLoop,
-    'InfoMaxLoop': InfoMaxLoop,
-    'InfoMaxSslV1Loop': InfoMaxSslV1Loop,
-    'InfoMaxSslV2Loop': InfoMaxSslV2Loop,
-    'DCGanLoop': DCGanLoop,
-    'Pix2PixLoop': Pix2PixLoop,
-    'AnimeGanInitLoop': AnimeGanInitLoop,
-    'AnimeGanLoop': AnimeGanLoop,
-    'OpenPoseLoop': OpenPoseLoop,
-    'PhotoTransferLoop': PhotoTransferLoop,
-}
+trainloop_register = dict_warp({
+    'Task5SupervisedLoop': ('tools.dcasetask5', 'Task5SupervisedLoop'),
+    'FaceTripletTrainingLoop': ('tools.facerec', 'FaceTripletTrainingLoop'),
+    'FaceSoftmaxTrainingLoop': ('tools.facerec', 'FaceSoftmaxTrainingLoop'),
+    'Task5FixMatchSslLoop': ('tools.dcasetask5', 'Task5FixMatchSslLoop'),
+    'UDASslLoop': ('tools.kerasdataset', 'UDASslLoop'),
+    'MixMatchSslLoop': ('tools.kerasdataset', 'MixMatchSslLoop'),
+    'FixMatchMixUpSslLoop': ('tools.kerasdataset', 'FixMatchMixUpSslLoop'),
+    'InfoMaxLoop': ('tools.kerasdataset', 'InfoMaxLoop'),
+    'InfoMaxSslV1Loop': ('tools.kerasdataset', 'InfoMaxSslV1Loop'),
+    'InfoMaxSslV2Loop': ('tools.kerasdataset', 'InfoMaxSslV2Loop'),
+    'DCGanLoop': ('tools.dcgan', 'DCGanLoop'),
+    'Pix2PixLoop': ('tools.pix2pix', 'Pix2PixLoop'),
+    'AnimeGanInitLoop': ('tools.animegan', 'AnimeGanInitLoop'),
+    'AnimeGanLoop': ('tools.animegan', 'AnimeGanLoop'),
+    'OpenPoseLoop': ('tools.openpose', 'OpenPoseLoop'),
+    'PhotoTransferLoop': ('tools.phototransfer', 'PhotoTransferLoop'),
+})
+
 
 if __name__ == "__main__":
   with open('config/default.yml', 'w') as f:

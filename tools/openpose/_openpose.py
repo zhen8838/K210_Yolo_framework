@@ -1,5 +1,5 @@
 import tensorflow as tf
-from tools.training_engine import BaseTrainingLoop, EmaHelper, BaseHelperV2
+from tools.training_engine import BaseTrainingLoop, EmaHelper, BaseImageHelperV2
 from typing import Tuple, List
 from pathlib import Path
 import numpy as np
@@ -17,7 +17,7 @@ from transforms.image import ops as image_ops
 from tools.openpose.estimator import Smoother, estimate_paf, draw_humans
 
 
-class OpenPoseHelper(BaseHelperV2):
+class OpenPoseHelper(BaseImageHelperV2):
   """OpenPoseHelper
 
     hparams:
@@ -38,20 +38,8 @@ class OpenPoseHelper(BaseHelperV2):
     self.unlabel_list: str = None
 
     self.train_list: str = meta['train_list']
-    # self.train_list: Tuple[tf.Tensor, tf.RaggedTensor] = (
-    #     tf.constant(meta['train_list'][0], tf.string),
-    #     tf.ragged.constant(meta['train_list'][1],
-    #                        inner_shape=(19, 2),
-    #                        dtype=tf.float32))
-
     self.train_total_data: int = meta['train_num']
     self.val_list: str = meta['val_list']
-    # self.val_list: Tuple[tf.Tensor, tf.RaggedTensor] = (
-    #     tf.constant(meta['val_list'][0], tf.string),
-    #     tf.ragged.constant(meta['val_list'][1],
-    #                        inner_shape=(19, 2),
-    #                        dtype=tf.float32))
-
     self.val_total_data: int = meta['val_num']
 
     self.test_list = self.val_list
@@ -65,6 +53,27 @@ class OpenPoseHelper(BaseHelperV2):
                         self.in_hw[1] // self.hparams.scale)
     # NOTE self.hparams.vecs need be numpy array
     self.hparams.vecs = np.array(self.hparams.vecs) - 1
+
+  def parse_example(self, raw_example):
+    example = tf.io.parse_single_example(raw_example, {
+        'img': tf.io.FixedLenFeature([], dtype=tf.string),
+        'joint': tf.io.VarLenFeature(dtype=tf.float32)
+    })
+    img = self.read_img(example['img'])
+    joint_list = tf.reshape(example['joint'].values, [-1, self.hparams.parts, 2])
+    return img, joint_list
+
+  @staticmethod
+  def read_img(img_str):
+    return tf.image.decode_jpeg(img_str, channels=3)
+
+  @staticmethod
+  def norm_img(img):
+    return image_ops.normalize(tf.cast(img, tf.float32), 127.5, 127.5)
+
+  @staticmethod
+  def renorm_img(img):
+    return image_ops.renormalize(img, 127.5, 127.5)
 
   def build_train_datapipe(self,
                            batch_size: int,
@@ -93,16 +102,8 @@ class OpenPoseHelper(BaseHelperV2):
     def filter_fn(img_str, joint_list):
       return tf.logical_not(tf.logical_and(tf.size(joint_list) == 0, tf.random.uniform([]) > 0.2))
 
-    def parse_example(raw_example):
-      example = tf.io.parse_single_example(raw_example, {
-          'img': tf.io.FixedLenFeature([], dtype=tf.string),
-          'joint': tf.io.VarLenFeature(dtype=tf.float32)
-      })
-      return example['img'], example['joint'].values
-
-    def parser(img_str, joint_list):
-      img = tf.image.decode_jpeg(img_str, channels=3)
-      joint_list = tf.reshape(joint_list, [-1, self.hparams.parts, 2])
+    def parser(img, joint_list):
+      # todo 有时间改成imgaug
       img, heatmap, vectormap = tf.numpy_function(
           np_process,
           [img, joint_list],
@@ -111,14 +112,14 @@ class OpenPoseHelper(BaseHelperV2):
       heatmap.set_shape([self.target_hw[0], self.target_hw[1], self.hparams.parts])
       vectormap.set_shape([self.target_hw[0], self.target_hw[1], self.hparams.parts * 2])
       if is_normalize:
-        img = image_ops.normalize(tf.cast(img, tf.float32), 127.5, 127.5)
+        img = self.norm_img(img)
       return img, heatmap, vectormap
 
     if is_train:
       ds = (tf.data.TFRecordDataset(self.train_list, num_parallel_reads=4).
             shuffle(batch_size * 200).
             repeat().
-            map(parse_example, num_parallel_calls=-1).
+            map(self.parse_example, num_parallel_calls=-1).
             filter(filter_fn).
             map(parser, num_parallel_calls=-1).
             batch(batch_size).
@@ -126,7 +127,7 @@ class OpenPoseHelper(BaseHelperV2):
     else:
       ds = (tf.data.TFRecordDataset(self.val_list, num_parallel_reads=4).
             shuffle(batch_size * 200).
-            map(parse_example, num_parallel_calls=-1).
+            map(self.parse_example, num_parallel_calls=-1).
             map(parser, num_parallel_calls=-1).
             batch(batch_size).
             prefetch(tf.data.experimental.AUTOTUNE))
@@ -250,6 +251,18 @@ class OpenPoseHelper(BaseHelperV2):
                                p[..., ::-1]], -1)
     valid_count_indices = tf.boolean_mask(count_indices, dist > threshold)
     tfcountmap.scatter_nd_add(valid_count_indices, tf.ones(valid_count_indices.shape[0]))
+
+  @staticmethod
+  def draw_test_image_keypoints(img, joints_list, joints_list_mask):
+    if not isinstance(img, np.ndarray):
+      img = img.numpy()
+      joints_list = joints_list.numpy()
+      joints_list_mask = joints_list_mask.numpy()
+    for joints, joints_mask in zip(joints_list.astype(np.int32), joints_list_mask):
+      for joint, mask in zip(joints, joints_mask):
+        if mask:
+          cv2.circle(img, tuple(joint), 3, [255, 0, 0])
+    return img
 
   @staticmethod
   def draw_test_image(inp, heatmap, vectmap):
@@ -403,12 +416,9 @@ def openpose_infer(img_path: Path, infer_model: tf.keras.Model,
   for img_path in img_paths:
     img = tf.image.decode_image(tf.io.read_file(img_path), channels=3)
     orig_hws.append(img.numpy().shape[:2])
-    meta = ImageMeta(img, None, h.in_hw, h.hparams.parts,
-                     h.hparams.vecs, h.hparams.sigma)
-    meta = pose_resize_shortestedge_fixed(meta)
-    meta = pose_crop_center(meta)
-    det_img = image_ops.normalize(meta.img, 127.5, 127.5)
-    det_imgs.append(det_img)
+    img, *_ = image_ops.letterbox_resize(img, h.in_hw)
+    det_img = h.norm_img(img)
+    det_imgs.append(det_img.numpy())
   batch = len(det_imgs)
   outputs = infer_model.predict(tf.stack(det_imgs), batch)
 
@@ -417,31 +427,31 @@ def openpose_infer(img_path: Path, infer_model: tf.keras.Model,
 
   if result_path is None:
     """ draw gpu result """
-    for img_path, (bbox, score) in zip(img_paths, results):
-      draw_img = h.read_img(img_path)
-      h.draw_image(draw_img.numpy(), [bbox, np.ones_like(score[:, None])])
+    for det_imgs, humans in zip(det_imgs, results):
+      draw_img = h.renorm_img(det_imgs).astype(np.uint8)
+      draw_img = draw_humans(draw_img, humans)
+      plt.imshow(draw_img)
+      plt.show()
   else:
     """ draw gpu result and nncase result """
     raise NotImplementedError
 
 
 def parser_outputs(outputs, orig_hws, batch, h: OpenPoseHelper):
-  vectmaps, heatmaps = outputs
+  vectormap, heatmap = outputs
+  heatMat_up = tf.image.resize(heatmap, h.in_hw)
+  pafMat_up = tf.image.resize(vectormap, h.in_hw)
+  smoother = Smoother({'data': heatMat_up}, 25, 3.0, 19)
+  gaussian_heatMat = smoother.get_output()
+  max_pooled_in_tensor = tf.nn.pool(gaussian_heatMat, window_shape=(3, 3),
+                                    pooling_type='MAX', padding='SAME')
+  peaks = tf.where(tf.equal(gaussian_heatMat, max_pooled_in_tensor),
+                   gaussian_heatMat, tf.zeros_like(gaussian_heatMat))
+  peaks = peaks.numpy()
+  heatMat = heatMat_up.numpy()
+  pafMat = pafMat_up.numpy()
   humanss = []
   for b in range(batch):
-    heatmap, vectormap = vectmaps[i], heatmaps[i]
-    heatMat_up = tf.image.resize(heatmap, h.in_hw)
-    pafMat_up = tf.image.resize(vectormap, h.in_hw)
-    smoother = Smoother({'data': heatMat_up}, 25, 3.0, 19)
-    gaussian_heatMat = smoother.get_output()
-    max_pooled_in_tensor = tf.nn.pool(
-        gaussian_heatMat, window_shape=(3, 3), pooling_type='MAX', padding='SAME')
-    peaks = tf.where(tf.equal(gaussian_heatMat, max_pooled_in_tensor),
-                     gaussian_heatMat, tf.zeros_like(gaussian_heatMat))
-    peaks = peaks.numpy()
-    heatMat = heatMat_up.numpy()
-    pafMat = pafMat_up.numpy()
-    humans = estimate_paf(peaks, heatMat_up, pafMat_up)
+    humans = estimate_paf(peaks[b], heatMat_up[b], pafMat_up[b])
     humanss.append(humans)
   return humanss
-

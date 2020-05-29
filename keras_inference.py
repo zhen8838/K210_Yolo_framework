@@ -30,7 +30,10 @@ def main(ckpt_path: Path, argmap: dict2obj, images_path: Path,
   h = helper_register[model.helper](**model.helper_kwarg)
 
   network = network_register[model.network]
-  infer_model, train_model = network(**model.network_kwarg)
+  try:
+    infer_model, train_model = network(**model.network_kwarg)
+  except ValueError:
+    infer_model, train_model, val_model = network(**model.network_kwarg)
 
   print(INFO, f'Load CKPT from {str(ckpt_path)}')
   if argmap.quantize.is_quantize == True:

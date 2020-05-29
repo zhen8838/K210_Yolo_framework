@@ -17,3 +17,6 @@ kmodel
 devlop
 pytest.ini
 cocoapi
+*.o
+*.cxx
+*.so

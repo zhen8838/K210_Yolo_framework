@@ -10,7 +10,7 @@ _INVALID_BOX = [[-1.0, -1.0, -1.0, -1.0]]
 def letterbox_resize(image: tf.Tensor,
                      desired_size: tf.Tensor,
                      method: str = tf.image.ResizeMethod.NEAREST_NEIGHBOR
-                    ) -> [tf.Tensor, tf.Tensor, tf.Tensor]:
+                     ) -> [tf.Tensor, tf.Tensor, tf.Tensor]:
   """letter box resize image function
 
     Args:
@@ -20,12 +20,16 @@ def letterbox_resize(image: tf.Tensor,
 
     Returns:
         img (tf.Tensor): image
-        scale (tf.Tensor): image resize scale, shape: [2]
-        size (tf.Tensor): image target size, shape: [2]
-        offset (tf.Tensor): image resize offset, shape: [2]
+
+        scale (tf.Tensor): image resize scale, shape: [2] NOTE y,x
+
+        size (tf.Tensor): image target size, shape: [2] NOTE y,x
+
+        offset (tf.Tensor): image resize offset, shape: [2] NOTE y,x
 
         NOTE using `NEAREST_NEIGHBOR` img dtype same as before, using other img dtype is float32
-        scale , offset use for bbox transfrom
+
+        scale , offset use for bboxs or keypoints transfrom
     """
   img_hw = tf.shape(image)[:2]
 
@@ -34,7 +38,7 @@ def letterbox_resize(image: tf.Tensor,
     hw = tf.cast(desired_size, tf.float32)
     scale = tf.tile(tf.reduce_min(hw / img_hw, keepdims=True), [2])
     new_hw = img_hw * scale
-    offset = (hw-new_hw) / 2
+    offset = (hw - new_hw) / 2
     img = tf.image.resize(img, tf.cast(new_hw, tf.int32), method=method)
     img = tf.image.pad_to_bounding_box(img, tf.cast(offset[0], tf.int32),
                                        tf.cast(offset[1], tf.int32),
@@ -43,10 +47,11 @@ def letterbox_resize(image: tf.Tensor,
     return img, scale, offset
 
   img, scale, offset = tf.cond(
-      tf.reduce_all(tf.equal(size, img_hw)), lambda: (tf.cast(
-          image, image.dtype if method == tf.image.ResizeMethod.NEAREST_NEIGHBOR
-          else tf.float32), tf.ones([2]), tf.zeros([2])), lambda: _resize(
-              image, img_hw))
+      tf.reduce_all(tf.equal(desired_size, img_hw)),
+      lambda: (tf.cast(image, image.dtype
+                       if method == tf.image.ResizeMethod.NEAREST_NEIGHBOR
+                       else tf.float32), tf.ones([2]), tf.zeros([2])),
+      lambda: _resize(image, img_hw))
   return img, scale, desired_size, offset
 
 
@@ -105,36 +110,46 @@ def retinanet_resize(image,
                      padded_size,
                      aug_scale_min=1.0,
                      aug_scale_max=1.0,
-                     method=tf.image.ResizeMethod.BILINEAR):
+                     method=tf.image.ResizeMethod.NEAREST_NEIGHBOR):
   """Resizes the input image to output size (RetinaNet style). 
         NOTE will clip image
     Resize and pad images given the desired output size of the image and
     stride size.
 
     Here are the preprocessing steps.
+
     1. For a given image, keep its aspect ratio and rescale the image to make it
        the largest rectangle to be bounded by the rectangle specified by the
        `desired_size`.
+
     2. Pad the rescaled image to the padded_size.
 
     Args:
       image: a `Tensor` of shape [height, width, 3] representing an image.
+
       desired_size: a `Tensor` or `int` list/tuple of two elements representing
         [height, width] of the desired actual output image size.
+
       padded_size: a `Tensor` or `int` list/tuple of two elements representing
         [height, width] of the padded output image size. Padding will be applied
         after scaling the image to the desired_size.
+
       aug_scale_min: a `float` with range between [0, 1.0] representing minimum
         random scale applied to desired_size for training scale jittering.
+
       aug_scale_max: a `float` with range between [1.0, inf] representing maximum
         random scale applied to desired_size for training scale jittering.
+
       method: function to resize input image to scaled image.
 
     Returns:
       output_image: `Tensor` of shape [height, width, 3] where [height, width]
         equals to `output_size`.
+
       image_scale: [y_scale, x_scale]
+
       desired_size: [desired_height, desired_width],
+
       offset: [y_offset, x_offset]]
     """
   with tf.name_scope('retinanet_resize'):
@@ -159,27 +174,31 @@ def retinanet_resize(image,
     # desired_size.
     if random_jittering:
       max_offset = scaled_size - desired_size
-      max_offset = tf.where(
-          tf.less(max_offset, 0), tf.zeros_like(max_offset), max_offset)
-      offset = max_offset * tf.random.uniform([
-          2,
-      ], 0, 1)
+      max_offset = tf.where(tf.less(max_offset, 0),
+                            tf.zeros_like(max_offset), max_offset)
+      offset = max_offset * tf.random.uniform([2, ], 0, 1)
       offset = tf.cast(offset, tf.int32)
     else:
       offset = tf.zeros((2,), tf.int32)
 
+    scaled_size = tf.cast(scaled_size, tf.int32)
+
     scaled_image = tf.image.resize(
-        image, tf.cast(scaled_size, tf.int32), method=method)
+        image, scaled_size, method=method)
 
     if random_jittering:
-      scaled_image = scaled_image[offset[0]:offset[0] +
-                                  desired_size[0], offset[1]:offset[1] +
-                                  desired_size[1], :]
+      scaled_image = scaled_image[offset[0]:offset[0] + desired_size[0],
+                                  offset[1]:offset[1] + desired_size[1], :]
 
-    output_image = tf.image.pad_to_bounding_box(scaled_image, 0, 0,
+      scaled_size = tf.minimum(desired_size, scaled_size - offset)
+
+    new_offset = tf.cast(padded_size - scaled_size, tf.float32)
+    new_offset = tf.cast(tf.random.uniform([2, ], 0, 1.) * new_offset, tf.int32)
+    output_image = tf.image.pad_to_bounding_box(scaled_image,
+                                                new_offset[0], new_offset[1],
                                                 padded_size[0], padded_size[1])
 
-    return output_image, image_scale, desired_size, -tf.cast(offset, tf.float32)
+    return output_image, image_scale, desired_size, -tf.cast(offset + new_offset, tf.float32)
 
 
 def fastrcnn_resize(image,
@@ -188,7 +207,7 @@ def fastrcnn_resize(image,
                     padded_size,
                     aug_scale_min=1.0,
                     aug_scale_max=1.0,
-                    method=tf.image.ResizeMethod.BILINEAR):
+                    method=tf.image.ResizeMethod.NEAREST_NEIGHBOR):
   """Resizes the input image to output size (Faster R-CNN style).
 
     Resize and pad images given the specified short / long side length and the
@@ -203,17 +222,23 @@ def fastrcnn_resize(image,
 
     Args:
       image: a `Tensor` of shape [height, width, 3] representing an image.
+
       short_side: a scalar `Tensor` or `int` representing the desired short side
         to be rescaled to.
+
       long_side: a scalar `Tensor` or `int` representing the desired long side to
         be rescaled to.
+
       padded_size: a `Tensor` or `int` list/tuple of two elements representing
         [height, width] of the padded output image size. Padding will be applied
         after scaling the image to the desired_size.
+
       aug_scale_min: a `float` with range between [0, 1.0] representing minimum
         random scale applied to desired_size for training scale jittering.
+
       aug_scale_max: a `float` with range between [1.0, inf] representing maximum
         random scale applied to desired_size for training scale jittering.
+
       method: function to resize input image to scaled image.
 
     Returns:
@@ -241,8 +266,7 @@ def fastrcnn_resize(image,
     if random_jittering:
       random_scale = tf.random.uniform([],
                                        aug_scale_min,
-                                       aug_scale_max,
-                                       seed=seed)
+                                       aug_scale_max)
       scaled_size = tf.round(random_scale * scaled_size)
 
     # Computes 2D image_scale.
@@ -275,16 +299,19 @@ def fastrcnn_resize(image,
     return output_image, image_scale, desired_size, -tf.cast(offset, tf.float32)
 
 
-def resize_keypoints(keypoints: tf.Tensor, image_scale: tf.Tensor,
-                     output_size: tf.Tensor, offset: tf.Tensor) -> tf.Tensor:
-  """Resizes boxes to output size with scale and offset.
+def resize_clip_keypoints(keypoints: tf.Tensor, image_scale: tf.Tensor,
+                          output_size: tf.Tensor, offset: tf.Tensor) -> tf.Tensor:
+  """Resizes and clip to output size with scale and offset.
 
     Args:
-        keypoints: `Tensor` of shape [N, M, 2] representing ground truth boxes.
+        keypoints: `Tensor` of shape [N, M, 2] NOTE y,x
+
         image_scale: 2D float `Tensor` representing scale factors that apply to
         [height, width] of input image.
+
         output_size: 2D `Tensor` or `int` representing [height, width] of target
         output image size.
+
         offset: 2D `Tensor` representing top-left corner [y0, x0] to crop scaled
         boxes.
 
@@ -292,7 +319,7 @@ def resize_keypoints(keypoints: tf.Tensor, image_scale: tf.Tensor,
         keypoints: `Tensor` of shape [N, M, 4] representing the scaled boxes.
     """
   # Adjusts box coordinates based on image_scale and offset.
-  keypoints = keypoints*image_scale + offset
+  keypoints = keypoints * image_scale + offset
   # Clips the keypoints.
   keypoints = clip_keypoints(keypoints, output_size)
   return keypoints
@@ -337,7 +364,7 @@ def blend(image1: tf.Tensor, image2: tf.Tensor, factor: tf.Tensor) -> tf.Tensor:
   """
   image1 = tf.cast(image1, tf.float32)
   image2 = tf.cast(image2, tf.float32)
-  return tf.saturate_cast(image1 + factor * (image2-image1), tf.uint8)
+  return tf.saturate_cast(image1 + factor * (image2 - image1), tf.uint8)
 
 
 def cutout(image: tf.Tensor, pad_size: float, replace: float = 0):
@@ -375,7 +402,7 @@ def cutout(image: tf.Tensor, pad_size: float, replace: float = 0):
   right_pad = tf.maximum(0, image_width - cutout_center_width - pad_size)
 
   cutout_shape = [
-      image_height - (lower_pad+upper_pad), image_width - (left_pad+right_pad)
+      image_height - (lower_pad + upper_pad), image_width - (left_pad + right_pad)
   ]
   padding_dims = [[lower_pad, upper_pad], [left_pad, right_pad]]
   mask = tf.pad(
@@ -561,10 +588,10 @@ def random_shift_bbox(image,
                                                 clip_x(unclipped_new_min_x),
                                                 clip_y(unclipped_new_max_y),
                                                 clip_x(unclipped_new_max_x))
-  shifted_min_y = (new_min_y-unclipped_new_min_y) + min_y
-  shifted_max_y = max_y - (unclipped_new_max_y-new_max_y)
-  shifted_min_x = (new_min_x-unclipped_new_min_x) + min_x
-  shifted_max_x = max_x - (unclipped_new_max_x-new_max_x)
+  shifted_min_y = (new_min_y - unclipped_new_min_y) + min_y
+  shifted_max_y = max_y - (unclipped_new_max_y - new_max_y)
+  shifted_min_x = (new_min_x - unclipped_new_min_x) + min_x
+  shifted_max_x = max_x - (unclipped_new_max_x - new_max_x)
 
   # Create the new bbox tensor by converting pixel integer values to floats.
   new_bbox = tf.stack([
@@ -584,15 +611,15 @@ def random_shift_bbox(image,
     """Applies mask to bbox region in image then adds content_tensor to it."""
     mask = tf.pad(
         mask, [[min_y_,
-                (image_height-1) - max_y_], [min_x_,
-                                             (image_width-1) - max_x_], [0, 0]],
+                (image_height - 1) - max_y_], [min_x_,
+                                               (image_width - 1) - max_x_], [0, 0]],
         constant_values=1)
     content_tensor = tf.pad(
         content_tensor,
-        [[min_y_, (image_height-1) - max_y_], [min_x_,
-                                               (image_width-1) - max_x_], [0, 0]],
+        [[min_y_, (image_height - 1) - max_y_], [min_x_,
+                                                 (image_width - 1) - max_x_], [0, 0]],
         constant_values=0)
-    return image_*mask + content_tensor
+    return image_ * mask + content_tensor
 
   # Zero out original bbox location.
   mask = tf.zeros_like(image)[min_y:max_y + 1, min_x:max_x + 1, :]
@@ -730,19 +757,19 @@ def _apply_bbox_augmentation(image, bbox, augmentation_func, *args):
   # image.
   augmented_bbox_content = tf.pad(
       augmented_bbox_content,
-      [[min_y, (image_height-1) - max_y], [min_x,
-                                           (image_width-1) - max_x], [0, 0]])
+      [[min_y, (image_height - 1) - max_y], [min_x,
+                                             (image_width - 1) - max_x], [0, 0]])
 
   # Create a mask that will be used to zero out a part of the original image.
   mask_tensor = tf.zeros_like(bbox_content)
 
   mask_tensor = tf.pad(
       mask_tensor,
-      [[min_y, (image_height-1) - max_y], [min_x,
-                                           (image_width-1) - max_x], [0, 0]],
+      [[min_y, (image_height - 1) - max_y], [min_x,
+                                             (image_width - 1) - max_x], [0, 0]],
       constant_values=1)
   # Replace the old bbox content with the new augmented content.
-  image = image*mask_tensor + augmented_bbox_content
+  image = image * mask_tensor + augmented_bbox_content
   return image
 
 
@@ -1009,10 +1036,10 @@ def _rotate_bbox(bbox, image_height, image_width, degrees):
   # Y coordinates are made negative as the y axis of images goes down with
   # increasing pixel values, so we negate to make sure x axis and y axis points
   # are in the traditionally positive direction.
-  min_y = -tf.cast(bbox[0] - 0.5*image_height, tf.int32)
-  min_x = tf.cast(bbox[1] - 0.5*image_width, tf.int32)
-  max_y = -tf.cast(bbox[2] - 0.5*image_height, tf.int32)
-  max_x = tf.cast(bbox[3] - 0.5*image_width, tf.int32)
+  min_y = -tf.cast(bbox[0] - 0.5 * image_height, tf.int32)
+  min_x = tf.cast(bbox[1] - 0.5 * image_width, tf.int32)
+  max_y = -tf.cast(bbox[2] - 0.5 * image_height, tf.int32)
+  max_x = tf.cast(bbox[3] - 0.5 * image_width, tf.int32)
   coordinates = tf.stack([[min_y, min_x], [min_y, max_x], [max_y, min_x],
                           [max_y, max_x]])
   coordinates = tf.cast(coordinates, tf.float32)
@@ -1025,11 +1052,11 @@ def _rotate_bbox(bbox, image_height, image_width, degrees):
       tf.matmul(rotation_matrix, tf.transpose(coordinates)), tf.int32)
   # Find min/max values and convert them back to normalized 0-1 floats.
   min_y = -(
-      tf.cast(tf.reduce_max(new_coords[0, :]), tf.float32) - 0.5*image_height)
-  min_x = tf.cast(tf.reduce_min(new_coords[1, :]), tf.float32) + 0.5*image_width
+      tf.cast(tf.reduce_max(new_coords[0, :]), tf.float32) - 0.5 * image_height)
+  min_x = tf.cast(tf.reduce_min(new_coords[1, :]), tf.float32) + 0.5 * image_width
   max_y = -(
-      tf.cast(tf.reduce_min(new_coords[0, :]), tf.float32) - 0.5*image_height)
-  max_x = tf.cast(tf.reduce_max(new_coords[1, :]), tf.float32) + 0.5*image_width
+      tf.cast(tf.reduce_min(new_coords[0, :]), tf.float32) - 0.5 * image_height)
+  max_x = tf.cast(tf.reduce_max(new_coords[1, :]), tf.float32) + 0.5 * image_width
 
   # Clip the bboxes to be sure the fall between [0, 1].
   min_y, min_x, max_y, max_x = _clip_bbox(min_y, min_x, max_y, max_x,
@@ -1275,7 +1302,7 @@ def autocontrast(image: tf.Tensor) -> tf.Tensor:
 
     # Scale the image, making the lowest value 0 and the highest value 255.
     def scale_values(im):
-      scale = 255.0 / (hi-lo)
+      scale = 255.0 / (hi - lo)
       offset = -lo * scale
       im = tf.cast(im, tf.float32) * scale + offset
       return tf.saturate_cast(im, tf.uint8)
@@ -1344,7 +1371,7 @@ def equalize(image):
     def build_lut(histo, step):
       # Compute the cumulative sum, shifting by step // 2
       # and then normalization by step.
-      lut = (tf.cumsum(histo) + (step//2)) // step
+      lut = (tf.cumsum(histo) + (step // 2)) // step
       # Shift lut, prepending with 0.
       lut = tf.concat([[0], lut[:-1]], 0)
       # Clip the counts to be in range.  This is done
@@ -1519,8 +1546,8 @@ def _cutout_inside_bbox(image, bbox, pad_fraction):
   # region lies entirely within the bbox.
   box_height = max_y - min_y + 1
   box_width = max_x - min_x + 1
-  pad_size_height = tf.cast(pad_fraction * (box_height/2), tf.int32)
-  pad_size_width = tf.cast(pad_fraction * (box_width/2), tf.int32)
+  pad_size_height = tf.cast(pad_fraction * (box_height / 2), tf.int32)
+  pad_size_width = tf.cast(pad_fraction * (box_width / 2), tf.int32)
 
   # Sample the center location in the image where the zero mask will be applied.
   cutout_center_height = tf.random.uniform(
@@ -1535,7 +1562,7 @@ def _cutout_inside_bbox(image, bbox, pad_fraction):
   right_pad = tf.maximum(0, image_width - cutout_center_width - pad_size_width)
 
   cutout_shape = [
-      image_height - (lower_pad+upper_pad), image_width - (left_pad+right_pad)
+      image_height - (lower_pad + upper_pad), image_width - (left_pad + right_pad)
   ]
   padding_dims = [[lower_pad, upper_pad], [left_pad, right_pad]]
 
@@ -1611,16 +1638,16 @@ def normalize(image: tf.Tensor, mean: float = 0.5, std: float = 0.5) -> tf.Tenso
 
   Args:
       `image` (tf.Tensor): float32, value can be [0~1], [0,~255]
-      
+
       `mean` (float, optional): Defaults to 0.5.
-      
+
       `std` (float, optional): Defaults to 0.5.
-      
+
 
   Returns:
       tf.Tensor: image 
-  """  
-  return (image-mean) / std
+  """
+  return (image - mean) / std
 
 
 def renormalize(image: tf.Tensor, mean: float = 0.5,
@@ -1629,13 +1656,13 @@ def renormalize(image: tf.Tensor, mean: float = 0.5,
 
   Args:
       `image` (tf.Tensor): float32
-      
+
       `mean` (float, optional): Defaults to 0.5.
-      
+
       `std` (float, optional): Defaults to 0.5.
-      
+
 
   Returns:
       tf.Tensor: image 
-  """  
-  return image*std + mean
+  """
+  return image * std + mean

@@ -8,6 +8,12 @@ import sys
 import tensorflow as tf
 import scipy.stats as st
 from tools.openpose.openopse_agument import CocoPart, CocoPairs, CocoPairsRender, CocoColors
+try:
+  from tools.openpose.pafprocess import pafprocess
+except ModuleNotFoundError as e:
+  print(e)
+  print('you need to build c++ library for pafprocess. goto file://tools/openpose/pafprocess/README.md ')
+  exit(-1)
 
 
 def _round(v):
@@ -538,8 +544,10 @@ def draw_humans(npimg, humans: List[Human], imgcopy=False):
 
 
 def estimate_paf(peaks, heat_mat, paf_mat):
-  pafprocess = Pafprocess()
-  pafprocess.process(peaks, heat_mat, paf_mat)
+  # todo 我复现的python版后处理还是有问题,暂时用他的版本
+  # pafprocess = Pafprocess()
+  # pafprocess.process(peaks, heat_mat, paf_mat)
+  pafprocess.process_paf(peaks, heat_mat, paf_mat)
   humans = []
   for human_id in range(pafprocess.get_num_humans()):
     human = Human([])
@@ -563,6 +571,29 @@ def estimate_paf(peaks, heat_mat, paf_mat):
       human.score = score
       humans.append(human)
   return humans
+
+
+def layer(op):
+  def layer_decorated(self, *args, **kwargs):
+    # Automatically set a name if not provided.
+    name = kwargs.setdefault('name', self.get_unique_name(op.__name__))
+    # Figure out the layer inputs.
+    if len(self.terminals) == 0:
+      raise RuntimeError('No input variables found for layer %s.' % name)
+    elif len(self.terminals) == 1:
+      layer_input = self.terminals[0]
+    else:
+      layer_input = list(self.terminals)
+    # Perform the operation and get the output.
+    layer_output = op(self, layer_input, *args, **kwargs)
+    # Add to layer LUT.
+    self.layers[name] = layer_output
+    # This output is now the input for the next layer.
+    self.feed(layer_output)
+    # Return self for chained calls.
+    return self
+
+  return layer_decorated
 
 
 class Smoother(object):
@@ -631,14 +662,3 @@ class Smoother(object):
     output = convolve(input, kernel)
     return output
 
-
-# def test_process_paf():
-#   d = np.load('tmp/openpose_peak_heat_paf.npy', allow_pickle=True)[()]
-#   i = -1
-#   for i in range(4):
-#     img, peaks, heatMat_up, pafMat_up = d['img'][i], d['peaks'][i], d['heatMat'][i], d['pafMat'][i]
-#     humans = estimate_paf(peaks, heatMat_up, pafMat_up)
-#     peaks, heat_mat, paf_mat = peaks, heatMat_up, pafMat_up
-#     img = draw_humans(renormalize(img, 127.5, 127.5).astype(np.uint8), humans)
-#     plt.imshow(img)
-#     plt.show()

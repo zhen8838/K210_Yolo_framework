@@ -239,7 +239,7 @@ def clip_boxes(boxes, image_shape):
 
 
 def clip_keypoints(keypoints, image_shape):
-    """Clips boxes to image boundaries.
+    """Clips keypoints to image boundaries.
 
     Args:
       keypoints: a tensor whose last dimension is 2 representing the coordinates
@@ -259,7 +259,7 @@ def clip_keypoints(keypoints, image_shape):
         raise ValueError(
             'keypoints.shape[-1] is {:d}, but must be 2.'.format(keypoints.shape[-1]))
 
-    with tf.name_scope('clip_boxes'):
+    with tf.name_scope('clip_keypoints'):
         if isinstance(image_shape, list) or isinstance(image_shape, tuple):
             height, width = image_shape
         else:

@@ -2,8 +2,8 @@ import tensorflow as tf
 k = tf.keras
 kl = tf.keras.layers
 from pathlib import Path
-from register import dict2obj, network_register, optimizer_register,\
-    helper_register, callback_register, trainloop_register
+from register import (dict2obj, network_register, optimizer_register,
+                      helper_register, callback_register, trainloop_register, dynamic_load)
 from tools.training_engine import BaseTrainingLoop, DistributionStrategyHelper
 from tools.custom import VariableCheckpoint, LRCallback
 import numpy as np
@@ -36,7 +36,7 @@ def main(config_file, new_cfg, mode, model, train):
   distribution = DistributionStrategyHelper(**train.distributionstrategy_kwarg)
   strategy_scope = distribution.get_strategy_scope()
   with strategy_scope:
-    h = helper_register[model.helper](**model.helper_kwarg)  # type:BaseHelper
+    h = dynamic_load(helper_register[model.helper])(**model.helper_kwarg)  # type:BaseHelper
     h.set_dataset(train.batch_size, train.augmenter)
 
     train_ds, validation_ds = distribution.get_strategy_dataset(
@@ -59,16 +59,16 @@ def main(config_file, new_cfg, mode, model, train):
           train.mixed_precision.dtype)
       tf.keras.mixed_precision.experimental.set_policy(policy)
 
-    network = network_register[model.network]
+    network = dynamic_load(network_register[model.network])
     infer_model, val_model, train_model = network(**model.network_kwarg)
 
-    optimizer: tf.keras.optimizers.Optimizer = optimizer_register[
-        train.optimizer](**train.optimizer_kwarg)
+    optimizer: tf.keras.optimizers.Optimizer = dynamic_load(optimizer_register[
+        train.optimizer])(**train.optimizer_kwarg)
     if train.mixed_precision.enable:
       optimizer = tf.keras.mixed_precision.experimental.LossScaleOptimizer(
           optimizer, policy.loss_scale)
 
-    loop: BaseTrainingLoop = trainloop_register[train.trainloop](
+    loop: BaseTrainingLoop = dynamic_load(trainloop_register[train.trainloop])(
         train_model, val_model, optimizer, distribution.strategy,
         **train.trainloop_kwarg)
     loop.set_dataset(train_ds, validation_ds, train_epoch_step, vali_epoch_step)
@@ -79,7 +79,7 @@ def main(config_file, new_cfg, mode, model, train):
     ]
     if train.callbacks:
       for cbkparam in train.callbacks:
-        cbk_fn = callback_register[cbkparam.name]
+        cbk_fn = dynamic_load(callback_register[cbkparam.name])
         if cbkparam.name == 'AugmenterStateSync':
           cbs.append(cbk_fn(h.augmenter, **cbkparam.kwarg))
           loop.set_augmenter(h.augmenter)
