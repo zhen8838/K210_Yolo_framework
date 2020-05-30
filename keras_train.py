@@ -14,8 +14,8 @@ tfmot_sparsity = tfmot.sparsity.keras
 tfmot_quantization = tfmot.quantization.keras
 from tensorflow_model_optimization.python.core.quantization.keras import quantize_annotate as quantize_annotate_mod
 
-from register import dict2obj, network_register, optimizer_register,\
-    helper_register, loss_register, callback_register
+from register import (dict2obj, network_register, optimizer_register,
+                      helper_register, loss_register, callback_register)
 from yaml import safe_dump, safe_load
 from tensorflow.python import debug as tfdebug
 from typing import List

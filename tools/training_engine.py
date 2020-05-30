@@ -546,9 +546,10 @@ class BaseTrainingLoop():
       self.callback_list.on_epoch_begin(cur_ep + 1)
       probar = MProgbar(train_target_steps + 1, stateful_metrics=probar_metrics)
       for seen in range(1, train_target_steps + 1):
-        self.train_step(self.train_iter, tf.constant(steps_per_run),
+        # NOTE when start tracing
+        self.train_step(self.train_iter, 3 if self.summary.is_tracing else steps_per_run,
                         self.metrics.train)
-        # write something to tensorboard
+        # write profiler to tensorboard
         if self.summary.is_tracing:
           self.summary.save_trace()
         elif (not self.summary.is_tracing and

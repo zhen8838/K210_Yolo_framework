@@ -12,29 +12,32 @@ import cv2
 
 
 class PhotoTransferHelper(BaseHelperV2):
+  """ 
+  hparams: 
+    num_parallel_calls: -1
+  """
   def set_datasetlist(self):
-    dataset_root = Path(self.dataset_root)
-    self.trainA = dataset_root / 'trainA'
-    self.trainB = dataset_root / 'trainB'
-    self.testA = dataset_root / 'testA'
-    self.testB = dataset_root / 'testB'
-    self.trainA = [p.as_posix() for p in self.trainA.glob('*.png')]
-    self.trainB = [p.as_posix() for p in self.trainB.glob('*.png')]
-    self.testA = [p.as_posix() for p in self.testA.glob('*.png')]
-    self.testB = [p.as_posix() for p in self.testB.glob('*.png')]
-
-    self.train_total_data = len(self.trainA)
-    self.test_total_data = len(self.testA)
+    dataset_root = np.load(self.dataset_root, allow_pickle=True)[()]
+    self.trainA = dataset_root['trainA']
+    self.trainB = dataset_root['trainB']
+    self.testA = dataset_root['testA']
+    self.testB = dataset_root['testB']
+    self.train_total_data = dataset_root['train_num']
+    self.test_total_data = dataset_root['test_num']
     self.val_total_data = self.test_total_data
 
-  def build_train_datapipe(self, batch_size, is_augment, is_normalize=True):
-    def map_fn(img_path):
-      img = tf.image.decode_png(tf.io.read_file(img_path), channels=3)
+  def build_train_datapipe(self, batch_size, is_augment, is_normalize=True, is_training=True):
+    def map_fn(stream):
+      features = tf.io.parse_single_example(
+          stream,
+          {'img_raw': tf.io.FixedLenFeature([], tf.string)})
+      img_str = features['img_raw']
+      img = tf.image.decode_png(img_str, channels=3)
       if is_augment:
-        img = tf.image.resize(img, (self.in_hw[0] + 30, self.in_hw[1] + 30))
+        img = tf.image.resize(img, (self.in_hw[0] + 15, self.in_hw[1] + 15))
         img = tf.image.random_crop(img, (self.in_hw[0], self.in_hw[1], 3))
         img = tf.image.random_flip_left_right(img)
-        img = tf.image.random_brightness(img, 3)
+        img = tf.image.random_brightness(img, 0.3)
       else:
         img = tf.image.resize(img, self.in_hw)
 
@@ -44,22 +47,26 @@ class PhotoTransferHelper(BaseHelperV2):
         img = tf.cast(img, tf.float32)
       return img
 
-    trainAds = (tf.data.Dataset.from_tensor_slices(self.trainA).
-                shuffle(batch_size * 100).
-                repeat().
-                map(map_fn, -1))
+    def map_two_fn(stream_a, stream_b):
+      img_a = map_fn(stream_a)
+      img_b = map_fn(stream_b)
+      return {'realA': img_a, 'realB': img_b}
 
-    trainBds = (tf.data.Dataset.from_tensor_slices(self.trainB).
-                shuffle(batch_size * 100).
-                repeat().
-                map(map_fn, -1))
-
-    def batch_map(a, b): return {'realA': a, 'realB': b}
-
-    ds = (tf.data.Dataset.zip((trainAds, trainBds)).
-          batch(batch_size, True).
-          map(batch_map, -1).
-          prefetch(tf.data.experimental.AUTOTUNE))
+    if is_training:
+      ds = (tf.data.Dataset.zip((tf.data.TFRecordDataset(self.trainA),
+                                 tf.data.TFRecordDataset(self.trainB))).
+            shuffle(batch_size * 100).
+            repeat().
+            map(map_two_fn, self.hparams.num_parallel_calls).
+            batch(batch_size, True).
+            prefetch(tf.data.experimental.AUTOTUNE))
+    else:
+      ds = (tf.data.Dataset.zip((tf.data.TFRecordDataset(self.testA),
+                                 tf.data.TFRecordDataset(self.testB))).
+            shuffle(100).
+            repeat().
+            map(map_two_fn, -1).
+            batch(batch_size, True))
 
     options = tf.data.Options()
     options.experimental_deterministic = False
@@ -67,40 +74,13 @@ class PhotoTransferHelper(BaseHelperV2):
     return ds
 
   def build_val_datapipe(self, batch_size, is_normalize=True):
-    def map_fn(img_path):
-      img = tf.image.decode_png(tf.io.read_file(img_path), channels=3)
-      img = tf.image.resize(img, self.in_hw)
-
-      if is_normalize:
-        img = normalize(tf.cast(img, tf.float32), 127.5, 127.5)
-      else:
-        img = tf.cast(img, tf.float32)
-      return img
-
-    testAds = (tf.data.Dataset.from_tensor_slices(self.testA).
-               shuffle(100).
-               repeat().
-               map(map_fn, -1))
-
-    testBds = (tf.data.Dataset.from_tensor_slices(self.testB).
-               shuffle(100).
-               repeat().
-               map(map_fn, -1))
-
-    def batch_map(a, b): return {'realA': a, 'realB': b}
-    ds = (tf.data.Dataset.zip((testAds, testBds)).
-          batch(1, True).
-          map(batch_map, -1).
-          prefetch(tf.data.experimental.AUTOTUNE))
-
-    options = tf.data.Options()
-    options.experimental_deterministic = False
-    ds = ds.with_options(options)
-    return ds
+    return self.build_train_datapipe(1, is_augment=False,
+                                     is_normalize=is_normalize,
+                                     is_training=False)
 
 
 class PhotoTransferLoop(GanBaseTrainingLoop):
-  """ PhotoTransferLoop 
+  """ PhotoTransferLoop
 
   Args:
       hparams:
@@ -305,7 +285,7 @@ class PhotoTransferLoop(GanBaseTrainingLoop):
     def step_fn(inputs: dict):
       real_A, real_B = inputs['realA'], inputs['realB']
 
-      with tf.GradientTape() as tape:
+      with tf.GradientTape(persistent=True) as tape:
         # train discriminator
         fake_A2B, fake_A2B_cam_logit, _ = self.genA2B(real_A, training=True)
         fake_B2A, fake_B2A_cam_logit, _ = self.genB2A(real_B, training=True)
@@ -430,6 +410,7 @@ class PhotoTransferLoop(GanBaseTrainingLoop):
       fake_A2B, _, fake_A2B_heatmap = self.genA2B(real_A, training=False)
       fake_A2B2A, _, fake_A2B2A_heatmap = self.genB2A(fake_A2B, training=False)
       fake_A2A, _, fake_A2A_heatmap = self.genB2A(real_A, training=False)
+      real_A = real_A.numpy()
       fake_A2B, fake_A2B_heatmap = fake_A2B.numpy(), fake_A2B_heatmap.numpy()
       fake_A2B2A, fake_A2B2A_heatmap = fake_A2B2A.numpy(), fake_A2B2A_heatmap.numpy()
       fake_A2A, fake_A2A_heatmap = fake_A2A.numpy(), fake_A2A_heatmap.numpy()
@@ -443,6 +424,7 @@ class PhotoTransferLoop(GanBaseTrainingLoop):
       fake_B2A, _, fake_B2A_heatmap = self.genB2A(real_B, training=False)
       fake_B2A2B, _, fake_B2A2B_heatmap = self.genA2B(fake_B2A, training=False)
       fake_B2B, _, fake_B2B_heatmap = self.genA2B(real_B, training=False)
+      real_B = real_B.numpy()
       fake_B2A, fake_B2A_heatmap = fake_B2A.numpy(), fake_B2A_heatmap.numpy()
       fake_B2A2B, fake_B2A2B_heatmap = fake_B2A2B.numpy(), fake_B2A2B_heatmap.numpy()
       fake_B2B, fake_B2B_heatmap = fake_B2B.numpy(), fake_B2B_heatmap.numpy()

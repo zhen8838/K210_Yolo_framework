@@ -37,3 +37,5 @@ eval:
 time_profile:
 	kernprof -l ${PY} && python -m line_profiler $(notdir ${PY}).lprof
 	
+tensorboard:
+	tensorboard --logdir ${CKPT} --samples_per_plugin images=0

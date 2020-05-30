@@ -35,7 +35,7 @@ train:
     function_optimization: true
     scoped_allocator_optimization: true
   augmenter: true
-  batch_size: 32
+  batch_size: 64
   pre_ckpt: null
   rand_seed: 10101
   epochs: 150

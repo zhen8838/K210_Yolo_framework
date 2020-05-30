@@ -138,6 +138,10 @@ class PFLDV2Helper(BaseHelper):
       mat_ratio = tf.where(mat_ratio > 0, 1. / mat_ratio,
                            tf.ones([1, self.attribute_num]) * batch_size)
       attribute_weight = tf.matmul(attr, mat_ratio, transpose_b=True)  # [n,1]
+      # NOTE avoid when image don't no special attribute,the loss's weight is 0
+      attribute_weight = tf.where(attribute_weight == 0,
+                                  tf.ones_like(attribute_weight),
+                                  attribute_weight)
 
       labels = tf.concat([
           tf.reshape(landmark, [self.batch_size, -1]),
