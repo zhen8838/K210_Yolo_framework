@@ -1,0 +1,129 @@
+IMG_SIZE: &IMG_SIZE 112
+
+mode: train
+model:
+  name: phototransfer
+  helper: PhotoTransferHelper
+  helper_kwarg:
+    dataset_root: data/phototransfer_img_ann.npy
+    in_hw:
+      - *IMG_SIZE
+      - *IMG_SIZE
+    mixed_precision_dtype: float32
+    hparams: 
+      num_parallel_calls: 4
+  network: ugatitnet
+  network_kwarg:
+    image_shape:
+      - *IMG_SIZE
+      - *IMG_SIZE
+      - 3
+    filters: 32
+    discriminator_layers: 6
+    light: true
+train:
+  graph_optimizer: true
+  graph_optimizer_kwarg:
+    layout_optimizer: true
+    constant_folding: true
+    shape_optimization: true
+    remapping: true
+    arithmetic_optimization: true
+    dependency_optimization: true
+    loop_optimization: true
+    function_optimization: true
+    debug_stripper: true
+    disable_model_pruning: false
+    scoped_allocator_optimization: true
+    pin_to_host_optimization: false
+    implementation_selector: true
+    auto_mixed_precision: false
+    disable_meta_optimizer: false
+    min_graph_nodes: true
+  distributionstrategy_kwarg:
+    tpu: null
+    strategy: null
+  augmenter: true
+  batch_size: 1
+  pre_ckpt:
+  rand_seed: 10101
+  epochs: 100
+  train_epoch_step: 1000
+  vali_epoch_step: null
+  steps_per_run: 20
+  log_dir: log
+  sub_log_dir: default_phototransfer_exp
+  profile_batch: 0
+  mixed_precision:
+    enable: false
+    dtype: mixed_float16
+  trainloop: PhotoTransferLoop
+  trainloop_kwarg:
+    hparams:
+      adv_weight: 1 # Weight for GAN
+      cycle_weight: 50 # Weight for Cycle
+      identity_weight: 10 # Weight for Identity
+      cam_weight: 1000 # Weight for CAM
+      faceid_weight: 1 # Weight for Face ID
+      in_hw: # input image hw
+        - *IMG_SIZE
+        - *IMG_SIZE
+      face_model_path: tmp/face_model.h5 # face model path
+      ema:
+        enable: false
+        decay: 0.999
+  variablecheckpoint_kwarg:
+    variable_dict:
+      model_genA2B: generator_model[0]
+      model_genB2A: generator_model[1]
+      model_disGA: discriminator_model[0]
+      model_disGB: discriminator_model[1]
+      model_disLA: discriminator_model[2]
+      model_disLB: discriminator_model[3]
+      g_optimizer: generator_optimizer
+      d_optimizer: discriminator_optimizer
+    monitor: train/g_loss
+    mode: all
+  generator_optimizer: Adam
+  generator_optimizer_kwarg:
+    learning_rate: 0.0001
+    beta_1: 0.5
+    beta_2: 0.999
+    epsilon: 0.0001
+  discriminator_optimizer: Adam
+  discriminator_optimizer_kwarg:
+    learning_rate: 0.0001
+    beta_1: 0.5
+    beta_2: 0.999
+    epsilon: 0.0001
+  callbacks:
+    null
+    # - name: EarlyStopping
+    #   kwarg:
+    #     monitor: train/g_loss
+    #     min_delta: 0
+    #     patience: 20
+    #     verbose: 0
+    #     mode: max
+    #     baseline: null
+    #     restore_best_weights: false
+    # - name: ScheduleLR
+    #   kwarg:
+    #     base_lr: 0.03
+    #     use_warmup: true
+    #     warmup_epochs: 20
+    #     decay_rate: 0.7
+    #     decay_epochs: 20
+    #     outside_optimizer: generator_optimizer
+    # - name: ScheduleLR
+    #   kwarg:
+    #     base_lr: 0.03
+    #     use_warmup: true
+    #     warmup_epochs: 20
+    #     decay_rate: 0.7
+    #     decay_epochs: 20
+    #     outside_optimizer: discriminator_optimizer
+inference:
+  infer_fn_kwarg:
+    batch_size: 1
+    save_dir: /tmp/test_photos

@@ -485,7 +485,8 @@ class BaseTrainingLoop():
         is_tracing=False,
         global_seen=0,
         optimizer=self.optimizer)
-    assert self.summary.profile_batch > 1, 'NOTE: summary.profile_batch > 1'
+    if self.summary.profile_batch <= 0:
+      print(INFO,"Summary will don't profile")
     self.summary.write_graph(self.train_model)
 
   @abc.abstractclassmethod

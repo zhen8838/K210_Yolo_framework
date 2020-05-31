@@ -14,7 +14,6 @@ from typing import List, Tuple
 class ResnetGenerator(object):
 
   def __init__(self, ngf=64, img_size=256, light=False):
-    super(ResnetGenerator, self).__init__()
     self.light = light
 
     self.ConvBlock1 = compose(
@@ -150,7 +149,6 @@ class ResnetGenerator(object):
 class ConvBlock(object):
 
   def __init__(self, dim_in, dim_out):
-    super(ConvBlock, self).__init__()
     self.dim_out = dim_out
 
     self.ConvBlock1 = compose(
@@ -193,7 +191,6 @@ class ConvBlock(object):
 class HourGlass(object):
 
   def __init__(self, dim_in, dim_out, use_res=True):
-    super(HourGlass, self).__init__()
     self.use_res = use_res
 
     self.HG = compose(
@@ -225,7 +222,6 @@ class HourGlass(object):
 class HourGlassBlock(object):
 
   def __init__(self, dim_in, dim_out):
-    super(HourGlassBlock, self).__init__()
 
     self.ConvBlock1_1 = ConvBlock(dim_in, dim_out)
     self.ConvBlock1_2 = ConvBlock(dim_out, dim_out)
@@ -284,7 +280,6 @@ class HourGlassBlock(object):
 class ResnetBlock(object):
 
   def __init__(self, dim, use_bias=False):
-    super(ResnetBlock, self).__init__()
     conv_block = []
     conv_block += [
         ReflectionPadding2D((1, 1)),
@@ -307,7 +302,6 @@ class ResnetBlock(object):
 class ResnetSoftAdaLINBlock(object):
 
   def __init__(self, dim, use_bias=False):
-    super(ResnetSoftAdaLINBlock, self).__init__()
     self.pad1 = ReflectionPadding2D((1, 1))
     self.conv1 = kl.Conv2D(dim, kernel_size=3, strides=1, padding='valid', use_bias=use_bias)
     self.norm1 = SoftAdaLIN(dim)
@@ -332,7 +326,6 @@ class ResnetSoftAdaLINBlock(object):
 class ResnetAdaLINBlock(object):
 
   def __init__(self, dim, use_bias=False):
-    super(ResnetAdaLINBlock, self).__init__()
     self.pad1 = ReflectionPadding2D((1, 1))
     self.conv1 = kl.Conv2D(dim, kernel_size=3, strides=1, padding='valid', use_bias=use_bias)
     self.norm1 = adaLIN(dim)
@@ -397,6 +390,9 @@ class SoftAdaLIN(k.layers.Layer):
 
     soft_gamma = (1. - self.w_gamma) * style_gamma + self.w_gamma * content_gamma
     soft_beta = (1. - self.w_beta) * style_beta + self.w_beta * content_beta
+    # NOTE expand dims for training batch > 1 
+    soft_gamma = soft_gamma[:, None, None, :]
+    soft_beta = soft_beta[:, None, None, :]
 
     out = self.norm([x, soft_gamma, soft_beta])
     return out
@@ -438,7 +434,6 @@ class adaLIN(k.layers.Layer):
 
     out_ln = (inputs - ln_mean) / K.sqrt(ln_var + self.eps)
     out = self.rho * out_in + (1 - self.rho) * out_ln
-
     out = out * gamma + beta
 
     return out
@@ -506,7 +501,6 @@ class LIN(k.layers.Layer):
 class Discriminator(object):
 
   def __init__(self, input_nc, ndf=64, n_layers=5):
-    super(Discriminator, self).__init__()
     model = [
         ReflectionPadding2D((1, 1)),
         Conv2DSpectralNormal(ndf, kernel_size=4, strides=2,

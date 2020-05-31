@@ -1,6 +1,6 @@
 conda create --name tf2 python=3.7.4 -y
 conda activate tf2
-conda install numpy tensorflow-gpu tensorflow-probability jupyter opencv tqdm toolz PyYAML -y
+conda install numpy tensorflow-gpu=2.1 tensorflow-probability jupyter opencv tqdm toolz PyYAML -y
 conda install librosa imgaug -c conda-forge -y
 pip install tensorflow_addons more_itertools tensorflow_model_optimization tensorboard_plugin_profile
 # pip install tensorflow-gpu==2.1.0 tensorflow_probability tensorflow_addons more_itertools numpy==1.17.4

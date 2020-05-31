@@ -111,7 +111,8 @@ def main(config_file, new_cfg, mode, model, train):
     cbs.append(variablecheckpoint)
 
     loop.set_callbacks(cbs)
-    loop.set_summary_writer(str(log_dir), datetime_dir)
+    loop.set_summary_writer(str(log_dir), datetime_dir,
+                            profile_batch=train.profile_batch if hasattr(train, 'profile_batch') else 2)
     initial_epoch = int(optimizer.iterations.numpy() / train_epoch_step)
 
     finally_epoch = loop.train_and_eval(
