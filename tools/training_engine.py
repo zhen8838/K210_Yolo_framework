@@ -486,7 +486,7 @@ class BaseTrainingLoop():
         global_seen=0,
         optimizer=self.optimizer)
     if self.summary.profile_batch <= 0:
-      print(INFO,"Summary will don't profile")
+      print(INFO, "Summary will don't profile")
     self.summary.write_graph(self.train_model)
 
   @abc.abstractclassmethod
@@ -533,6 +533,8 @@ class BaseTrainingLoop():
     train_target_steps = self.train_epoch_step // steps_per_run
     print(
         f'Train {train_target_steps} steps, Validate {self.val_epoch_step} steps')
+    steps_per_run = tf.constant(steps_per_run, tf.int32)
+    profile_steps_per_run = tf.constant(3, tf.int32)
     """ Set Progbar Log Param"""
     probar_metrics = set(self.metrics.train.keys())
     probar_metrics = probar_metrics.union(
@@ -548,7 +550,8 @@ class BaseTrainingLoop():
       probar = MProgbar(train_target_steps + 1, stateful_metrics=probar_metrics)
       for seen in range(1, train_target_steps + 1):
         # NOTE when start tracing
-        self.train_step(self.train_iter, 3 if self.summary.is_tracing else steps_per_run,
+        self.train_step(self.train_iter,
+                        profile_steps_per_run if self.summary.is_tracing else steps_per_run,
                         self.metrics.train)
         # write profiler to tensorboard
         if self.summary.is_tracing:

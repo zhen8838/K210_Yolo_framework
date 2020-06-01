@@ -130,7 +130,8 @@ class ResnetGenerator(object):
       x_ = k.layers.GlobalAvgPool2D()(x)
       style_features = self.FC(x_)
     else:
-      style_features = self.FC(x)
+      x_ = kl.Reshape((-1,))(x)
+      style_features = self.FC(x_)
     x = self.DecodeBlock1(x, content_features4, style_features)
     x = self.DecodeBlock2(x, content_features3, style_features)
     x = self.DecodeBlock3(x, content_features2, style_features)
@@ -390,9 +391,6 @@ class SoftAdaLIN(k.layers.Layer):
 
     soft_gamma = (1. - self.w_gamma) * style_gamma + self.w_gamma * content_gamma
     soft_beta = (1. - self.w_beta) * style_beta + self.w_beta * content_beta
-    # NOTE expand dims for training batch > 1 
-    soft_gamma = soft_gamma[:, None, None, :]
-    soft_beta = soft_beta[:, None, None, :]
 
     out = self.norm([x, soft_gamma, soft_beta])
     return out
@@ -419,7 +417,7 @@ class adaLIN(k.layers.Layer):
     self.rho = self.add_weight(name='rho',
                                dtype=tf.float32,
                                trainable=True,
-                               shape=[self.num_features],
+                               shape=[1, 1, 1, self.num_features],
                                initializer=k.initializers.Constant(0.9),
                                constraint=ConstraintMinMax(self.rho_min,
                                                            self.rho_max))
@@ -434,7 +432,8 @@ class adaLIN(k.layers.Layer):
 
     out_ln = (inputs - ln_mean) / K.sqrt(ln_var + self.eps)
     out = self.rho * out_in + (1 - self.rho) * out_ln
-    out = out * gamma + beta
+    # NOTE expand dims for training batch > 1
+    out = out * gamma[:, None, None, :] + beta[:, None, None, :]
 
     return out
 
@@ -481,6 +480,7 @@ class LIN(k.layers.Layer):
     out_in = (inputs - in_mean) / K.sqrt(in_var + self.eps)
     ln_mean, ln_var = K.mean(inputs, axis=[1, 2, 3], keepdims=True), K.var(
         inputs, axis=[1, 2, 3], keepdims=True)
+
     out_ln = (inputs - ln_mean) / K.sqrt(ln_var + self.eps)
     out = self.rho * out_in + (1 - self.rho) * out_ln
     out = out * self.gamma + self.beta
@@ -562,7 +562,7 @@ class Discriminator(object):
     return out, cam_logit, heatmap
 
 
-def ugatitnet(image_shape: list, filters: int = 32,
+def ugatitnet(image_shape: list, batch_size: int, filters: int = 32,
               discriminator_layers: int = 5, light: bool = True
               ) -> Tuple[List[k.Model], List[k.Model], k.Model]:
   """ ugatitent
@@ -585,7 +585,7 @@ def ugatitnet(image_shape: list, filters: int = 32,
   disLB = Discriminator(3, filters, n_layers=discriminator_layers)
 
   def modeling(body):
-    x = k.Input(image_shape)
+    x = k.Input(image_shape, batch_size=batch_size)
     outputs = body(x)
     return k.Model(x, outputs)
 

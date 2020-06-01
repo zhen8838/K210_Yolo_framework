@@ -1,4 +1,5 @@
 IMG_SIZE: &IMG_SIZE 112
+BATCH_SIZE: &BATCH_SIZE 1
 
 mode: train
 model:
@@ -18,6 +19,7 @@ model:
       - *IMG_SIZE
       - *IMG_SIZE
       - 3
+    batch_size: *BATCH_SIZE
     filters: 32
     discriminator_layers: 6
     light: true
@@ -44,7 +46,7 @@ train:
     tpu: null
     strategy: null
   augmenter: true
-  batch_size: 1
+  batch_size: *BATCH_SIZE
   pre_ckpt:
   rand_seed: 10101
   epochs: 100

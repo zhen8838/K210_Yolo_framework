@@ -16,6 +16,7 @@ class PhotoTransferHelper(BaseHelperV2):
   hparams: 
     num_parallel_calls: -1
   """
+
   def set_datasetlist(self):
     dataset_root = np.load(self.dataset_root, allow_pickle=True)[()]
     self.trainA = dataset_root['trainA']
@@ -164,123 +165,6 @@ class PhotoTransferLoop(GanBaseTrainingLoop):
 
   @tf.function
   def train_step(self, iterator, num_steps_to_run, metrics):
-
-    # def step_fn(inputs: dict):
-    #   real_A, real_B = inputs['realA'], inputs['realB']
-
-    #   with tf.GradientTape() as d_tape:
-    #     # train discriminator
-    #     fake_A2B, _, _ = self.genA2B(real_A, training=True)
-    #     fake_B2A, _, _ = self.genB2A(real_B, training=True)
-
-    #     real_GA_logit, real_GA_cam_logit, _ = self.disGA(real_A, training=True)
-    #     real_LA_logit, real_LA_cam_logit, _ = self.disLA(real_A, training=True)
-    #     real_GB_logit, real_GB_cam_logit, _ = self.disGB(real_B, training=True)
-    #     real_LB_logit, real_LB_cam_logit, _ = self.disLB(real_B, training=True)
-
-    #     fake_GA_logit, fake_GA_cam_logit, _ = self.disGA(fake_B2A, training=True)
-    #     fake_LA_logit, fake_LA_cam_logit, _ = self.disLA(fake_B2A, training=True)
-    #     fake_GB_logit, fake_GB_cam_logit, _ = self.disGB(fake_A2B, training=True)
-    #     fake_LB_logit, fake_LB_cam_logit, _ = self.disLB(fake_A2B, training=True)
-    #     D_ad_loss_GA = self.discriminator_loss(real_GA_logit, fake_GA_logit)
-
-    #     D_ad_cam_loss_GA = self.discriminator_loss(real_GA_cam_logit, fake_GA_cam_logit)
-    #     D_ad_loss_LA = self.discriminator_loss(real_LA_logit, fake_LA_logit)
-    #     D_ad_cam_loss_LA = self.discriminator_loss(real_LA_cam_logit, fake_LA_cam_logit)
-    #     D_ad_loss_GB = self.discriminator_loss(real_GB_logit, fake_GB_logit)
-    #     D_ad_cam_loss_GB = self.discriminator_loss(real_GB_cam_logit, fake_GB_cam_logit)
-    #     D_ad_loss_LB = self.discriminator_loss(real_LB_logit, fake_LB_logit)
-    #     D_ad_cam_loss_LB = self.discriminator_loss(real_LB_cam_logit, fake_LB_cam_logit)
-
-    #     D_loss_A = (self.hparams.adv_weight * (D_ad_loss_GA +
-    #                                            D_ad_cam_loss_GA +
-    #                                            D_ad_loss_LA +
-    #                                            D_ad_cam_loss_LA))
-    #     D_loss_B = (self.hparams.adv_weight * (D_ad_loss_GB +
-    #                                            D_ad_cam_loss_GB +
-    #                                            D_ad_loss_LB +
-    #                                            D_ad_cam_loss_LB))
-    #     Discriminator_loss = tf.reduce_mean(
-    #         tf.reduce_sum(D_loss_A + D_loss_B, [1, 2]))
-
-    #   scaled_d_loss = self.optimizer_minimize(Discriminator_loss, d_tape,
-    #                                           self.d_optimizer,
-    #                                           [self.disGA,
-    #                                            self.disGB,
-    #                                            self.disLA,
-    #                                            self.disLB])
-
-    #   with tf.GradientTape() as g_tape:
-    #     # train generator
-    #     fake_A2B, fake_A2B_cam_logit, _ = self.genA2B(real_A, training=True)
-    #     fake_B2A, fake_B2A_cam_logit, _ = self.genB2A(real_B, training=True)
-
-    #     fake_A2B2A, _, _ = self.genB2A(fake_A2B, training=True)
-    #     fake_B2A2B, _, _ = self.genA2B(fake_B2A, training=True)
-
-    #     fake_A2A, fake_A2A_cam_logit, _ = self.genB2A(real_A, training=True)
-    #     fake_B2B, fake_B2B_cam_logit, _ = self.genA2B(real_B, training=True)
-
-    #     fake_GA_logit, fake_GA_cam_logit, _ = self.disGA(fake_B2A, training=True)
-    #     fake_LA_logit, fake_LA_cam_logit, _ = self.disLA(fake_B2A, training=True)
-    #     fake_GB_logit, fake_GB_cam_logit, _ = self.disGB(fake_A2B, training=True)
-    #     fake_LB_logit, fake_LB_cam_logit, _ = self.disLB(fake_A2B, training=True)
-
-    #     G_ad_loss_GA = self.generator_loss(fake_GA_logit)
-    #     G_ad_cam_loss_GA = self.generator_loss(fake_GA_cam_logit)
-    #     G_ad_loss_LA = self.generator_loss(fake_LA_logit)
-    #     G_ad_cam_loss_LA = self.generator_loss(fake_LA_cam_logit)
-    #     G_ad_loss_GB = self.generator_loss(fake_GB_logit)
-    #     G_ad_cam_loss_GB = self.generator_loss(fake_GB_cam_logit)
-    #     G_ad_loss_LB = self.generator_loss(fake_LB_logit)
-    #     G_ad_cam_loss_LB = self.generator_loss(fake_LB_cam_logit)
-
-    #     G_recon_loss_A = tf.abs(fake_A2B2A - real_A)
-    #     G_recon_loss_B = tf.abs(fake_B2A2B - real_B)
-
-    #     G_identity_loss_A = tf.abs(fake_A2A - real_A)
-    #     G_identity_loss_B = tf.abs(fake_B2B - real_B)
-
-    #     G_id_loss_A = self.face_id_loss(real_A, fake_A2B)
-    #     G_id_loss_B = self.face_id_loss(real_B, fake_B2A)
-
-    #     G_cam_loss_A = (self.bce_loss(tf.ones_like(fake_B2A_cam_logit),
-    #                                   fake_B2A_cam_logit) +
-    #                     self.bce_loss(tf.zeros_like(fake_A2A_cam_logit),
-    #                                   fake_A2A_cam_logit))
-    #     G_cam_loss_B = (self.bce_loss(tf.ones_like(fake_A2B_cam_logit),
-    #                                   fake_A2B_cam_logit) +
-    #                     self.bce_loss(tf.zeros_like(fake_B2B_cam_logit),
-    #                                   fake_B2B_cam_logit))
-
-    #     G_loss_A = (self.hparams.adv_weight * tf.reduce_sum(
-    #         G_ad_loss_GA + G_ad_cam_loss_GA +
-    #         G_ad_loss_LA + G_ad_cam_loss_LA, [1, 2]) +
-    #         self.hparams.cycle_weight * tf.reduce_sum(G_recon_loss_A, [1, 2, 3]) +
-    #         self.hparams.identity_weight * tf.reduce_sum(G_identity_loss_A, [1, 2, 3]) +
-    #         self.hparams.cam_weight * tf.reduce_sum(G_cam_loss_A, [1]) +
-    #         self.hparams.faceid_weight * G_id_loss_A)
-
-    #     G_loss_B = (self.hparams.adv_weight * tf.reduce_sum(
-    #         G_ad_loss_GB + G_ad_cam_loss_GB +
-    #         G_ad_loss_LB + G_ad_cam_loss_LB, [1, 2]) +
-    #         self.hparams.cycle_weight * tf.reduce_sum(G_recon_loss_B, [1, 2, 3]) +
-    #         self.hparams.identity_weight * tf.reduce_sum(G_identity_loss_B, [1, 2, 3]) +
-    #         self.hparams.cam_weight * tf.reduce_sum(G_cam_loss_B, [1]) +
-    #         self.hparams.faceid_weight * G_id_loss_B)
-
-    #     Generator_loss = tf.reduce_mean(G_loss_A + G_loss_B)
-
-    #   scaled_g_loss = self.optimizer_minimize(Generator_loss, g_tape,
-    #                                           self.g_optimizer,
-    #                                           [self.genA2B,
-    #                                            self.genB2A])
-
-    #   if self.hparams.ema.enable:
-    #     self.ema.update()
-
-    #   metrics.g_loss.update_state(scaled_g_loss)
-    #   metrics.d_loss.update_state(scaled_d_loss)
 
     def step_fn(inputs: dict):
       real_A, real_B = inputs['realA'], inputs['realB']
