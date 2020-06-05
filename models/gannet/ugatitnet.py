@@ -111,24 +111,24 @@ class ResnetGenerator(object):
     content_features4 = kl.GlobalAvgPool2D()(x)
 
     gap = kl.GlobalAvgPool2D()(x)
-    gap_logit = self.gap_fc(gap)
-    gap_weight = self.gap_fc.kernel
-    gap = x * tf.squeeze(gap_weight, [-1])
+    gap_logit = self.gap_fc(gap)  # [N,1]
+    gap_weight = self.gap_fc.kernel  # [128,1]
+    gap = x * tf.squeeze(gap_weight, [-1])  # [N,h,w,128]
 
     gmp = kl.GlobalMaxPool2D()(x)
-    gmp_logit = self.gmp_fc(gmp)
-    gmp_weight = self.gmp_fc.kernel
-    gmp = x * tf.squeeze(gmp_weight, [-1])
+    gmp_logit = self.gmp_fc(gmp)  # [N,1]
+    gmp_weight = self.gmp_fc.kernel  # [128,1]
+    gmp = x * tf.squeeze(gmp_weight, [-1])  # [N,h,w,128]
 
-    cam_logit = kl.Concatenate(-1)([gap_logit, gmp_logit])
-    x = kl.Concatenate(-1)([gap, gmp])
-    x = self.relu(self.conv1x1(x))
+    cam_logit = kl.Concatenate(-1)([gap_logit, gmp_logit])  # [N,2]
+    x = kl.Concatenate(-1)([gap, gmp])  # [N,h,w,256]
+    x = self.relu(self.conv1x1(x))  # [N,h,w,128]
 
-    heatmap = K.sum(x, axis=-1, keepdims=True)
+    heatmap = K.sum(x, axis=-1, keepdims=True)  # [N,h,w,1]
 
     if self.light:
       x_ = k.layers.GlobalAvgPool2D()(x)
-      style_features = self.FC(x_)
+      style_features = self.FC(x_)  # [N,128]
     else:
       x_ = kl.Reshape((-1,))(x)
       style_features = self.FC(x_)
@@ -350,8 +350,8 @@ class ResnetAdaLINBlock(object):
 
 class SoftAdaLIN(k.layers.Layer):
 
-  def __init__(self, num_features, w_min=0, w_max=1.0, eps=1e-5):
-    super(SoftAdaLIN, self).__init__()
+  def __init__(self, num_features, w_min=0, w_max=1.0, eps=1e-5, trainable=True, name=None, dtype=None, dynamic=False, **kwargs):
+    super().__init__(trainable, name, dtype, dynamic, **kwargs)
     self.num_features = num_features
     self.eps = eps
     self.w_min = w_min
@@ -408,8 +408,9 @@ class SoftAdaLIN(k.layers.Layer):
 
 class adaLIN(k.layers.Layer):
 
-  def __init__(self, num_features, rho_min=0, rho_max=1.0, eps=1e-5):
-    super(adaLIN, self).__init__()
+  def __init__(self, num_features, rho_min=0, rho_max=1.0, eps=1e-5,
+               trainable=True, name=None, dtype=None, dynamic=False, **kwargs):
+    super().__init__(trainable, name, dtype, dynamic, **kwargs)
     self.eps = eps
     self.num_features = num_features
     self.rho_min = rho_min
@@ -450,8 +451,9 @@ class adaLIN(k.layers.Layer):
 
 class LIN(k.layers.Layer):
 
-  def __init__(self, num_features, rho_min=0, rho_max=1.0, eps=1e-5):
-    super(LIN, self).__init__()
+  def __init__(self, num_features, rho_min=0, rho_max=1.0, eps=1e-5,
+               trainable=True, name=None, dtype=None, dynamic=False, **kwargs):
+    super().__init__(trainable, name, dtype, dynamic, **kwargs)
     self.eps = eps
     self.num_features = num_features
     self.rho_min = rho_min
@@ -563,7 +565,8 @@ class Discriminator(object):
 
 
 def ugatitnet(image_shape: list, batch_size: int, filters: int = 32,
-              discriminator_layers: int = 5, light: bool = True
+              discriminator_G_layers: int = 7,
+              discriminator_L_layers: int = 5, light: bool = True
               ) -> Tuple[List[k.Model], List[k.Model], k.Model]:
   """ ugatitent
 
@@ -579,10 +582,10 @@ def ugatitnet(image_shape: list, batch_size: int, filters: int = 32,
   assert image_shape[0] == image_shape[1], 'image must be square'
   genA2B = ResnetGenerator(ngf=filters, img_size=image_shape[0], light=light)
   genB2A = ResnetGenerator(ngf=filters, img_size=image_shape[0], light=light)
-  disGA = Discriminator(3, filters, n_layers=discriminator_layers)
-  disGB = Discriminator(3, filters, n_layers=discriminator_layers)
-  disLA = Discriminator(3, filters, n_layers=discriminator_layers)
-  disLB = Discriminator(3, filters, n_layers=discriminator_layers)
+  disGA = Discriminator(3, filters, n_layers=discriminator_G_layers)
+  disGB = Discriminator(3, filters, n_layers=discriminator_G_layers)
+  disLA = Discriminator(3, filters, n_layers=discriminator_L_layers)
+  disLB = Discriminator(3, filters, n_layers=discriminator_L_layers)
 
   def modeling(body):
     x = k.Input(image_shape, batch_size=batch_size)
@@ -595,5 +598,5 @@ def ugatitnet(image_shape: list, batch_size: int, filters: int = 32,
   model_disGB = modeling(disGB)
   model_disLA = modeling(disLA)
   model_disLB = modeling(disLB)
-
+  del genA2B, genB2A, disGA, disGB, disLA, disLB
   return [model_genA2B, model_genB2A], [model_disGA, model_disGB, model_disLA, model_disLB], model_genA2B

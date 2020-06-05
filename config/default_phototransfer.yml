@@ -21,7 +21,8 @@ model:
       - 3
     batch_size: *BATCH_SIZE
     filters: 32
-    discriminator_layers: 6
+    discriminator_G_layers: 7
+    discriminator_L_layers: 5
     light: true
 train:
   graph_optimizer: true
@@ -47,7 +48,7 @@ train:
     strategy: null
   augmenter: true
   batch_size: *BATCH_SIZE
-  pre_ckpt:
+  pre_ckpt: /home/zqh/Desktop/default_phototransfer_v2_exp
   rand_seed: 10101
   epochs: 100
   train_epoch_step: 1000
