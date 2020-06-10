@@ -282,16 +282,14 @@ class ResnetBlock(object):
 
   def __init__(self, dim, use_bias=False):
     conv_block = []
-    conv_block += [
-        ReflectionPadding2D((1, 1)),
-        kl.Conv2D(dim, kernel_size=3, strides=1, padding='valid', use_bias=use_bias),
-        kl.LeakyReLU()
-    ]
+    conv_block += [ReflectionPadding2D((1, 1)),
+                   kl.Conv2D(dim, kernel_size=3, strides=1, padding='valid', use_bias=use_bias),
+                   InstanceNormalization(),
+                   kl.LeakyReLU()]
 
-    conv_block += [
-        ReflectionPadding2D((1, 1)),
-        kl.Conv2D(dim, kernel_size=3, strides=1, padding='valid', use_bias=use_bias),
-    ]
+    conv_block += [ReflectionPadding2D((1, 1)),
+                   kl.Conv2D(dim, kernel_size=3, strides=1, padding='valid', use_bias=use_bias),
+                   InstanceNormalization()]
 
     self.conv_block = compose(*conv_block)
 

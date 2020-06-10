@@ -38,7 +38,6 @@ class PhotoTransferHelper(BaseHelperV2):
         img = tf.image.resize(img, (self.in_hw[0] + 15, self.in_hw[1] + 15))
         img = tf.image.random_crop(img, (self.in_hw[0], self.in_hw[1], 3))
         img = tf.image.random_flip_left_right(img)
-        img = tf.image.random_brightness(img, 0.3)
       else:
         img = tf.image.resize(img, self.in_hw)
 
@@ -280,7 +279,7 @@ class PhotoTransferLoop(GanBaseTrainingLoop):
     cam_img = np.uint8(255 * cam_img)
     cam_img = cv2.resize(cam_img, tuple(size))
     cam_img = cv2.applyColorMap(cam_img, cv2.COLORMAP_JET)
-    return cam_img.astype(np.uint8)
+    return cv2.cvtColor(cam_img.astype(np.uint8), cv2.COLOR_BGR2RGB)
 
   def visual_img_cam(self, img: np.ndarray, cam: np.ndarray) -> [np.ndarray, np.ndarray]:
     return [renormalize(img, 127.5, 127.5).astype(np.uint8), self.cam(cam, self.hparams.in_hw)]

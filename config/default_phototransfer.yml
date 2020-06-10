@@ -21,8 +21,8 @@ model:
       - 3
     batch_size: *BATCH_SIZE
     filters: 32
-    discriminator_G_layers: 7
-    discriminator_L_layers: 5
+    discriminator_G_layers: 6
+    discriminator_L_layers: 6
     light: true
 train:
   graph_optimizer: true
