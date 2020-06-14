@@ -5,8 +5,7 @@ kl = tf.keras.layers
 from models.darknet import compose
 from models.gannet.common import (ReflectionPadding2D,
                                   InstanceNormalization,
-                                  Conv2DSpectralNormal,
-                                  DenseSpectralNormal,
+                                  SpectralNormalization,
                                   ConstraintMinMax)
 from typing import List, Tuple
 
@@ -503,8 +502,8 @@ class Discriminator(object):
   def __init__(self, input_nc, ndf=64, n_layers=5):
     model = [
         ReflectionPadding2D((1, 1)),
-        Conv2DSpectralNormal(ndf, kernel_size=4, strides=2,
-                             padding='valid', use_bias=True),
+        SpectralNormalization(kl.Conv2D(ndf, kernel_size=4, strides=2,
+                                        padding='valid', use_bias=True)),
         kl.LeakyReLU(0.2)
     ]
 
@@ -512,28 +511,29 @@ class Discriminator(object):
       mult = 2**(i - 1)
       model += [
           ReflectionPadding2D((1, 1)),
-          Conv2DSpectralNormal(ndf * mult * 2, kernel_size=4, strides=2,
-                               padding='valid', use_bias=True),
+          SpectralNormalization(kl.Conv2D(ndf * mult * 2, kernel_size=4, strides=2,
+                                          padding='valid', use_bias=True)),
           kl.LeakyReLU(0.2)
       ]
 
     mult = 2**(n_layers - 2 - 1)
     model += [
         ReflectionPadding2D((1, 1)),
-        Conv2DSpectralNormal(ndf * mult * 2, kernel_size=4, strides=1,
-                             padding='valid', use_bias=True),
+        SpectralNormalization(kl.Conv2D(ndf * mult * 2, kernel_size=4, strides=1,
+                                        padding='valid', use_bias=True)),
         kl.LeakyReLU(0.2)
     ]
 
     # Class Activation Map
     mult = 2**(n_layers - 2)
-    self.gap_fc = DenseSpectralNormal(1, use_bias=False)
-    self.gmp_fc = DenseSpectralNormal(1, use_bias=False)
+    self.gap_fc = SpectralNormalization(kl.Dense(1, use_bias=False))
+    self.gmp_fc = SpectralNormalization(kl.Dense(1, use_bias=False))
     self.conv1x1 = kl.Conv2D(ndf * mult, kernel_size=1, strides=1, use_bias=True)
     self.leaky_relu = kl.LeakyReLU(0.2)
 
     self.pad = ReflectionPadding2D((1, 1))
-    self.conv = Conv2DSpectralNormal(1, kernel_size=4, strides=1, padding='valid', use_bias=False)
+    self.conv = SpectralNormalization(
+        kl.Conv2D(1, kernel_size=4, strides=1, padding='valid', use_bias=False))
 
     self.model = compose(*model)
 

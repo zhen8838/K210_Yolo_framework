@@ -3,7 +3,7 @@ k = tf.keras
 K = tf.keras.backend
 kl = tf.keras.layers
 from models.darknet import compose
-from models.gannet.common import Conv2DSpectralNormal, InstanceNormalization
+from models.gannet.common import SpectralNormalization, InstanceNormalization
 
 
 def Conv2D(filters, kernel_size=3, strides=1, padding='valid', use_bias=False):
@@ -158,8 +158,8 @@ def Conv2DSN(filters,
   f = []
   if use_sn:
     f.append(
-        Conv2DSpectralNormal(
-            filters, kernel_size, strides, padding=padding, use_bias=use_bias))
+        SpectralNormalization(kl.Conv2D(
+            filters, kernel_size, strides, padding=padding, use_bias=use_bias)))
   else:
     f.append(
         kl.Conv2D(
@@ -171,13 +171,13 @@ def Conv2DSN(filters,
 def discriminator(input_shape: list, filters: int, nblocks: int,
                   use_sn: bool) -> k.Model:
   """
-  
+
   Args:
       input_shape (list): 
       filters (int): filters
       nblocks (int): blocks numbers
       use_sn (bool): weather use SpectralNormalization
-  
+
   Returns:
       k.Model: discriminator
   """

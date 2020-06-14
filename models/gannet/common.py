@@ -49,257 +49,53 @@ class InstanceNormalization(kl.Layer):
     return dict(list(base_config.items()) + list(config.items()))
 
 
-class DenseSpectralNormal(Dense):
-  def build(self, input_shape):
-    super().build(input_shape)
-    try:
-        # Disable variable partitioning when creating the variable
-      if hasattr(self, '_scope') and self._scope:
-        partitioner = self._scope.partitioner
-        self._scope.set_partitioner(None)
-      else:
-        partitioner = None
-
-      self.u = self.add_weight(
-          name='sn_u',
-          shape=(1, tf.reduce_prod(self.kernel.shape[:-1])),
-          dtype=self.dtype,
-          initializer=tf.keras.initializers.ones,
-          synchronization=tf.VariableSynchronization.ON_READ,
-          trainable=False,
-          aggregation=tf.VariableAggregation.MEAN)
-    finally:
-      if partitioner:
-        self._scope.set_partitioner(partitioner)
-
-  def call(self, inputs, training=None):
-    if training is None:
-      training = K.learning_phase()
-
-    # Update SpectralNormalization variable
-    u, v, w = self.calc_u(self.kernel)
-
-    def u_update():
-      # TODO u_update maybe need `training control`
-      return tf_utils.smart_cond(training, lambda: self._assign_new_value(
-          self.u, u), lambda: array_ops.identity(u))
-
-    # NOTE add update must in call function scope
-    self.add_update(u_update)
-
-    sigma = self.calc_sigma(u, v, w)
-    new_kernel = tf_utils.smart_cond(
-        training, lambda: self.kernel / sigma, lambda: self.kernel)
-
-    rank = len(inputs.shape)
-    if rank > 2:
-      # Broadcasting is required for the inputs.
-      outputs = standard_ops.tensordot(inputs, self.kernel, [[rank - 1], [0]])
-      # Reshape the output back to the original ndim of the input.
-      if not context.executing_eagerly():
-        shape = inputs.shape.as_list()
-        output_shape = shape[:-1] + [self.units]
-        outputs.set_shape(output_shape)
-    else:
-      inputs = tf.cast(inputs, self._compute_dtype)
-      if K.is_sparse(inputs):
-        outputs = sparse_ops.sparse_tensor_dense_matmul(inputs, new_kernel)
-      else:
-        outputs = gen_math_ops.mat_mul(inputs, new_kernel)
-    if self.use_bias:
-      outputs = nn.bias_add(outputs, self.bias)
-    if self.activation is not None:
-      return self.activation(outputs)  # pylint: disable=not-callable
-    return outputs
-
-  def calc_u(self, w):
-    w = K.reshape(w, (-1, w.shape[-1]))
-    v = K.l2_normalize(K.dot(self.u, w))
-    u = K.l2_normalize(K.dot(v, K.transpose(w)))
-    return u, v, w
-
-  def calc_sigma(self, u, v, w):
-    return K.sum(K.dot(K.dot(u, w), K.transpose(v)))
-
-  def _assign_new_value(self, variable, value):
-    with K.name_scope('AssignNewValue') as scope:
-      with ops.colocate_with(variable):
-        return state_ops.assign(variable, value, name=scope)
-
-
-class ConvSpectralNormal(Conv):
+class SpectralNormalization(kl.Wrapper):
+  def __init__(self, layer, iteration=1, eps=1e-12, **kwargs):
+    self.iteration = iteration
+    if not isinstance(layer, kl.Layer):
+      raise ValueError(
+          'Please initialize `TimeDistributed` layer with a '
+          '`Layer` instance. You passed: {input}'.format(input=layer))
+    super().__init__(layer, **kwargs)
 
   def build(self, input_shape):
-    input_shape = tensor_shape.TensorShape(input_shape)
-    input_channel = self._get_input_channel(input_shape)
-    kernel_shape = self.kernel_size + (input_channel, self.filters)
+    self.layer.build(input_shape)
 
-    self.kernel = self.add_weight(
-        name='kernel',
-        shape=kernel_shape,
-        initializer=self.kernel_initializer,
-        regularizer=self.kernel_regularizer,
-        constraint=self.kernel_constraint,
-        trainable=True,
-        dtype=self.dtype)
+    self.w_shape = self.layer.kernel.shape.as_list()
 
-    try:
-      # Disable variable partitioning when creating the variable
-      if hasattr(self, '_scope') and self._scope:
-        partitioner = self._scope.partitioner
-        self._scope.set_partitioner(None)
-      else:
-        partitioner = None
+    self.u = self.add_weight(shape=(1, self.w_shape[-1]),
+                             initializer=tf.initializers.TruncatedNormal(stddev=0.02),
+                             trainable=False,
+                             name='sn_u',
+                             dtype=tf.float32)
 
-      self.u = self.add_weight(
-          name='sn_u',
-          shape=(1, tf.reduce_prod(kernel_shape[:-1])),
-          dtype=self.dtype,
-          initializer=tf.keras.initializers.ones,
-          synchronization=tf.VariableSynchronization.ON_READ,
-          trainable=False,
-          aggregation=tf.VariableAggregation.MEAN)
-    finally:
-      if partitioner:
-        self._scope.set_partitioner(partitioner)
+    super().build()
 
-    if self.use_bias:
-      self.bias = self.add_weight(
-          name='bias',
-          shape=(self.filters,),
-          initializer=self.bias_initializer,
-          regularizer=self.bias_regularizer,
-          constraint=self.bias_constraint,
-          trainable=True,
-          dtype=self.dtype)
-    else:
-      self.bias = None
-    channel_axis = self._get_channel_axis()
-    self.input_spec = InputSpec(
-        ndim=self.rank + 2, axes={channel_axis: input_channel})
+  def call(self, inputs):
+    self.update_weights()
+    output = self.layer(inputs)
+    return output
 
-    self._build_conv_op_input_shape = input_shape
-    self._build_input_channel = input_channel
-    self._padding_op = self._get_padding_op()
-    self._conv_op_data_format = conv_utils.convert_data_format(
-        self.data_format, self.rank + 2)
-    self._convolution_op = nn_ops.Convolution(
-        input_shape,
-        filter_shape=self.kernel.shape,
-        dilation_rate=self.dilation_rate,
-        strides=self.strides,
-        padding=self._padding_op,
-        data_format=self._conv_op_data_format)
-    self.built = True
+  def update_weights(self):
+    w = tf.reshape(self.layer.kernel, [-1, self.w_shape[-1]])
+    u_hat = self.u
+    v_hat = None
 
-  def call(self, inputs, training=None):
-    # Check if the input_shape in call() is different from that in build().
-    # If they are different, recreate the _convolution_op to avoid the stateful
-    # behavior.
-    if training is None:
-      training = K.learning_phase()
+    for _ in range(self.iteration):
+      v_ = tf.matmul(u_hat, tf.transpose(w))
+      v_hat = tf.nn.l2_normalize(v_)
 
-    call_input_shape = inputs.get_shape()
-    recreate_conv_op = (
-        call_input_shape[1:] != self._build_conv_op_input_shape[1:])
+      u_ = tf.matmul(v_hat, w)
+      u_hat = tf.nn.l2_normalize(u_)
 
-    if recreate_conv_op:
-      self._convolution_op = nn_ops.Convolution(
-          call_input_shape,
-          filter_shape=self.kernel.shape,
-          dilation_rate=self.dilation_rate,
-          strides=self.strides,
-          padding=self._padding_op,
-          data_format=self._conv_op_data_format)
+    u_hat = tf.stop_gradient(u_hat)
+    v_hat = tf.stop_gradient(v_hat)
+    sigma = tf.matmul(tf.matmul(v_hat, w), tf.transpose(u_hat))
+    with tf.control_dependencies([self.u.assign(u_hat)]):
+      w_norm = w / sigma
+      w_norm = tf.reshape(w_norm, self.w_shape)
 
-    # Apply causal padding to inputs for Conv1D.
-    if self.padding == 'causal' and self.__class__.__name__ == 'Conv1D':
-      inputs = array_ops.pad(inputs, self._compute_causal_padding())
-
-    # Update SpectralNormalization variable
-    u, v, w = self.calc_u(self.kernel)
-
-    def u_update():
-      # TODO u_update maybe need `training control`
-      return tf_utils.smart_cond(training, lambda: self._assign_new_value(
-          self.u, u), lambda: array_ops.identity(u))
-
-    # NOTE add update must in call function scope
-    self.add_update(u_update)
-
-    sigma = self.calc_sigma(u, v, w)
-    new_kernel = tf_utils.smart_cond(
-        training, lambda: self.kernel / sigma, lambda: self.kernel)
-
-    outputs = self._convolution_op(inputs, new_kernel)
-
-    if self.use_bias:
-      if self.data_format == 'channels_first':
-        if self.rank == 1:
-          # nn.bias_add does not accept a 1D input tensor.
-          bias = array_ops.reshape(self.bias, (1, self.filters, 1))
-          outputs += bias
-        else:
-          outputs = nn.bias_add(outputs, self.bias, data_format='NCHW')
-      else:
-        outputs = nn.bias_add(outputs, self.bias, data_format='NHWC')
-
-    if self.activation is not None:
-      return self.activation(outputs)
-    return outputs
-
-  def calc_u(self, w):
-    w = K.reshape(w, (-1, w.shape[-1]))
-    v = K.l2_normalize(K.dot(self.u, w))
-    u = K.l2_normalize(K.dot(v, K.transpose(w)))
-    return u, v, w
-
-  def calc_sigma(self, u, v, w):
-    return K.sum(K.dot(K.dot(u, w), K.transpose(v)))
-
-  def _assign_new_value(self, variable, value):
-    with K.name_scope('AssignNewValue') as scope:
-      with ops.colocate_with(variable):
-        return state_ops.assign(variable, value, name=scope)
-
-
-class Conv2DSpectralNormal(ConvSpectralNormal):
-
-  def __init__(self,
-               filters,
-               kernel_size,
-               strides=(1, 1),
-               padding='valid',
-               data_format=None,
-               dilation_rate=(1, 1),
-               activation=None,
-               use_bias=True,
-               kernel_initializer='glorot_uniform',
-               bias_initializer='zeros',
-               kernel_regularizer=None,
-               bias_regularizer=None,
-               activity_regularizer=None,
-               kernel_constraint=None,
-               bias_constraint=None,
-               **kwargs):
-    super().__init__(
-        rank=2,
-        filters=filters,
-        kernel_size=kernel_size,
-        strides=strides,
-        padding=padding,
-        data_format=data_format,
-        dilation_rate=dilation_rate,
-        activation=tf.keras.activations.get(activation),
-        use_bias=use_bias,
-        kernel_initializer=tf.keras.initializers.get(kernel_initializer),
-        bias_initializer=tf.keras.initializers.get(bias_initializer),
-        kernel_regularizer=tf.keras.regularizers.get(kernel_regularizer),
-        bias_regularizer=tf.keras.regularizers.get(bias_regularizer),
-        activity_regularizer=tf.keras.regularizers.get(activity_regularizer),
-        kernel_constraint=tf.keras.constraints.get(kernel_constraint),
-        bias_constraint=tf.keras.constraints.get(bias_constraint),
-        **kwargs)
+    self.layer.kernel.assign(w_norm)
 
 
 class ReflectionPadding2D(kl.ZeroPadding2D):
@@ -348,3 +144,4 @@ class ConstraintMinMax(k.constraints.Constraint):
   def get_config(self):
     return {'min_value': self.min_value,
             'max_value': self.max_value}
+
