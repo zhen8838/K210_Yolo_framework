@@ -60,7 +60,7 @@ class SpectralNormalization(kl.Wrapper):
 
   def build(self, input_shape):
     self.layer.build(input_shape)
-
+    self.kernel = self.layer.kernel
     self.w_shape = self.layer.kernel.shape.as_list()
 
     self.u = self.add_weight(shape=(1, self.w_shape[-1]),
@@ -94,8 +94,7 @@ class SpectralNormalization(kl.Wrapper):
     with tf.control_dependencies([self.u.assign(u_hat)]):
       w_norm = w / sigma
       w_norm = tf.reshape(w_norm, self.w_shape)
-
-    self.layer.kernel.assign(w_norm)
+      self.layer.kernel.assign(w_norm)
 
 
 class ReflectionPadding2D(kl.ZeroPadding2D):
@@ -144,4 +143,3 @@ class ConstraintMinMax(k.constraints.Constraint):
   def get_config(self):
     return {'min_value': self.min_value,
             'max_value': self.max_value}
-
