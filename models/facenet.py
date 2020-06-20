@@ -3,8 +3,6 @@ k = tf.keras
 K = tf.keras.backend
 kl = tf.keras.layers
 from typing import List, Callable
-import sys
-sys.path.insert(0, '/home/zqh/Documents/K210_Yolo_framework')
 from tensorflow.keras.applications import MobileNet, MobileNetV2
 from models.darknet import compose
 

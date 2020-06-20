@@ -179,6 +179,7 @@ helper_register = dict_warp({
     'SSDHelper': ('tools.ssd', 'SSDHelper'),
     'DCASETask5FixMatchSSLHelper': ('tools.dcasetask5', 'DCASETask5FixMatchSSLHelper'),
     'KerasDatasetHelper': ('tools.kerasdataset', 'KerasDatasetHelper'),
+    'KerasDatasetSemiHelper': ('tools.kerasdatasetsemi', 'KerasDatasetSemiHelper'),
     'KerasDatasetGanHelper': ('tools.dcgan', 'KerasDatasetGanHelper'),
     'AnimeGanHelper': ('tools.animegan', 'AnimeGanHelper'),
     'CMPFacadeHelper': ('tools.pix2pix', 'CMPFacadeHelper'),
@@ -187,6 +188,7 @@ helper_register = dict_warp({
 })
 
 network_register = dict_warp({
+    'simpleclassifynet': ('models.simplenet', 'simpleclassifynet'),
     'mbv1_facerec': ('models.networks', 'mbv1_facerec'),
     'mbv1_facerec_k210': ('models.networks4k210', 'mbv1_facerec_k210'),
     'mbv1_facerec_k210_eager': ('models.networks4k210', 'mbv1_facerec_k210_eager'),
@@ -306,6 +308,7 @@ trainloop_register = dict_warp({
     'AnimeGanLoop': ('tools.animegan', 'AnimeGanLoop'),
     'OpenPoseLoop': ('tools.openpose', 'OpenPoseLoop'),
     'PhotoTransferLoop': ('tools.phototransfer', 'PhotoTransferLoop'),
+    'KerasDatasetLoop': ('tools.kerasdataset', 'KerasDatasetLoop'),
 })
 
 

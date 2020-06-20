@@ -1,5 +1,6 @@
 BATCH_SIZE_REF: &BATCH_SIZE_REF 64
 WIDTH_REF: &WIDTH_REF 112
+MIXED_PRECISION_DTYPE: &MIXED_PRECISION_DTYPE float32
 
 mode: train
 model:
@@ -35,10 +36,10 @@ train:
     scoped_allocator_optimization: true
   distributionstrategy_kwarg:
     tpu: null
-    strategy: Mirrored
-  augmenter: true
+    strategy: null
+  augmenter: false
   batch_size: *BATCH_SIZE_REF
-  pre_ckpt: log/default_facerec_triplet_k210_exp_backup/auto_train_58.h5
+  pre_ckpt: null
   rand_seed: 10101
   epochs: 100
   train_epoch_step: 2000
@@ -46,6 +47,9 @@ train:
   steps_per_run: 30
   log_dir: log
   sub_log_dir: default_facerec_amsoftmax_k210_eager_exp
+  mixed_precision:
+    enable: false
+    dtype: *MIXED_PRECISION_DTYPE
   trainloop: FaceSoftmaxTrainingLoop
   trainloop_kwarg:
     hparams:
@@ -71,16 +75,8 @@ train:
     beta_2: 0.999
     amsgrad: false
   callbacks:
-    - name: EarlyStopping
-      kwarg:
-        monitor: train/acc
-        min_delta: 0
-        patience: 10
-        verbose: 0
-        mode: max
-        baseline: null
-        restore_best_weights: false
     - name: StepLR
       kwarg:
         steps: [10, 80, 120]
         rates: [0.0001, 0.0008, 0.0004]
+        outside_optimizer: optimizer

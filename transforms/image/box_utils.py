@@ -69,7 +69,7 @@ def yxyx_to_xyxy(boxes: tf.Tensor) -> tf.Tensor:
     if boxes.shape[-1] != 4:
         raise ValueError(
             'boxes.shape[-1] is {:d}, but must be 4.'.format(boxes.shape[-1]))
-    with tf.name_scope('yxyx_to_xywh'):
+    with tf.name_scope('yxyx_to_xyxy'):
         boxes_ymin = boxes[..., 0]
         boxes_xmin = boxes[..., 1]
         boxes_ymax = boxes[..., 2]

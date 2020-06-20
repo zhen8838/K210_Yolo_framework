@@ -6,6 +6,7 @@ from tensorflow.python.keras.metrics import Metric, MeanMetricWrapper, Sum
 keras = tf.keras
 Callback = tf.keras.callbacks.Callback
 K = tf.keras.backend
+kls = tf.keras.losses
 import signal
 from tools.base import NOTE, colored, ERROR, INFO
 from toolz import reduce
@@ -439,3 +440,366 @@ def focal_sigmoid_cross_entropy_with_logits(labels: tf.Tensor,
   focal_weight = (alpha * labels + (1 - alpha) * (1 - labels)) * tf.math.pow(pt, gamma)
   loss = tf.nn.sigmoid_cross_entropy_with_logits(labels, logits) * focal_weight
   return loss
+
+
+def l2distance(embedd_a: tf.Tensor, embedd_b: tf.Tensor,
+               is_norm: bool = True) -> tf.Tensor:
+  """ l2 distance
+
+    Parameters
+    ----------
+    embedd_a : tf.Tensor
+
+        shape : [batch,embedding size]
+
+    embedd_b : tf.Tensor
+
+        shape : [batch,embedding size]
+
+    is_norm : bool
+
+        is norm == True will normilze(embedd_a)
+
+    Returns
+    -------
+    [tf.Tensor]
+
+        distance shape : [batch]
+    """
+  if is_norm:
+    embedd_a = tf.math.l2_normalize(embedd_a, -1)
+    embedd_b = tf.math.l2_normalize(embedd_b, -1)
+  return tf.reduce_sum(tf.square(tf.math.subtract(embedd_a, embedd_b)), -1)
+
+
+def cosdistance(embedd_a: tf.Tensor, embedd_b: tf.Tensor,
+                is_norm: bool = True) -> tf.Tensor:
+  """ cos distance
+
+    Parameters
+    ----------
+    embedd_a : tf.Tensor
+
+        shape : [batch,embedding size]
+
+    embedd_b : tf.Tensor
+
+        shape : [batch,embedding size]
+
+    is_norm : bool
+
+        is norm == True will normilze(embedd_a)
+
+    Returns
+    -------
+    [tf.Tensor]
+
+        distance shape : [batch]
+    """
+  if is_norm:
+    embedd_a = tf.math.l2_normalize(embedd_a, -1)
+    embedd_b = tf.math.l2_normalize(embedd_b, -1)
+
+  return tf.squeeze(tf.keras.backend.batch_dot(embedd_a, embedd_b, -1))
+
+
+distance_register = {'l2': l2distance, 'cos': cosdistance}
+
+
+class TripletLoss(kls.Loss):
+
+  def __init__(self,
+               target_distance: float,
+               distance_fn: str = 'l2',
+               reduction='auto',
+               name=None):
+    """ Triplet Loss:
+
+            When using l2 diatance , target_distance ∈ [0,4]
+
+        Parameters
+        ----------
+        target_distance : float
+
+            target distance threshold
+
+        distance_fn : str, optional
+
+            distance_fn name , by default 'l2'
+
+        """
+    super().__init__(reduction=reduction, name=name)
+    self.target_distance = target_distance
+    self.distance_str = distance_fn
+    self.distance_fn: l2distance = distance_register[distance_fn]
+    self.triplet_acc: tf.Variable = tf.compat.v1.get_variable(
+        'triplet_acc',
+        shape=(),
+        dtype=tf.float32,
+        initializer=tf.zeros_initializer(),
+        trainable=False)
+
+  def call(self, y_true: tf.Tensor, y_pred: tf.Tensor):
+    a, p, n = tf.split(y_pred, 3, axis=-1)
+    ap = self.distance_fn(a, p, is_norm=True)  # [batch]
+    an = self.distance_fn(a, n, is_norm=True)  # [batch]
+    total_loss = tf.reduce_mean(tf.nn.relu(ap - an +
+                                           self.target_distance))  # [batch]
+    self.triplet_acc.assign(
+        tf.reduce_mean(
+            tf.cast(
+                tf.equal(ap + self.target_distance < an,
+                         tf.ones_like(ap, tf.bool)), tf.float32)))
+    return total_loss
+
+
+class SparseSoftmaxLoss(kls.Loss):
+
+  def __init__(self, scale=30, reduction='auto', name=None):
+    """ sparse softmax loss with scale
+
+        Parameters
+        ----------
+        scale : int, optional
+
+            loss scale, by default 30
+
+        reduction : [type], optional
+
+            by default 'auto'
+
+        name : str, optional
+
+            by default None
+
+        """
+    super().__init__(reduction=reduction, name=name)
+    self.scale = scale
+
+  def call(self, y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
+    return tf.keras.backend.sparse_categorical_crossentropy(
+        y_true, self.scale * y_pred, True)
+
+
+class SparseAmsoftmaxLoss(kls.Loss):
+
+  def __init__(self,
+               batch_size: int,
+               scale: int = 30,
+               margin: int = 0.35,
+               reduction='auto',
+               name=None):
+    """ sparse addivate margin softmax
+
+        Parameters
+        ----------
+
+        scale : int, optional
+
+            by default 30
+
+        margin : int, optional
+
+            by default 0.35
+
+        """
+    super().__init__(reduction=reduction, name=name)
+    self.scale = scale
+    self.margin = margin
+    self.batch_idxs = tf.expand_dims(tf.range(0, batch_size, dtype=tf.int32),
+                                     1)  # shape [batch,1]
+
+  def call(self, y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
+    """ loss calc
+
+        Parameters
+        ----------
+        y_true : tf.Tensor
+
+            shape = [batch,1] type = tf.int32
+
+        y_pred : tf.Tensor
+
+            shape = [batch,class num] type = tf.float32
+
+        Returns
+        -------
+
+        tf.Tensor
+
+            loss
+        """
+    idxs = tf.concat([self.batch_idxs, tf.cast(y_true, tf.int32)], 1)
+    y_true_pred = tf.gather_nd(y_pred, idxs)
+    y_true_pred = tf.expand_dims(y_true_pred, 1)
+    y_true_pred_margin = y_true_pred - self.margin
+    _Z = tf.concat([y_pred, y_true_pred_margin], 1)
+    _Z = _Z * self.scale
+    logZ = tf.math.reduce_logsumexp(_Z, 1, keepdims=True)
+    logZ = logZ + tf.math.log(1 - tf.math.exp(self.scale * y_true_pred - logZ))
+    return -y_true_pred_margin * self.scale + logZ
+
+
+class SparseAsoftmaxLoss(kls.Loss):
+
+  def __init__(self,
+               batch_size: int,
+               scale: int = 30,
+               margin: int = 0.35,
+               reduction='auto',
+               name=None):
+    """ sparse addivate softmax
+
+        Parameters
+        ----------
+
+        scale : int, optional
+
+            by default 30
+
+        margin : int, optional
+
+            by default 0.35
+
+        """
+    super().__init__(reduction=reduction, name=name)
+    self.scale = scale
+    self.batch_idxs = tf.expand_dims(tf.range(0, batch_size, dtype=tf.int32), 1)
+
+  def call(self, y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
+    idxs = tf.concat([self.batch_idxs, tf.cast(y_true, tf.int32)], 1)
+    y_true_pred = tf.gather_nd(y_pred, idxs)  # find the y_pred
+    y_true_pred = tf.expand_dims(y_true_pred, 1)
+    y_true_pred_margin = 1 - 8 * tf.square(y_true_pred) + 8 * tf.square(
+        tf.square(y_true_pred))
+    # min(y_true_pred, y_true_pred_margin)
+    y_true_pred_margin = y_true_pred_margin - tf.nn.relu(y_true_pred_margin -
+                                                         y_true_pred)
+    _Z = tf.concat([y_pred, y_true_pred_margin], 1)
+    _Z = _Z * self.scale  # use scale expand value range
+    logZ = tf.math.reduce_logsumexp(_Z, 1, keepdims=True)
+    logZ = logZ + tf.math.log(1 - tf.math.exp(self.scale * y_true_pred - logZ)
+                              )  # Z - exp(scale * y_true_pred)
+    return -y_true_pred_margin * self.scale + logZ
+
+
+class CircleLoss(kls.Loss):
+
+  def __init__(self,
+               gamma: int = 64,
+               margin: float = 0.25,
+               batch_size: int = None,
+               reduction='auto',
+               name=None):
+    super().__init__(reduction=reduction, name=name)
+    self.gamma = gamma
+    self.margin = margin
+    self.O_p = 1 + self.margin
+    self.O_n = -self.margin
+    self.Delta_p = 1 - self.margin
+    self.Delta_n = self.margin
+    if batch_size:
+      self.batch_size = batch_size
+      self.batch_idxs = tf.expand_dims(
+          tf.range(0, batch_size, dtype=tf.int32), 1)  # shape [batch,1]
+
+  def call(self, y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
+    """ NOTE : y_pred must be cos similarity
+
+    Args:
+        y_true (tf.Tensor): shape [batch,ndim]
+        y_pred (tf.Tensor): shape [batch,ndim]
+
+    Returns:
+        tf.Tensor: loss
+    """
+    alpha_p = tf.nn.relu(self.O_p - tf.stop_gradient(y_pred))
+    alpha_n = tf.nn.relu(tf.stop_gradient(y_pred) - self.O_n)
+    # yapf: disable
+    y_pred = (y_true * (alpha_p * (y_pred - self.Delta_p)) +
+              (1 - y_true) * (alpha_n * (y_pred - self.Delta_n))) * self.gamma
+    # yapf: enable
+    return tf.nn.softmax_cross_entropy_with_logits(labels=y_true, logits=y_pred)
+
+
+class SparseCircleLoss(CircleLoss):
+
+  def call(self, y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
+    """ NOTE : y_pred must be cos similarity
+
+    Args:
+        y_true (tf.Tensor): shape [batch,ndim]
+        y_pred (tf.Tensor): shape [batch,ndim]
+
+    Returns:
+        tf.Tensor: loss
+    """
+
+    # idxs = tf.concat([self.batch_idxs, tf.cast(y_true, tf.int32)], 1)
+    # sp = tf.expand_dims(tf.gather_nd(y_pred, idxs), 1)
+
+    # alpha_p = tf.nn.relu(self.O_p - tf.stop_gradient(sp))
+    # alpha_n = tf.nn.relu(tf.stop_gradient(y_pred) - self.O_n)
+    # alpha_n_for_p = tf.expand_dims(tf.gather_nd(alpha_n, idxs), 1)
+
+    # r_sp_m = alpha_p * (sp - self.Delta_p)
+    # r_sn_m = alpha_n * (y_pred - self.Delta_n)
+    # _Z = tf.concat([r_sn_m, r_sp_m], 1)
+    # _Z = _Z * self.gamma
+    # # sum all similarity
+    # logZ = tf.math.reduce_logsumexp(_Z, 1, keepdims=True)
+    # # remove sn_p from all sum similarity
+    # TODO This line will be numerical overflow, Need a more numerically safe method
+    # logZ = logZ + tf.math.log(1 - tf.math.exp(
+    #     (alpha_n_for_p * (sp - self.Delta_n)) * self.gamma - logZ))
+
+    # return -r_sp_m * self.gamma + logZ
+    """ method 2 """
+    # idxs = tf.concat([self.batch_idxs, tf.cast(y_true, tf.int32)], 1)
+    # sp = tf.expand_dims(tf.gather_nd(y_pred, idxs), 1)
+    # mask = tf.logical_not(
+    #     tf.scatter_nd(idxs, tf.ones(tf.shape(idxs)[0], tf.bool),
+    #                   tf.shape(y_pred)))
+
+    # sn = tf.reshape(tf.boolean_mask(y_pred, mask), (self.batch_size, -1))
+    """ method 3 """
+    idxs = tf.concat([self.batch_idxs, tf.cast(y_true, tf.int32)], 1)
+    sp = tf.expand_dims(tf.gather_nd(y_pred, idxs), 1)
+    last_dim = y_pred[:, -1]
+    y_pred = tf.tensor_scatter_nd_update(y_pred, idxs, last_dim)
+    sn = y_pred[:, :-1]
+
+    alpha_p = tf.nn.relu(self.O_p - tf.stop_gradient(sp))
+    alpha_n = tf.nn.relu(tf.stop_gradient(sn) - self.O_n)
+
+    r_sp_m = alpha_p * (sp - self.Delta_p)
+    r_sn_m = alpha_n * (sn - self.Delta_n)
+    _Z = tf.concat([r_sn_m, r_sp_m], 1)
+    _Z = _Z * self.gamma
+    # sum all similarity
+    logZ = tf.math.reduce_logsumexp(_Z, 1, keepdims=True)
+    # remove sn_p from all sum similarity
+    return -r_sp_m * self.gamma + logZ
+
+
+class PairCircleLoss(CircleLoss):
+
+  def call(self, sp: tf.Tensor, sn: tf.Tensor) -> tf.Tensor:
+    """ use within-class similarity and between-class similarity for loss
+
+    Args:
+        sp (tf.Tensor): within-class similarity  shape [batch, K]
+        sn (tf.Tensor): between-class similarity shape [batch, L]
+
+    Returns:
+        tf.Tensor: loss
+    """
+    ap = tf.nn.relu(-tf.stop_gradient(sp) + 1 + self.margin)
+    an = tf.nn.relu(tf.stop_gradient(sn) + self.margin)
+
+    logit_p = -ap * (sp - self.Delta_p) * self.gamma
+    logit_n = an * (sn - self.Delta_n) * self.gamma
+
+    return tf.math.softplus(
+        tf.math.reduce_logsumexp(logit_n, axis=-1, keepdims=True) +
+        tf.math.reduce_logsumexp(logit_p, axis=-1, keepdims=True))

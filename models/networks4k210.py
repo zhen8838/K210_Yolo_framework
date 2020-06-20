@@ -46,13 +46,13 @@ def yolo_mbv1_k210(input_shape: list, anchor_num: int, class_num: int,
 
   y1 = compose(
       DarknetConv2D_BN_Leaky(filters, (3, 3)),
-      DarknetConv2D(anchor_num * (class_num+5), (1, 1)))(
+      DarknetConv2D(anchor_num * (class_num + 5), (1, 1)))(
           x2)
 
   x2 = compose(DarknetConv2D_BN_Leaky(128, (1, 1)), k.layers.UpSampling2D(2))(x2)
 
   y2 = compose(k.layers.Concatenate(), DarknetConv2D_BN_Leaky(filters, (3, 3)),
-               DarknetConv2D(anchor_num * (class_num+5), (1, 1)))([x2, x1])
+               DarknetConv2D(anchor_num * (class_num + 5), (1, 1)))([x2, x1])
 
   y1_reshape = kl.Activation('linear', name='l1')(y1)
   y2_reshape = kl.Activation('linear', name='l2')(y2)
@@ -114,11 +114,11 @@ def yolo_mbv2_k210(input_shape: list, anchor_num: int, class_num: int,
 
   y1 = compose(
       DarknetConv2D_BN_Leaky(filters, (3, 3)),
-      DarknetConv2D(anchor_num * (class_num+5), (1, 1)))(
+      DarknetConv2D(anchor_num * (class_num + 5), (1, 1)))(
           x2)
   x2 = compose(DarknetConv2D_BN_Leaky(128, (1, 1)), kl.UpSampling2D(2))(x2)
   y2 = compose(kl.Concatenate(), DarknetConv2D_BN_Leaky(filters, (3, 3)),
-               DarknetConv2D(anchor_num * (class_num+5), (1, 1)))([x2, x1])
+               DarknetConv2D(anchor_num * (class_num + 5), (1, 1)))([x2, x1])
 
   y1_reshape = kl.Activation('linear', name='l1')(y1)
   y2_reshape = kl.Activation('linear', name='l2')(y2)
@@ -186,7 +186,7 @@ def yolo2_mbv1_k210(input_shape: list, anchor_num: int, class_num: int,
       DarknetConv2D_BN_Leaky(filters_2, (3, 3)))(
           x)
 
-  y = DarknetConv2D(anchor_num * (class_num+5), (1, 1))(y)
+  y = DarknetConv2D(anchor_num * (class_num + 5), (1, 1))(y)
 
   y_reshape = kl.Activation('linear', name='l1')(y)
 
@@ -226,13 +226,13 @@ def yolov2algin_mbv1_k210(input_shape: list, anchor_num: int, class_num: int,
 
   y = compose(
       k.layers.Concatenate(), DarknetConv2D_BN_Leaky(filter_num, (3, 3)),
-      DarknetConv2D(anchor_num * (5 + landmark_num*2 + class_num),
+      DarknetConv2D(anchor_num * (5 + landmark_num * 2 + class_num),
                     (1, 1)))([x1, x2])  # [7,10,48]
 
   y_reshape = kl.Reshape((int(input_shape[0] / 32), int(
-      input_shape[1] / 32), anchor_num, 5 + landmark_num*2 + class_num),
-                         name='l1')(
-                             y)
+      input_shape[1] / 32), anchor_num, 5 + landmark_num * 2 + class_num),
+      name='l1')(
+      y)
 
   yolo_model = k.Model(inputs, [y])
   yolo_model_warpper = k.Model(inputs, [y_reshape])
@@ -274,14 +274,14 @@ def yoloalgin_mbv1_k210(input_shape: list, anchor_num: int, class_num: int,
 
   y1 = compose(
       DarknetConv2D_BN_Leaky(filters, (3, 3)),
-      DarknetConv2D(anchor_num * (5 + landmark_num*2 + class_num), (1, 1)))(
+      DarknetConv2D(anchor_num * (5 + landmark_num * 2 + class_num), (1, 1)))(
           x2)
 
   x2 = compose(DarknetConv2D_BN_Leaky(128, (1, 1)), k.layers.UpSampling2D(2))(x2)
 
   y2 = compose(
       k.layers.Concatenate(), DarknetConv2D_BN_Leaky(filters, (3, 3)),
-      DarknetConv2D(anchor_num * (5 + landmark_num*2 + class_num),
+      DarknetConv2D(anchor_num * (5 + landmark_num * 2 + class_num),
                     (1, 1)))([x2, x1])
 
   y1_reshape = kl.Activation('linear', name='l1')(y1)
@@ -559,7 +559,7 @@ def pfld_k210(input_shape: list, landmark_num: int, alpha=1.,
   # 7,7,112
   multi_scale = kl.Concatenate()([conv6_1, conv7, conv8])
   # 7,7,4 = 196  can be modify kernel size
-  landmark_pre = kl.Conv2D(landmark_num * 2 // (7*7), 3, 1, 'same')(multi_scale)
+  landmark_pre = kl.Conv2D(landmark_num * 2 // (7 * 7), 3, 1, 'same')(multi_scale)
 
   pflp_infer_model = k.Model(inputs, landmark_pre)
 
@@ -822,7 +822,7 @@ def ullfd_k210(input_shape: list,
     features.append(base_model.get_layer(f'conv_dw_{index}_relu_2').output)
 
   out = [
-      SeperableConv2d(len(anchor[i]) * (4+1+class_num), 3, padding='same')(feat)
+      SeperableConv2d(len(anchor[i]) * (4 + 1 + class_num), 3, padding='same')(feat)
       for (i, feat) in enumerate(features)
   ]
   out = [kl.Reshape((-1, (4 + 1 + class_num)))(o) for o in out]
@@ -851,7 +851,7 @@ def ullfd_k210_v1(input_shape: list,
   """ SSH block """
   features = [SSH(feat, base_filters * 4, depth=2) for feat in features]
   out = [
-      kl.Conv2D(len(anchor[i]) * (4+1+class_num), 1, 1)(feat)
+      kl.Conv2D(len(anchor[i]) * (4 + 1 + class_num), 1, 1)(feat)
       for (i, feat) in enumerate(features)
   ]
   out = [kl.Reshape((-1, (4 + 1 + class_num)))(o) for o in out]
@@ -893,7 +893,7 @@ def ullfd_k210_v2(input_shape: list,
     features[0] = kl.Concatenate(channel_axis)([features[0], up])
 
   out = [
-      SeperableConv2d(len(anchor[i]) * (4+1+class_num), 3, padding='same')(feat)
+      SeperableConv2d(len(anchor[i]) * (4 + 1 + class_num), 3, padding='same')(feat)
       for (i, feat) in enumerate(features)
   ]
   out = [kl.Reshape((-1, (4 + 1 + class_num)))(o) for o in out]
@@ -937,7 +937,7 @@ def ullfd_k210_v3(input_shape: list,
   """ SSH block """
   features = [SSH(feat, base_filters * 4, depth=2) for feat in features]
   out = [
-      kl.Conv2D(len(anchor[i]) * (4+1+class_num), 1, 1)(feat)
+      kl.Conv2D(len(anchor[i]) * (4 + 1 + class_num), 1, 1)(feat)
       for (i, feat) in enumerate(features)
   ]
   out = [kl.Reshape((-1, (4 + 1 + class_num)))(o) for o in out]
@@ -1170,7 +1170,7 @@ def mbv1_facerec_k210_eager(input_shape: list,
        encoder,train_model
 
     """
-  loss_list = ['softmax', 'asoftmax', 'amsoftmax', 'triplet']
+  loss_list = ['softmax', 'asoftmax', 'amsoftmax', 'triplet', 'circleloss']
   if loss not in loss_list:
     raise ValueError(f"loss not valid! must in {' '.join(loss_list)}")
 
@@ -1204,7 +1204,7 @@ def mbv1_facerec_k210_eager(input_shape: list,
               x)
 
   if 'softmax' in loss:
-    if loss in ['amsoftmax', 'asoftmax']:
+    if loss in ['amsoftmax', 'asoftmax', 'circleloss']:
       # normalize Classification vector len = 1
       embedds = kl.Lambda(lambda x: tf.math.l2_normalize(x, 1))(embedds)
       outputs = kl.Dense(

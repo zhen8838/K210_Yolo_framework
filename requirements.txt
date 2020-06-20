@@ -1,8 +1,12 @@
+conda activate base
+conda remove -n tf2 --all -y
 conda create --name tf2 python=3.7.4 -y
 conda activate tf2
+# install method 1
 conda install numpy tensorflow-gpu=2.1 tensorflow-probability jupyter opencv tqdm toolz PyYAML -y
 conda install librosa imgaug -c conda-forge -y
-pip install tensorflow_addons more_itertools tensorflow_model_optimization tensorboard_plugin_profile
-# pip install tensorflow-gpu==2.1.0 tensorflow_probability tensorflow_addons more_itertools numpy==1.17.4
-# conda install cudatoolkit=10.1.243 cudnn=7.6.5 cupti=10.1.168 -y
-# pip install jupyter opencv-python tqdm toolz PyYAML imgaug librosa cython
+pip install tensorflow_addons more_itertools tensorflow_model_optimization tensorboard_plugin_profile easydict
+# install method 2
+pip install tensorflow-gpu==2.1.0 tensorflow_probability tensorflow_addons==0.9.1 more_itertools
+conda install cudatoolkit=10.1.243 cudnn=7.6.5 cupti=10.1.168 -y
+pip install jupyter opencv-python tqdm toolz PyYAML imgaug librosa cython tensorflow_model_optimization tensorboard_plugin_profile easydict

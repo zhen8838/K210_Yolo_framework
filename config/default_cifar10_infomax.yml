@@ -4,7 +4,7 @@ MIXED_PRECISION_DTYPE: float32
 mode: train
 model:
   name: infomaxcifar10
-  helper: KerasDatasetHelper
+  helper: KerasDatasetSemiHelper
   helper_kwarg:
     dataset: cifar10
     label_ratio: 0.05

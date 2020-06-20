@@ -410,8 +410,10 @@ def distort_image_with_autoaugment(image, bboxes, augmentation_name):
 
     Args:
       image: `Tensor` of shape [height, width, 3] representing an image.
-      bboxes: `Tensor` of shape [N, 4] representing ground truth boxes that are
-        normalized between [0, 1].
+      
+      bboxes: `Tensor` of shape [N, 4] representing ground truth boxes
+        NOTE: normalized between [0, height or width].
+      
       augmentation_name: The name of the AutoAugment policy to use. The available
         options are `v0`, `v1`, `v2`, `v3` and `test`. `v0` is the policy used for
         all of the results in the paper and was found to achieve the best results
