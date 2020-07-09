@@ -185,6 +185,7 @@ helper_register = dict_warp({
     'CMPFacadeHelper': ('tools.pix2pix', 'CMPFacadeHelper'),
     'OpenPoseHelper': ('tools.openpose', 'OpenPoseHelper'),
     'PhotoTransferHelper': ('tools.phototransfer', 'PhotoTransferHelper'),
+    'DBFaceHelper': ('tools.dbface', 'DBFaceHelper'),
 })
 
 network_register = dict_warp({
@@ -231,7 +232,8 @@ network_register = dict_warp({
     'animenet': ('models.gannet', 'animenet'),
     'cifar_infomax_ssl_v1': ('models.semisupervised', 'cifar_infomax_ssl_v1'),
     'MobileNetV1OpenPose': ('models.openpose', 'MobileNetV1OpenPose'),
-    'ugatitnet': ('models.gannet', 'ugatitnet')
+    'ugatitnet': ('models.gannet', 'ugatitnet'),
+    'dbface_k210_v1': ('models.dbface', 'dbface_k210_v1')
 })
 
 loss_register = dict_warp({
@@ -309,6 +311,7 @@ trainloop_register = dict_warp({
     'OpenPoseLoop': ('tools.openpose', 'OpenPoseLoop'),
     'PhotoTransferLoop': ('tools.phototransfer', 'PhotoTransferLoop'),
     'KerasDatasetLoop': ('tools.kerasdataset', 'KerasDatasetLoop'),
+    'DBfaceTrainingLoop': ('tools.dbface', 'DBfaceTrainingLoop'),
 })
 
 

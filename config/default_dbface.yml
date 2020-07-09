@@ -1,0 +1,69 @@
+# eager training~
+mode: train
+model:
+  name: dbface
+  helper: DBFaceHelper
+  helper_kwarg:
+    image_ann: data/retinaface_img_ann.npy
+    in_hw: [416, 416]
+    nlandmark: 5
+  network: dbface_k210_v1
+  network_kwarg:
+    input_shape: [416, 416, 3]
+    nclass: 1
+    nlandmark: 5
+    wide: 64
+    has_ext: False
+    upmode: UCBA
+train:
+  graph_optimizer: true
+  graph_optimizer_kwarg:
+    layout_optimizer: true
+    remapping: true
+    shape_optimization: true
+    loop_optimization: true
+    constant_folding: true
+    function_optimization: true
+    scoped_allocator_optimization: true
+  distributionstrategy_kwarg:
+    tpu: null
+    strategy: Mirrored
+  augmenter: false
+  batch_size: 8
+  pre_ckpt: null
+  rand_seed: 10101
+  epochs: 20
+  train_epoch_step: null
+  vali_epoch_step: null
+  steps_per_run: 1
+  log_dir: log
+  sub_log_dir: default_dbface_exp
+  mixed_precision:
+    enable: false
+    dtype: float32
+  trainloop: DBfaceTrainingLoop
+  trainloop_kwarg:
+    hparams:
+      iou_method: ciou
+      ema:
+        enable: false
+        decay: 0.999
+  variablecheckpoint_kwarg:
+    variable_dict:
+      model: train_model
+      optimizer: optimizer
+    monitor: val/loss
+    mode: min
+  optimizer: Adam
+  optimizer_kwarg:
+    learning_rate: 0.001
+  callbacks:
+    # - name: EarlyStopping
+    #   kwarg:
+    #     monitor: val/loss
+    #     min_delta: 0
+    #     patience: 10
+    #     verbose: 0
+    #     mode: min
+    #     baseline: null
+    #     restore_best_weights: false

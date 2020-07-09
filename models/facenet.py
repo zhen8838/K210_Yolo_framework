@@ -51,16 +51,18 @@ def mbv1_facerec(input_shape: list,
       include_top=False,
       weights='imagenet',
       alpha=depth_multiplier)  # type: keras.Model
-  embedds = compose(
-      kl.Flatten(),
-      kl.Dense(2048),
-      kl.AlphaDropout(0.2),
-      kl.LeakyReLU(),
-      kl.Dense(512),
-      kl.AlphaDropout(0.2),
-      kl.Dense(embedding_size),
-  )(
-      base_model.output)
+
+  nn = base_model.outputs[0]
+  """ GDC """
+  nn = kl.Conv2D(512, 1, use_bias=False)(nn)
+  nn = kl.BatchNormalization()(nn)
+  nn = kl.DepthwiseConv2D(nn.shape[1], depth_multiplier=1, use_bias=False)(nn)
+  nn = kl.BatchNormalization()(nn)
+  nn = kl.Dropout(0.1)(nn)
+  nn = kl.Flatten()(nn)
+  nn = kl.Dense(embedding_size, activation=None, use_bias=False,
+                kernel_initializer="glorot_normal")(nn)
+  embedds = kl.BatchNormalization(name="embedding")(nn)
 
   if 'softmax' in loss:
     if loss in ['amsoftmax', 'asoftmax', 'circlesoftmax']:
