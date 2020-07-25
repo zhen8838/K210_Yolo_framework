@@ -535,40 +535,41 @@ class DBfaceTrainingLoop(BaseTrainingLoop):
 
   @tf.function
   def val_step(self, dataset, metrics):
-    if self.hparams.ema.enable:
-      val_model = self.ema.model
-    else:
-      val_model = self.val_model
+    pass
+    # if self.hparams.ema.enable:
+    #   val_model = self.ema.model
+    # else:
+    #   val_model = self.val_model
 
-    def step_fn(inputs):
-      (images, heatmap_gt, heatmap_posweight, reg_tlrb, reg_mask,
-       landmark_gt, landmark_mask, num_objs,
-       keep_mask) = inputs
+    # def step_fn(inputs):
+    #   (images, heatmap_gt, heatmap_posweight, reg_tlrb, reg_mask,
+    #    landmark_gt, landmark_mask, num_objs,
+    #    keep_mask) = inputs
 
-      batch_objs = tf.reduce_sum(num_objs)
-      hm, tlrb, landmark = val_model(images, training=False)
-      hm = tf.nn.sigmoid(hm)
-      hm = tf.clip_by_value(hm, 1e-4, 1 - 1e-4)
-      tlrb = tf.exp(tlrb)
+    #   batch_objs = tf.reduce_sum(num_objs)
+    #   hm, tlrb, landmark = val_model(images, training=False)
+    #   hm = tf.nn.sigmoid(hm)
+    #   hm = tf.clip_by_value(hm, 1e-4, 1 - 1e-4)
+    #   tlrb = tf.exp(tlrb)
 
-      heatmap_gt = tf.transpose(heatmap_gt, [0, 2, 3, 1])
-      heatmap_posweight = tf.transpose(heatmap_posweight, [0, 2, 3, 1])
-      reg_tlrb = tf.transpose(reg_tlrb, [0, 2, 3, 1])
-      reg_mask = tf.transpose(reg_mask, [0, 2, 3, 1])
-      landmark_gt = tf.transpose(landmark_gt, [0, 2, 3, 1])
-      landmark_mask = tf.transpose(landmark_mask, [0, 2, 3, 1])
-      keep_mask = tf.transpose(keep_mask, [0, 2, 3, 1])
+    #   heatmap_gt = tf.transpose(heatmap_gt, [0, 2, 3, 1])
+    #   heatmap_posweight = tf.transpose(heatmap_posweight, [0, 2, 3, 1])
+    #   reg_tlrb = tf.transpose(reg_tlrb, [0, 2, 3, 1])
+    #   reg_mask = tf.transpose(reg_mask, [0, 2, 3, 1])
+    #   landmark_gt = tf.transpose(landmark_gt, [0, 2, 3, 1])
+    #   landmark_mask = tf.transpose(landmark_mask, [0, 2, 3, 1])
+    #   keep_mask = tf.transpose(keep_mask, [0, 2, 3, 1])
 
-      hm_loss = self.focal_loss(hm, heatmap_gt, heatmap_posweight,
-                                keep_mask=keep_mask) / tf.cast(batch_objs, tf.float32)
-      reg_loss = self.iou_loss(tlrb, reg_tlrb, reg_mask, self.hparams.iou_method) * 5
-      landmark_loss = self.wing_loss(landmark, landmark_gt, landmark_mask, w=2) * 0.1
-      loss = hm_loss + reg_loss + landmark_loss
+    #   hm_loss = self.focal_loss(hm, heatmap_gt, heatmap_posweight,
+    #                             keep_mask=keep_mask) / tf.cast(batch_objs, tf.float32)
+    #   reg_loss = self.iou_loss(tlrb, reg_tlrb, reg_mask, self.hparams.iou_method) * 5
+    #   landmark_loss = self.wing_loss(landmark, landmark_gt, landmark_mask, w=2) * 0.1
+    #   loss = hm_loss + reg_loss + landmark_loss
 
-      metrics.loss.update_state(loss)
-      metrics.hm.update_state(hm_loss)
-      metrics.reg.update_state(reg_loss)
-      metrics.ldmk.update_state(landmark_loss)
+    #   metrics.loss.update_state(loss)
+    #   metrics.hm.update_state(hm_loss)
+    #   metrics.reg.update_state(reg_loss)
+    #   metrics.ldmk.update_state(landmark_loss)
 
-    for inputs in dataset:
-      self.run_step_fn(step_fn, args=(inputs,))
+    # for inputs in dataset:
+    #   self.run_step_fn(step_fn, args=(inputs,))

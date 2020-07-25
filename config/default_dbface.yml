@@ -5,11 +5,11 @@ model:
   helper: DBFaceHelper
   helper_kwarg:
     image_ann: data/retinaface_img_ann.npy
-    in_hw: [416, 416]
+    in_hw: [320, 320]
     nlandmark: 5
   network: dbface_k210_v1
   network_kwarg:
-    input_shape: [416, 416, 3]
+    input_shape: [320, 320, 3]
     nclass: 1
     nlandmark: 5
     wide: 64
@@ -32,10 +32,10 @@ train:
   batch_size: 8
   pre_ckpt: null
   rand_seed: 10101
-  epochs: 20
+  epochs: 70
   train_epoch_step: null
   vali_epoch_step: null
-  steps_per_run: 1
+  steps_per_run: 20
   log_dir: log
   sub_log_dir: default_dbface_exp
   mixed_precision:
@@ -53,7 +53,7 @@ train:
       model: train_model
       optimizer: optimizer
     monitor: val/loss
-    mode: min
+    mode: all
   optimizer: Adam
   optimizer_kwarg:
     learning_rate: 0.001
