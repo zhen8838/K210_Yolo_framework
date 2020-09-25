@@ -1,0 +1,150 @@
+mode: train
+model:
+  name: yolo
+  helper: YOLOHelper
+  helper_kwarg:
+    image_ann: /home/zqh/workspace/mix-tfrecord/example.npy
+    class_num: 20
+    anchors: data/voc_anchor_v3.npy
+    in_hw:
+      - 416
+      - 416
+    out_hw:
+      - - 13
+        - 13
+      - - 26
+        - 26
+      - - 52
+        - 52
+    resize_method: gluon
+    augment_method: iaa
+    used_label_map:
+      No-Mask: 1
+      Mask: 0
+  network: yolo
+  network_kwarg:
+    input_shape:
+      - null
+      - null
+      - 3
+    anchor_num: 3
+    class_num: 20
+  loss: YOLOLoss
+  loss_kwarg:
+    iou_thresh: 0.5
+    obj_thresh: 0.7
+    obj_weight: 1
+    noobj_weight: 1
+    wh_weight: 3
+    xy_weight: 2
+    cls_weight: 1
+    use_focalloss: false
+    focal_gamma: 2.0
+    focal_alpha: 0.25
+    verbose: 1
+train:
+  graph_optimizer: true
+  graph_optimizer_kwarg: 
+    layout_optimizer: true
+    remapping: true
+    shape_optimization: true
+    loop_optimization: true
+    constant_folding: true
+    function_optimization: true
+    scoped_allocator_optimization: true
+  augmenter: false
+  batch_size: 6
+  pre_ckpt: null
+  rand_seed: 10101
+  epochs: 100
+  log_dir: log
+  sub_log_dir: null
+  debug: false
+  verbose: 1
+  vali_step_factor: 0.5
+  optimizer: Adam
+  optimizer_kwarg:
+    learning_rate: 0.001
+    beta_1: 0.9
+    beta_2: 0.999
+    amsgrad: false
+  Lookahead: true
+  Lookahead_kwarg:
+    k: 5
+    alpha: 0.5
+  callbacks:
+    - name: EarlyStopping
+      kwarg:
+        monitor: val_loss
+        min_delta: 0
+        patience: 4
+        verbose: 0
+        mode: auto
+        baseline: null
+        restore_best_weights: false
+    - name: ModelCheckpoint
+      kwarg:
+        monitor: val_loss
+        verbose: 0
+        save_best_only: true
+        save_weights_only: false
+        mode: auto
+        save_freq: epoch
+        load_weights_on_restart: false
+    - name: TerminateOnNaN
+      kwarg: null
+    - name: MultiScaleTrain
+      kwarg:
+        interval: 10
+        scale_range: [-3, 3]
+    # - name: CosineLR
+    #   kwarg:
+    #      init_lr: 0.0005
+    #      decay_steps: 30
+    #      lowest_lr: 0.0001
+    - name: StepLR
+      kwarg:
+        steps: [400, 700, 900, 1000, 40000, 60000]
+        rates: [0.0005, 0.001, 0.002, 0.02, 0.002, 0.0002]
+prune:
+  is_prune: false
+  init_sparsity: 0.5
+  final_sparsity: 0.9
+  end_epoch: 5
+  frequency: 100
+inference:
+  infer_fn: yolo_infer
+  infer_fn_kwarg:
+    obj_thresh: 0.7
+    nms_thresh: 0.3
+    iou_method: iou
+evaluate:
+  eval_fn: yolo_eval
+  eval_fn_kwarg:
+    det_obj_thresh: 0.1
+    det_iou_thresh: 0.3
+    mAp_iou_thresh: 0.3
+    iou_method: iou
+    class_name:
+      - aeroplane
+      - bicycle
+      - bird
+      - boat
+      - bottle
+      - bus
+      - car
+      - cat
+      - chair
+      - cow
+      - diningtable
+      - dog
+      - horse
+      - motorbike
+      - person
+      - pottedplant
+      - sheep
+      - sofa
+      - train
+      - tvmonitor
+    save_result: true
+    save_result_dir: /home/zqh/Documents/mAP/input

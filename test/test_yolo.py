@@ -257,6 +257,23 @@ def test_train_dataset_label_to_ann():
     h.draw_image(img[0].numpy(), new_ann)
 
 
+def test_train_dataset_label_to_ann_with_hash_map():
+  """ 测试训练集dataset加载，使用hash map控制 """
+  h = YOLOHelper('/home/zqh/workspace/mix-tfrecord/example.npy',
+                 2, 'data/voc_anchor.npy',
+                 [224, 320], [[7, 10], [14, 20]],
+                 used_label_map={'No-Mask': 1,
+                                 'Mask': 0})
+  h.set_dataset(1, True, False, True)
+  i = 213
+  iters = iter(h.train_dataset)
+  for i in range(20):
+    img, labels = next(iters)
+    labels = [label[0].numpy() for label in labels]
+    new_ann = h.label_to_ann(labels)
+    h.draw_image(img[0].numpy(), new_ann)
+
+
 def test_val_dataset_label_to_ann():
   """ 测试验证集dataset加载 """
   h = YOLOHelper('data/voc_img_ann.npy', 20, 'data/voc_anchor.npy',

@@ -26,6 +26,7 @@ from tqdm import trange, tqdm
 from termcolor import colored
 from typing import List, Tuple, AnyStr, Iterable
 from more_itertools import chunked
+from toolz import partial
 
 
 def fake_iou(a: np.ndarray, b: np.ndarray) -> float:
@@ -250,7 +251,8 @@ class YOLOHelper(BaseHelper):
                in_hw: tuple, out_hw: tuple,
                resize_method: str = 'origin',
                augment_method: str = 'origin',
-               num_parallel_calls: int = -1):
+               num_parallel_calls: int = -1,
+               **kwargs):
     """ yolo helper
 
     Parameters
@@ -285,6 +287,8 @@ class YOLOHelper(BaseHelper):
 
         tf.dataset.map(num_parallel_calls)
 
+    kwargs: dict
+        contain other key word args, eg. `used_label_map`
     """
     self.train_dataset: tf.data.Dataset = None
     self.val_dataset: tf.data.Dataset = None
@@ -294,12 +298,17 @@ class YOLOHelper(BaseHelper):
     self.val_epoch_step: int = None
     self.test_epoch_step: int = None
 
+    self.hash_table: tf.lookup.StaticHashTable = None
+    used_label_map = kwargs.get('used_label_map')
+    if used_label_map != None:
+      self.hash_table = self.get_hash_table(used_label_map)
+
     if image_ann == None:
       self.train_list: np.ndarray = None
       self.val_list: np.ndarray = None
       self.test_list: np.ndarray = None
     else:
-      img_ann_list = np.load(image_ann, allow_pickle=True)[()]
+      img_ann_list: dict = np.load(image_ann, allow_pickle=True)[()]
 
       self.train_list: str = img_ann_list['train_data']
       self.val_list: str = img_ann_list['val_data']
@@ -361,6 +370,24 @@ class YOLOHelper(BaseHelper):
         (160, 150, 20), (0, 163, 255), (140, 140, 140), (250, 10, 15), (20, 255, 0),
         (31, 255, 0), (255, 31, 0), (255, 224, 0), (153, 255, 0), (0, 0, 255),
         (255, 71, 0), (0, 235, 255), (0, 173, 255), (31, 0, 255), (11, 200, 200)]
+
+  @staticmethod
+  def get_hash_table(label_map: dict) -> tf.lookup.StaticHashTable:
+    """ use label map generate tf HashMap, When annotation not in HashMap, it will be remove.
+
+    Args:
+        label_map (dict): eg.{'person':0,'car':1,...}
+
+    Returns:
+        tf.lookup.StaticHashTable: hash_map
+    """
+    keys_tensor = tf.constant([k for k in label_map.keys()],
+                              tf.string)
+    vals_tensor = tf.constant([v for v in label_map.values()],
+                              dtype=tf.float32)
+    table = tf.lookup.KeyValueTensorInitializer(keys_tensor, vals_tensor)
+    table = tf.lookup.StaticHashTable(table, -1)
+    return table
 
   def _xy_grid_index(self, out_hw: np.ndarray, box_xy: np.ndarray, layer: int) -> [np.ndarray, np.ndarray]:
     """ get xy index in grid scale
@@ -432,6 +459,46 @@ class YOLOHelper(BaseHelper):
                      features['x2'].values[:, None],
                      features['y2'].values[:, None]], 1)
     img_hw = features['img_hw'].values
+
+    return img_str, img_name, ann, img_hw
+
+  @staticmethod
+  def parser_example_with_hash_table(stream: bytes, table: tf.lookup.StaticHashTable) -> List[tf.Tensor]:
+    """ parser yolo tfrecord example with hash table
+
+    Args:
+        stream (bytes): 
+        table (tf.lookup.StaticHashTable): 
+
+    Returns:
+        List[tf.Tensor]: img_str, img_name, ann, img_hw
+    """
+    features = tf.io.parse_single_example(stream, {
+        'img': tf.io.FixedLenFeature([], tf.string),
+        'img_name': tf.io.FixedLenFeature([], tf.string),
+        'dataset': tf.io.FixedLenFeature([], tf.string),
+        'label': tf.io.VarLenFeature(tf.string),
+        'x1': tf.io.VarLenFeature(tf.float32),
+        'y1': tf.io.VarLenFeature(tf.float32),
+        'x2': tf.io.VarLenFeature(tf.float32),
+        'y2': tf.io.VarLenFeature(tf.float32),
+        'img_hw': tf.io.VarLenFeature(tf.int64),
+    })
+
+    label_str = features['label'].values[:, None]
+    """ map label  """
+    label = table.lookup(label_str)
+    img_str = features['img']
+    img_name = features['img_name']
+    dataset = features['dataset']
+    ann = tf.concat([label,
+                     features['x1'].values[:, None],
+                     features['y1'].values[:, None],
+                     features['x2'].values[:, None],
+                     features['y2'].values[:, None]], 1)
+    img_hw = features['img_hw'].values
+    """ remove invalid label ann """
+    ann = tf.boolean_mask(ann, tf.not_equal(ann[:, 0], -1))
 
     return img_str, img_name, ann, img_hw
 
@@ -879,10 +946,15 @@ class YOLOHelper(BaseHelper):
   def build_datapipe(self, image_ann_list: np.ndarray, batch_size: int, is_augment: bool,
                      is_normlize: bool, is_training: bool) -> tf.data.Dataset:
     print(INFO, 'data augment is ', str(is_augment))
+    print(INFO, 'use hash map is ', str(True if self.hash_table else False))
+    parser_example_fn = (partial(self.parser_example_with_hash_table,
+                                 table=self.hash_table)
+                         if self.hash_table
+                         else self.parser_example)
 
     def _parser_wrapper(stream: bytes):
       # NOTE use wrapper function and dynamic list construct (x,(y_1,y_2,...))
-      img_str, _, ann, _ = self.parser_example(stream)
+      img_str, _, ann, _ = parser_example_fn(stream)
       # load image
       img = self.decode_img(img_str)
       # process image
