@@ -1,11 +1,15 @@
 import numpy as np
+import os
+import sys
+sys.path.insert(0, os.getcwd())
 from tools.yolo import YOLOHelper
 from tools.base import INFO, ERROR, NOTE
 import matplotlib.pyplot as plt
 from scipy.spatial.distance import cdist
-import sys
 import argparse
+import yaml
 import tensorflow as tf
+from toolz import partial
 
 
 def tf_fake_iou(X: tf.Tensor, centroids: tf.Tensor) -> tf.Tensor:
@@ -171,29 +175,20 @@ def runkMeans(X: np.ndarray, initial_centroids: np.ndarray, max_iters: int,
 
     return new_centrois, idx_
 
-
-def parser_example(stream: bytes) -> [tf.Tensor, tf.Tensor]:
-    features = tf.io.parse_single_example(stream, {
-        'label': tf.io.VarLenFeature(tf.float32),
-        'x1': tf.io.VarLenFeature(tf.float32),
-        'y1': tf.io.VarLenFeature(tf.float32),
-        'x2': tf.io.VarLenFeature(tf.float32),
-        'y2': tf.io.VarLenFeature(tf.float32),
-        'img_hw': tf.io.VarLenFeature(tf.int64),
-    })
-    ann = tf.concat([features['label'].values[:, None],
-                     features['x1'].values[:, None],
-                     features['y1'].values[:, None],
-                     features['x2'].values[:, None],
-                     features['y2'].values[:, None]], 1)
-    img_hw = features['img_hw'].values
-
-    return ann, img_hw
-
-
+    
 def main(ann_list_file: str, anchor_file: str, max_iters: int,
          in_hw: tuple, out_hw: tuple, anchor_num: int, is_random: bool,
-         is_plot: bool, low: list, high: list):
+         is_plot: bool, low: list, high: list,used_label_map:dict):
+    hash_table: tf.lookup.StaticHashTable = None
+    if used_label_map != None:
+      hash_table = YOLOHelper.get_hash_table(used_label_map)
+    print(INFO, 'use hash map is ', str(True if hash_table else False))
+    
+    parser_example_fn = (partial(YOLOHelper.parser_example_with_hash_table,
+                                 table=hash_table)
+                         if hash_table
+                         else YOLOHelper.parser_example)
+                         
     data_dict: dict = np.load(ann_list_file, allow_pickle=True)[()]
 
     in_wh = np.array(in_hw[::-1])
@@ -202,10 +197,10 @@ def main(ann_list_file: str, anchor_file: str, max_iters: int,
     # NOTE correct boxes
     img_whs = []
     for key in data_dict.keys():
-        if 'data' in key:
-            ds = tf.data.TFRecordDataset(data_dict[key]).map(parser_example, -1)
-            for ann, img_hw in ds:
-                ann, img_hw = ann.numpy(), img_hw.numpy()
+        if '_data' in key:
+            ds = tf.data.TFRecordDataset(data_dict[key]).map(parser_example_fn, -1)
+            for _,img_name ,ann, img_hw in ds:
+                img_name,ann, img_hw =img_name.numpy(), ann.numpy(), img_hw.numpy()
                 img_wh = img_hw[::-1]
 
                 """ calculate the affine transform factor """
@@ -216,6 +211,10 @@ def main(ann_list_file: str, anchor_file: str, max_iters: int,
 
                 """ calculate the box transform matrix """
                 new_wh = ((ann[:, 3:5] - ann[:, 1:3]) * scale + translation) / in_wh
+                if (new_wh<0).any():
+                    print(img_name)
+                    raise ValueError("Maybe Annotation xmin,ymin > xmax,ymax, Please Check dataset")
+                
                 img_whs.append(new_wh)
 
     x = np.vstack(img_whs)
@@ -242,7 +241,7 @@ def main(ann_list_file: str, anchor_file: str, max_iters: int,
         np.save(anchor_file, centroids)
 
 
-def parse_arguments(argv):
+if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--ann_list_file', type=str, help='this is train dataset ann list .npy file', default='data/voc_anchor.npy')
@@ -255,12 +254,9 @@ def parse_arguments(argv):
     parser.add_argument('--low', type=float, help='Lower bound of random anchor, (x,y)', default=(0.0, 0.0), nargs='+')
     parser.add_argument('--high', type=float, help='Upper bound of random anchor, (x,y)', default=(1.0, 1.0), nargs='+')
     parser.add_argument('--anchor_num', type=int, help='single layer anchor nums', default=3)
-
-    return parser.parse_args(argv)
-
-
-if __name__ == '__main__':
-    args = parse_arguments(sys.argv[1:])
+    parser.add_argument('--used_label_map', type=yaml.safe_load)
+    
+    args = parser.parse_args()
     main(args.ann_list_file, args.anchor_file, args.max_iters,
          args.in_hw, args.out_hw, args.anchor_num, args.is_random,
-         args.is_plot, args.low, args.high)
+         args.is_plot, args.low, args.high,args.used_label_map)

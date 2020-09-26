@@ -971,21 +971,27 @@ class YOLOHelper(BaseHelper):
       return img, tuple(labels)
 
     if is_training:
-      dataset = (tf.data.TFRecordDataset(image_ann_list, num_parallel_reads=4).
-                 shuffle(batch_size * 500).
-                 repeat().
-                 map(_parser_wrapper, self.num_parallel_calls).
-                 batch(batch_size, True).
-                 prefetch(-1))
+      def fetch_dataset(filename):
+        return tf.data.TFRecordDataset(filename, buffer_size=16 * 1024 * 1024)  # 16Mib
+      dataset = (tf.data.Dataset.list_files(image_ann_list, shuffle=True)
+                 .repeat()
+                 .interleave(fetch_dataset, cycle_length=16,
+                             num_parallel_calls=tf.data.experimental.AUTOTUNE)
+                 .shuffle(1024)
+                 .map(_parser_wrapper, self.num_parallel_calls)
+                 .batch(batch_size, True)
+                 .prefetch(-1))
     else:
       def _parser_wrapper(stream: bytes):
-        img_str, img_name, ann, img_hw = self.parser_example(stream)
+        img_str, img_name, ann, img_hw = parser_example_fn(stream)
         raw_img = self.decode_img(img_str)
         det_img, _ = self.process_img(raw_img, tf.zeros(
             [0, 5]), self.in_hw, is_augment, True, is_normlize)
         return det_img, img_name, tf.RaggedTensor.from_tensor(ann), img_hw
 
-      dataset = (tf.data.TFRecordDataset(image_ann_list, num_parallel_reads=4).
+      dataset = (tf.data.TFRecordDataset(image_ann_list,
+                                         buffer_size=16 * 1024 * 1024,
+                                         num_parallel_reads=4).
                  map(_parser_wrapper, -1).
                  batch(batch_size, True).
                  prefetch(-1))

@@ -4,7 +4,7 @@ model:
   helper: YOLOHelper
   helper_kwarg:
     image_ann: /home/zqh/workspace/mix-tfrecord/example.npy
-    class_num: 20
+    class_num: 2
     anchors: data/voc_anchor_v3.npy
     in_hw:
       - 416
@@ -28,7 +28,7 @@ model:
       - null
       - 3
     anchor_num: 3
-    class_num: 20
+    class_num: 2
   loss: YOLOLoss
   loss_kwarg:
     iou_thresh: 0.5
@@ -52,7 +52,7 @@ train:
     constant_folding: true
     function_optimization: true
     scoped_allocator_optimization: true
-  augmenter: false
+  augmenter: true
   batch_size: 6
   pre_ckpt: null
   rand_seed: 10101
@@ -93,10 +93,10 @@ train:
         load_weights_on_restart: false
     - name: TerminateOnNaN
       kwarg: null
-    - name: MultiScaleTrain
-      kwarg:
-        interval: 10
-        scale_range: [-3, 3]
+    # - name: MultiScaleTrain
+    #   kwarg:
+    #     interval: 10
+    #     scale_range: [-3, 3]
     # - name: CosineLR
     #   kwarg:
     #      init_lr: 0.0005
@@ -126,25 +126,7 @@ evaluate:
     mAp_iou_thresh: 0.3
     iou_method: iou
     class_name:
-      - aeroplane
-      - bicycle
-      - bird
-      - boat
-      - bottle
-      - bus
-      - car
-      - cat
-      - chair
-      - cow
-      - diningtable
-      - dog
-      - horse
-      - motorbike
-      - person
-      - pottedplant
-      - sheep
-      - sofa
-      - train
-      - tvmonitor
+      - No-Mask
+      - Mask
     save_result: true
     save_result_dir: /home/zqh/Documents/mAP/input
