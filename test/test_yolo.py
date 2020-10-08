@@ -33,6 +33,84 @@ def test_resize_img():
     h.draw_image(img.numpy(), new_ann.numpy())
 
 
+def test_resize_img_with_hasp_map(test_freq=False):
+  """  NOTE 测试使用hasp_map下的数据集，测试原始数据集以及采样随机性"""
+  def parser_example_with_hash_table(stream: bytes, table: tf.lookup.StaticHashTable) -> List[tf.Tensor]:
+    features = tf.io.parse_single_example(stream, {
+        'img': tf.io.FixedLenFeature([], tf.string),
+        'img_name': tf.io.FixedLenFeature([], tf.string),
+        'dataset': tf.io.FixedLenFeature([], tf.string),
+        'label': tf.io.VarLenFeature(tf.string),
+        'x1': tf.io.VarLenFeature(tf.float32),
+        'y1': tf.io.VarLenFeature(tf.float32),
+        'x2': tf.io.VarLenFeature(tf.float32),
+        'y2': tf.io.VarLenFeature(tf.float32),
+        'img_hw': tf.io.VarLenFeature(tf.int64),
+    })
+
+    label_str = features['label'].values[:, None]
+    """ map label  """
+    label = table.lookup(label_str)
+    img_str = features['img']
+    img_name = features['img_name']
+    dataset = features['dataset']
+    ann = tf.concat([label,
+                     features['x1'].values[:, None],
+                     features['y1'].values[:, None],
+                     features['x2'].values[:, None],
+                     features['y2'].values[:, None]], 1)
+    img_hw = features['img_hw'].values
+    """ remove invalid label ann """
+    ann = tf.boolean_mask(ann, tf.not_equal(ann[:, 0], -1))
+
+    return dataset, img_str, img_name, ann, img_hw
+
+  h = YOLOHelper('/home/zqh/workspace/mix-tfrecord/example.npy',
+                 2, 'data/voc_anchor.npy',
+                 [224, 320], [[7, 10], [14, 20]],
+                 used_label_map={'No-Mask': 1,
+                                 'Mask': 0})
+
+  def parser_fn(x): return parser_example_with_hash_table(x, h.hash_table)
+
+  def fetch_dataset(filename):
+    return tf.data.TFRecordDataset(filename, buffer_size=16 * 1024 * 1024)  # 16Mib
+  ds = (tf.data.Dataset.list_files(h.train_list, shuffle=True)
+        .repeat(1)
+        .interleave(fetch_dataset, cycle_length=16,
+                    num_parallel_calls=tf.data.experimental.AUTOTUNE)
+        .shuffle(1024)
+        .map(parser_fn, -1))
+  if test_freq:
+    total = 0
+    dmap = {}
+    # ds=ds.take(1000) NOTE can use take
+    for dataset_name, img_str, img_name, ann, hw in ds:
+      dataset_name = dataset_name.numpy().decode()
+      if dataset_name in dmap:
+        dmap[dataset_name] += 1
+      else:
+        dmap.setdefault(dataset_name, 0)
+      total += 1
+      if total % 20:
+        print('nums:', f"===== {total} =====")
+        print('name:', ''.join([f'{k:^20s}' for k in dmap.keys()]))
+        print('prob:', ''.join([f'{v/total:^20.3f}' for v in dmap.values()]))
+
+  else:
+    ds.skip(1000)
+    iters = iter(ds)
+    for i in range(100, 200):
+      dataset_name, img_str, img_name, ann, hw = next(iters)
+      img = h.decode_img(img_str)
+      img, new_ann = h.resize_img(img, h.in_hw, ann)
+      print(dataset_name.numpy(), img_name.numpy())
+      h.draw_image(img.numpy(), new_ann.numpy())
+
+
+test_resize_img_with_hasp_map(test_freq=False)
+
+
 def test_origin_resize_train_img():
   """ 测试原始yolov3 训练resize方法"""
   h = YOLOHelper('data/voc_img_ann.npy', 20, 'data/voc_anchor.npy',
@@ -263,11 +341,13 @@ def test_train_dataset_label_to_ann_with_hash_map():
                  2, 'data/voc_anchor.npy',
                  [224, 320], [[7, 10], [14, 20]],
                  used_label_map={'No-Mask': 1,
-                                 'Mask': 0})
+                                 'Mask': 0},
+                 resize_method='gluon',
+                 augment_method='iaa')
   h.set_dataset(1, True, False, True)
-  i = 213
+  h.train_dataset.skip(300)
   iters = iter(h.train_dataset)
-  for i in range(20):
+  for i in range(200):
     img, labels = next(iters)
     labels = [label[0].numpy() for label in labels]
     new_ann = h.label_to_ann(labels)
@@ -801,3 +881,18 @@ def test_yolo_map():
   maps.on_train_end()
 
   # maps.on_epoch_begin(0)
+
+
+def load_mafa_label_to_check():
+  from scipy.io import loadmat
+  mat = loadmat('/media/zqh/Datas/MAFA/MAFA-Label-Train/LabelTrainAll.mat')
+  all_label = mat['label_train'][0]
+  for _, name, ann in all_label:
+    print(ann.shape)
+    # if name[0] == 'train_00000076':
+    #   break
+  all_label[75]
+
+
+  
+    

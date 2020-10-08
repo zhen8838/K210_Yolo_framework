@@ -277,7 +277,7 @@ class YOLOHelper(BaseHelper):
 
     resize_method : str, optional
 
-        train image resize method, ['origin','gulon','none']
+        train image resize method, ['origin','gluon','none']
 
     augment_method : str, optional
 
