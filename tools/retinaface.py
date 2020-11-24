@@ -556,9 +556,9 @@ class RetinaFaceLoss(tf.keras.losses.Loss):
     pos_idx = tf.tile(pos_conf_mask, [1, 1, 2])
     neg_idx = tf.tile(neg_conf_mask, [1, 1, 2])
 
-    conf_p = tf.reshape(
-        tf.boolean_mask(conf_data,
-                        tf.equal(tf.logical_or(pos_idx, neg_idx), True)), (-1, 2))
+    conf_p = tf.reshape(tf.boolean_mask(
+        conf_data,
+        tf.equal(tf.logical_or(pos_idx, neg_idx), True)), (-1, 2))
     conf_t = tf.boolean_mask(
         conf_t, tf.equal(tf.logical_or(pos_conf_mask, neg_conf_mask), True))
 

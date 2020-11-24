@@ -668,7 +668,8 @@ class YOLOHelper(BaseHelper):
     new_ann = tf.boolean_mask(new_ann, tf.logical_and(bbox_w > 1, bbox_h > 1))
     return new_ann
 
-  def iaa_augment_img(self, img: np.ndarray, ann: np.ndarray) -> [np.ndarray, np.ndarray]:
+  @staticmethod
+  def iaa_augment_img(img: np.ndarray, ann: np.ndarray, iaaseq: iaa.Sequential) -> [np.ndarray, np.ndarray]:
     """ augmenter for image
 
     Parameters
@@ -694,7 +695,7 @@ class YOLOHelper(BaseHelper):
     im_wh = img.shape[1::-1]
 
     bbs = BoundingBoxesOnImage.from_xyxy_array(bbox, shape=img.shape)
-    image_aug, bbs_aug = self.iaaseq(image=img, bounding_boxes=bbs)
+    image_aug, bbs_aug = iaaseq(image=img, bounding_boxes=bbs)
     new_bbox = bbs_aug.to_xyxy_array()
 
     # remove out of bound bbox and the bbox which w or h < 0
@@ -710,7 +711,8 @@ class YOLOHelper(BaseHelper):
     new_ann = new_ann[np.logical_and(bbox_w > 1, bbox_h > 1)]
     return image_aug, new_ann
 
-  def origin_augment_img(self, img: tf.Tensor, ann: tf.Tensor,
+  @staticmethod
+  def origin_augment_img(img: tf.Tensor, ann: tf.Tensor,
                          hue=0.3, sat=0.2, val=0.3) -> [tf.Tensor, tf.Tensor]:
     """ augmenter for image
 
@@ -740,7 +742,8 @@ class YOLOHelper(BaseHelper):
       img = tf.image.random_brightness(img, val)
     return img, ann
 
-  def auto_augment_img(self, img: tf.Tensor, ann: tf.Tensor,
+  @staticmethod
+  def auto_augment_img(img: tf.Tensor, ann: tf.Tensor,
                        augmentation_name: str = 'v2') -> [tf.Tensor, tf.Tensor]:
     from transforms.image.auto_augment import distort_image_with_autoaugment
     from transforms.image.box_utils import yxyx_to_xyxy, normalize_boxes, denormalize_boxes
@@ -751,7 +754,8 @@ class YOLOHelper(BaseHelper):
     ann = tf.concat([clas, xyxybox], -1)
     return img, ann
 
-  def origin_resize_train_img(self, img: tf.Tensor, in_hw: tf.Tensor,
+  @staticmethod
+  def origin_resize_train_img(img: tf.Tensor, in_hw: tf.Tensor,
                               ann: tf.Tensor, min_scale=0.25, max_scale=2,
                               jitter=0.3, flip=True) -> [tf.Tensor, tf.Tensor]:
     """ when training first crop image and resize image and keep ratio
@@ -817,10 +821,11 @@ class YOLOHelper(BaseHelper):
           lambda: (tf.image.flip_left_right(img), w - x2, w - x1),
           lambda: (img, x1, x2))
 
-    new_ann = self.validate_ann(clses, x1, y1, x2, y2, w, h)
+    new_ann = YOLOHelper.validate_ann(clses, x1, y1, x2, y2, w, h)
     return img, new_ann
 
-  def gluon_resize_train_img(self, img: tf.Tensor, in_hw: tf.Tensor,
+  @staticmethod
+  def gluon_resize_train_img(img: tf.Tensor, in_hw: tf.Tensor,
                              ann: tf.Tensor, min_scale: float = 0.3,
                              max_scale: float = 1, max_aspect_ratio: float = 2,
                              max_trial: int = 50) -> [tf.Tensor, tf.Tensor]:
@@ -830,10 +835,11 @@ class YOLOHelper(BaseHelper):
                                 tf.constant(max_aspect_ratio), tf.constant(max_trial)], [tf.float32, tf.int32])
     # crop_idx (x1, y1, x2, y2)
     img = img[crop_idx[1]:crop_idx[3], crop_idx[0]:crop_idx[2], :]
-    img, new_ann = self.resize_img(img, in_hw, new_ann)
+    img, new_ann = YOLOHelper.resize_img(img, in_hw, new_ann)
     return img, new_ann
 
-  def resize_img(self, img: tf.Tensor, in_hw: tf.Tensor,
+  @staticmethod
+  def resize_img(img: tf.Tensor, in_hw: tf.Tensor,
                  ann: tf.Tensor) -> [tf.Tensor, tf.Tensor]:
     """
     resize image and keep ratio
@@ -879,7 +885,7 @@ class YOLOHelper(BaseHelper):
                                          lambda: (img, clses, x1, y1, x2, y2),
                                          lambda: _resize(img, clses, x1, y1, x2, y2))
 
-    new_ann = self.validate_ann(clses, x1, y1, x2, y2, w, h)
+    new_ann = YOLOHelper.validate_ann(clses, x1, y1, x2, y2, w, h)
     return img, new_ann
 
   def read_img(self, img_path: str) -> tf.Tensor:
@@ -932,7 +938,9 @@ class YOLOHelper(BaseHelper):
       if self.augment_method == 'origin':
         img, ann = self.origin_augment_img(img, ann)
       elif self.augment_method == 'iaa':
-        img, ann = tf.numpy_function(self.iaa_augment_img, [img, ann], [tf.uint8, tf.float32])
+        img, ann = tf.numpy_function(
+            partial(self.iaa_augment_img, iaaseq=self.iaaseq),
+            [img, ann], [tf.uint8, tf.float32])
       elif self.augment_method == 'autoaug':
         img, ann = self.auto_augment_img(img, ann)
       else:

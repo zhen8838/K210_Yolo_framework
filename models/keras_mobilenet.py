@@ -58,7 +58,7 @@ from . import imagenet_utils
 from .imagenet_utils import decode_predictions
 from .imagenet_utils import _obtain_input_shape
 from . import get_submodules_from_kwargs
-from tensorflow.python.keras.applications import keras_modules_injection
+# from tensorflow.python.keras.applications import keras_modules_injection
 
 BASE_WEIGHT_PATH = ('https://github.com/fchollet/deep-learning-models/'
                     'releases/download/v0.6/')
@@ -80,7 +80,7 @@ def preprocess_input(x, **kwargs):
     return imagenet_utils.preprocess_input(x, mode='tf', **kwargs)
 
 
-@keras_modules_injection
+# @keras_modules_injection
 def MobileNet(input_shape=None,
               alpha=1.0,
               depth_multiplier=1,
