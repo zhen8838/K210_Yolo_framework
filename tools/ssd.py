@@ -217,7 +217,7 @@ class SSDHelper(BaseHelper):
   def ann_to_label(self, bbox: tf.Tensor, clses: tf.Tensor, in_hw: tf.Tensor) -> List[tf.Tensor]:
 
     bbox = bbox / tf.tile(tf.cast(in_hw[::-1], tf.float32), [2])
-    clses = clses + 1 # NOTE ssd defalut class 0 is background, so need +1
+    clses = clses + 1  # NOTE ssd defalut class 0 is background, so need +1
 
     overlaps = tf_bbox_iou(bbox, self.corner_anchors)
     best_prior_overlap = tf.reduce_max(overlaps, 1)
@@ -254,19 +254,19 @@ class SSDHelper(BaseHelper):
 
   def draw_image(self, img: tf.Tensor, ann: List[tf.Tensor],
                  is_show: bool = True) -> np.ndarray:
-    bbox, clses = ann
+    bbox, score, clses = ann
     if isinstance(img, EagerTensor):
       img = img.numpy()
       bbox = bbox.numpy()
+      score = score.numpy()
       clses = clses.numpy()
     for i, cls_idx in enumerate(clses):
-      if cls_idx > 0:
-        cv2.rectangle(img, tuple(bbox[i][:2].astype(int)), tuple(bbox[i][2:].astype(int)),
-                      (255, 0, 0))
-        # NOTE because ssd calss +1, so when draw image need -1.
-        cv2.putText(img, str(int(cls_idx[0]) - 1), tuple(bbox[i][2:].astype(int) - [18, 10]),
-                    cv2.FONT_HERSHEY_COMPLEX, 0.7, (255, 0, 0), thickness=1)
-
+      cv2.rectangle(img, tuple(bbox[i][:2].astype(int)),
+                    tuple(bbox[i][2:].astype(int)),
+                    (255, 0, 0))
+      cv2.putText(img, str(cls_idx[0]),
+                  tuple(bbox[i][2:].astype(int) - [18, 10]),
+                  cv2.FONT_HERSHEY_COMPLEX, 0.7, (255, 0, 0), thickness=1)
     if is_show:
       imshow(img)
       show()
@@ -400,6 +400,7 @@ def parser_outputs(outputs: List[np.ndarray], orig_hws: List[np.ndarray], obj_th
     """ softmax class"""
     clses = softmax(clses, -1)
     score = np.max(clses[:, 1:], -1)
+    clses = np.argmax(clses[:, 1:], -1)
     """ decode """
     bbox = decode_bbox(bbox, h.anchors.numpy(), h.variances.numpy())
     bbox = bbox * np.tile(h.org_in_hw[::-1], [2])
@@ -415,12 +416,13 @@ def parser_outputs(outputs: List[np.ndarray], orig_hws: List[np.ndarray], obj_th
     keep = nms_oneclass(bbox, score, nms_thresh)
     bbox = bbox[keep]
     score = score[keep]
+    clses = clses[keep]
     """ reverse img """
     scale = np.min(h.org_in_hw / np.array(orig_hw))
     xy_off = ((h.org_in_hw - np.array(orig_hw) * scale) / 2)[::-1]
     bbox = (bbox - np.tile(xy_off, [2])) / scale
 
-    results.append([bbox, score])
+    results.append([bbox, score, clses])
   return results
 
 
@@ -469,9 +471,9 @@ def ssd_infer(img_path: Path, infer_model: tf.keras.Model,
 
   if result_path is None:
     """ draw gpu result """
-    for img_path, (bbox, score) in zip(img_paths, results):
+    for img_path, (bbox, score, clses) in zip(img_paths, results):
       draw_img = h.read_img(img_path)
-      h.draw_image(draw_img.numpy(), [bbox, np.ones_like(score[:, None])])
+      h.draw_image(draw_img.numpy(), [bbox, np.ones_like(score[:, None]), clses])
   else:
     """ draw gpu result and nncase result """
     ncc_preds = [[], []]
