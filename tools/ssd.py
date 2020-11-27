@@ -61,7 +61,7 @@ def tf_encode_bbox(matches: tf.Tensor, anchors: tf.Tensor, variances) -> tf.Tens
   return tf.concat([g_cxcy, g_wh], 1)  # [num_priors,4]
 
 
-def decode_bbox(bbox: np.ndarray, anchors: np.ndarray, variances: np.ndarray) -> np.ndarray:
+def decode_bbox(bbox: np.ndarray, anchors: np.ndarray, variances: np.ndarray):
   """Decode locations from predictions using anchors to undo
   the encoding we did for offset regression at train time.
 
@@ -264,7 +264,7 @@ class SSDHelper(BaseHelper):
       cv2.rectangle(img, tuple(bbox[i][:2].astype(int)),
                     tuple(bbox[i][2:].astype(int)),
                     (255, 0, 0))
-      cv2.putText(img, str(cls_idx[0]),
+      cv2.putText(img, str(cls_idx),
                   tuple(bbox[i][2:].astype(int) - [18, 10]),
                   cv2.FONT_HERSHEY_COMPLEX, 0.7, (255, 0, 0), thickness=1)
     if is_show:
@@ -399,30 +399,32 @@ def parser_outputs(outputs: List[np.ndarray], orig_hws: List[np.ndarray], obj_th
   for bbox, clses, orig_hw in zip(bbox_outs, class_outs, orig_hws):
     """ softmax class"""
     clses = softmax(clses, -1)
-    score = np.max(clses[:, 1:], -1)
-    clses = np.argmax(clses[:, 1:], -1)
-    """ decode """
-    bbox = decode_bbox(bbox, h.anchors.numpy(), h.variances.numpy())
+    """ decode bbox """
+    bbox = decode_bbox(bbox, h.anchors.numpy(),
+                       h.variances.numpy())
     bbox = bbox * np.tile(h.org_in_hw[::-1], [2])
-    """ filter low score """
-    inds = np.where(score > obj_thresh)[0]
-    bbox = bbox[inds]
-    score = score[inds]
-    """ keep top-k before NMS """
-    order = np.argsort(score)[::-1]
-    bbox = bbox[order]
-    score = score[order]
-    """ do nms """
-    keep = nms_oneclass(bbox, score, nms_thresh)
-    bbox = bbox[keep]
-    score = score[keep]
-    clses = clses[keep]
     """ reverse img """
     scale = np.min(h.org_in_hw / np.array(orig_hw))
     xy_off = ((h.org_in_hw - np.array(orig_hw) * scale) / 2)[::-1]
     bbox = (bbox - np.tile(xy_off, [2])) / scale
 
-    results.append([bbox, score, clses])
+    _scores = np.max(clses[:, 1:], axis=-1)
+    _boxes = bbox[_scores > obj_thresh]
+    _classes = np.argmax(clses[:, 1:], axis=-1)[_scores > obj_thresh]
+    _scores = _scores[_scores > obj_thresh]
+
+    """ do nms """
+    """ keep top-k before NMS """
+    order = np.argsort(_scores)[::-1]
+    _boxes = _boxes[order]
+    _scores = _scores[order]
+    _classes = _classes[order]
+    keep = nms_oneclass(_boxes, _scores, nms_thresh)
+    _boxes = _boxes[keep]
+    _scores = _scores[keep]
+    _classes = _classes[keep]
+    results.append([_boxes, _scores, _classes])
+
   return results
 
 
