@@ -2,7 +2,7 @@ termcolor==1.1.0
 scipy==1.2.1
 tensorflow_gpu==1.14.0
 tensorflow_model_optimization==0.1.1
-opencv_python==4.0.0.21
+opencv_python==4.1.1.26
 matplotlib==3.0.3
 scikit_image==0.15.0
 numpy==1.16.2
