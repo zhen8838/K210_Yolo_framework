@@ -5,6 +5,6 @@ tensorflow_model_optimization==0.1.1
 opencv_python==4.0.0.21
 matplotlib==3.0.3
 scikit_image==0.15.0
-numpy==1.16.2
+numpy==1.22.0
 imgaug==0.2.9
 Pillow==6.2.0
